@@ -1,93 +1,102 @@
 import { createClient } from "@/lib/supabase/server"
+import { AdminScheduleClient } from "@/components/admin-schedule-client"
 
-export default async function AdminSchedulePage({
-  searchParams,
-}: {
-  searchParams?: { date?: string }
-}) {
+function toDateString(date: Date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  const day = String(date.getDate()).padStart(2, "0")
+
+  return `${year}-${month}-${day}`
+}
+
+function getMonday(date: Date) {
+  const d = new Date(date)
+  const day = d.getDay()
+  const mondayOffset = (day + 6) % 7
+  d.setDate(d.getDate() - mondayOffset)
+  return d
+}
+
+export default async function AdminSchedulePage() {
   const supabase = await createClient()
 
-  const selectedDate =
-    searchParams?.date || new Date().toISOString().split("T")[0]
+  const today = new Date()
+  const thisWeekMonday = getMonday(today)
+
+  const nextWeekMonday = new Date(thisWeekMonday)
+  nextWeekMonday.setDate(thisWeekMonday.getDate() + 7)
+
+  const endOfNextWeek = new Date(nextWeekMonday)
+  endOfNextWeek.setDate(nextWeekMonday.getDate() + 4)
+
+  const startDate = toDateString(thisWeekMonday)
+  const endDate = toDateString(endOfNextWeek)
 
   const { data: jobs } = await supabase
     .from("scheduled_jobs")
     .select(`
       *,
       properties (
+        id,
         client_name,
-        address_line_1
-      ),
-      staff_members (
-        name
+        address_line_1,
+        suburb
       )
     `)
-    .eq("scheduled_date", selectedDate)
+    .gte("scheduled_date", startDate)
+    .lte("scheduled_date", endDate)
+    .order("scheduled_date", { ascending: true })
     .order("job_order", { ascending: true })
 
+  const { data: properties } = await supabase
+    .from("properties")
+    .select(`
+      id,
+      property_code,
+      client_name,
+      address_line_1,
+      suburb,
+      default_staff_id,
+      default_job_order,
+      default_duration_hours,
+      default_start_time,
+      is_active
+    `)
+    .eq("is_active", true)
+    .order("suburb", { ascending: true })
+    .order("client_name", { ascending: true })
+
+  const { data: staff } = await supabase
+    .from("staff_members")
+    .select("id, name")
+    .eq("is_active", true)
+    .order("name", { ascending: true })
+
+  const { data: serviceTemplates } = await supabase
+  .from("property_service_templates")
+  .select(`
+    id,
+    property_id,
+    template_name,
+    default_duration_hours,
+    default_staff_id,
+    default_job_notes,
+    colour_label,
+    billing_mode,
+    time_limit_type,
+    is_active
+  `)
+  .eq("is_active", true)
+  .order("template_name", { ascending: true })
+
   return (
-    <div className="p-6 max-w-3xl mx-auto">
-      <h1 className="text-2xl font-bold mb-4">Admin Schedule</h1>
-
-      {/* Date Picker */}
-      <form method="get" className="mb-6">
-        <input
-          type="date"
-          name="date"
-          defaultValue={selectedDate}
-          className="border rounded px-3 py-2"
-        />
-        <button className="ml-2 px-4 py-2 bg-black text-white rounded">
-          Load
-        </button>
-      </form>
-
-      {/* Jobs List */}
-      <div className="space-y-3">
-        {jobs && jobs.length > 0 ? (
-          jobs.map((job) => (
-            <div
-              key={job.id}
-              className="border rounded p-4 flex justify-between items-center"
-            >
-              <div>
-                <div className="font-semibold">
-                  {job.properties?.client_name || "Unknown"}
-                </div>
-                <div className="text-sm text-gray-500">
-                  {job.properties?.address_line_1}
-                </div>
-
-                <div className="text-sm mt-1">
-                  Staff: {job.staff_members?.name || "Unassigned"}
-                </div>
-
-                {job.planned_duration_hours && (
-                  <div className="text-sm">
-                    ⏱ {job.planned_duration_hours}h
-                  </div>
-                )}
-              </div>
-
-              <div className="text-right">
-                <div className="text-sm">Job #{job.job_order}</div>
-                <div className="text-xs text-gray-500 capitalize">
-                  {job.status}
-                </div>
-              </div>
-            </div>
-          ))
-        ) : (
-          <p className="text-gray-500">No jobs for this date</p>
-        )}
-      </div>
-
-      {/* Add Job Button (placeholder for now) */}
-      <div className="mt-6">
-        <button className="px-4 py-2 bg-green-600 text-white rounded">
-          + Add Job
-        </button>
-      </div>
-    </div>
+    <AdminScheduleClient
+      thisWeekStart={startDate}
+      nextWeekStart={toDateString(nextWeekMonday)}
+      jobs={jobs || []}
+      properties={properties || []}
+      staff={staff || []}
+      serviceTemplates={serviceTemplates || []}
+    />
   )
 }

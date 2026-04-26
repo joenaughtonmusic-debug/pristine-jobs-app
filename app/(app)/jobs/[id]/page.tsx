@@ -36,6 +36,7 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
     .select("next_visit_notes, visit_date")
     .eq("property_id", job.property_id)
     .not("next_visit_notes", "is", null)
+.neq("next_visit_notes", "")
     .order("visit_date", { ascending: false })
     .limit(1)
     .maybeSingle()

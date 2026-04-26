@@ -13,6 +13,7 @@ export interface Property {
   greenwaste_rate?: number | null
   xero_contact_id?: string | null
   is_active?: boolean | null
+  property_notes_url?: string | null
 }
 
 export interface ScheduledJob {
@@ -21,6 +22,11 @@ export interface ScheduledJob {
   scheduled_date: string
   status: "scheduled" | "in_progress" | "completed" | "cancelled"
   job_order?: number | null
+  assigned_staff_id?: string | null
+  planned_duration_hours?: number | null
+  planned_start_time?: string | null
+  billing_mode?: string | null
+time_limit_type?: string | null
   created_at?: string
   updated_at?: string
   properties?: Property

@@ -20,6 +20,7 @@ interface CompleteVisitDialogProps {
   onOpenChange: (open: boolean) => void
   jobId: string
   propertyId: string
+  assignedStaffId: string | null
   onSuccess: () => void
 }
 
@@ -28,6 +29,7 @@ export function CompleteVisitDialog({
   onOpenChange,
   jobId,
   propertyId,
+  assignedStaffId,
   onSuccess,
 }: CompleteVisitDialogProps) {
   const [loading, setLoading] = useState(false)
@@ -39,6 +41,26 @@ export function CompleteVisitDialog({
   const [nextVisitNotes, setNextVisitNotes] = useState("")
   const [readyForInvoice, setReadyForInvoice] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [primaryStaffId, setPrimaryStaffId] = useState(assignedStaffId || "")
+
+const [extraChargeItems, setExtraChargeItems] = useState<
+  {
+    id: string
+    item_code: string
+    staff_label: string
+    invoice_description: string
+    unit_price: number
+  }[]
+>([])
+
+const [selectedExtras, setSelectedExtras] = useState<
+  {
+    extra_charge_item_id: string
+    quantity: string
+  }[]
+>([])
+
+const [miscProductNote, setMiscProductNote] = useState("")
 
   const [helpers, setHelpers] = useState<
     { staff_member_id: string; staff_name: string; hours: string }[]
@@ -81,10 +103,33 @@ export function CompleteVisitDialog({
       }
 
       setStaffOptions(data || [])
+      const { data: extraItems, error: extraError } = await supabase
+  .from("extra_charge_items")
+  .select(`
+    id,
+    item_code,
+    staff_label,
+    invoice_description,
+    unit_price
+  `)
+  .eq("is_active", true)
+  .order("staff_label", { ascending: true })
+
+if (extraError) {
+  console.error("Error loading extra items:", extraError)
+} else {
+  setExtraChargeItems(extraItems || [])
+}
     }
 
     loadStaff()
   }, [])
+
+  useEffect(() => {
+    if (assignedStaffId) {
+      setPrimaryStaffId(assignedStaffId)
+    }
+  }, [assignedStaffId])
 
   const calculateHoursFromTime = () => {
     if (!startTime || !endTime) return null
@@ -116,6 +161,14 @@ export function CompleteVisitDialog({
   const primaryHours = parseFloat(hoursWorked) || 0
   const totalHours = primaryHours + helperHoursTotal
 
+  const todayString = () => {
+    const d = new Date()
+    const year = d.getFullYear()
+    const month = String(d.getMonth() + 1).padStart(2, "0")
+    const day = String(d.getDate()).padStart(2, "0")
+    return `${year}-${month}-${day}`
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
@@ -129,12 +182,22 @@ export function CompleteVisitDialog({
       return
     }
 
+    const primaryStaff = staffOptions.find((staff) => staff.id === primaryStaffId)
+
+    if (!primaryStaff) {
+      setError("Please select the primary worker")
+      setLoading(false)
+      return
+    }
+
+    const visitDate = todayString()
+
     const { data: createdVisit, error: visitError } = await supabase
       .from("visits")
       .insert({
         scheduled_job_id: jobId,
         property_id: propertyId,
-        visit_date: new Date().toISOString().split("T")[0],
+        visit_date: visitDate,
         hours_worked: totalHours,
         greenwaste_bags: parseInt(greenwasteBags) || 0,
         work_notes: workNotes.trim() || null,
@@ -153,29 +216,131 @@ export function CompleteVisitDialog({
     }
 
     if (createdVisit) {
+      const { error: primaryLabourError } = await supabase
+        .from("job_labour_entries")
+        .insert({
+          job_type: "maintenance",
+          scheduled_job_id: jobId,
+          property_id: propertyId,
+          job_name: null,
+          job_code: null,
+          staff_member_id: primaryStaff.id,
+          staff_name: primaryStaff.name,
+          work_date: visitDate,
+          hours_worked: primaryHours,
+          billable: true,
+          notes: workNotes.trim() || null,
+        })
+
+      if (primaryLabourError) {
+        setError(primaryLabourError.message)
+        setLoading(false)
+        return
+      }
+
       for (const helper of helpers) {
-        const helperHours = parseFloat(helper.hours)
+  const helperHours = parseFloat(helper.hours)
 
-        if (!helper.staff_member_id || isNaN(helperHours) || helperHours <= 0) {
-          continue
-        }
+  if (!helper.staff_member_id || isNaN(helperHours) || helperHours <= 0) {
+    continue
+  }
 
-        const { error: helperError } = await supabase
-          .from("visit_labour_entries")
-          .insert({
-            visit_id: createdVisit.id,
-            scheduled_job_id: jobId,
-            property_id: propertyId,
-            staff_member_id: helper.staff_member_id,
-            staff_name: helper.staff_name,
-            hours_worked: helperHours,
-          })
+  const { error: helperError } = await supabase
+    .from("visit_labour_entries")
+    .insert({
+      visit_id: createdVisit.id,
+      scheduled_job_id: jobId,
+      property_id: propertyId,
+      staff_member_id: helper.staff_member_id,
+      staff_name: helper.staff_name,
+      hours_worked: helperHours,
+    })
 
-        if (helperError) {
-          setError(helperError.message)
-          setLoading(false)
-          return
-        }
+  if (helperError) {
+    setError(helperError.message)
+    setLoading(false)
+    return
+  }
+
+  const { error: helperLabourError } = await supabase
+    .from("job_labour_entries")
+    .insert({
+      job_type: "maintenance",
+      scheduled_job_id: jobId,
+      property_id: propertyId,
+      job_name: null,
+      job_code: null,
+      staff_member_id: helper.staff_member_id,
+      staff_name: helper.staff_name,
+      work_date: visitDate,
+      hours_worked: helperHours,
+      billable: true,
+      notes: workNotes.trim() || null,
+    })
+
+  if (helperLabourError) {
+    setError(helperLabourError.message)
+    setLoading(false)
+    return
+  }
+}
+
+for (const extra of selectedExtras) {
+  if (!extra.extra_charge_item_id) continue
+
+  const selectedItem = extraChargeItems.find(
+    (item) => item.id === extra.extra_charge_item_id
+  )
+
+  if (!selectedItem) continue
+
+  const quantity = parseFloat(extra.quantity)
+
+  if (isNaN(quantity) || quantity <= 0) continue
+
+  const { error: extraChargeError } = await supabase
+    .from("visit_extra_charges")
+    .insert({
+      visit_id: createdVisit.id,
+      scheduled_job_id: jobId,
+      property_id: propertyId,
+      extra_charge_item_id: selectedItem.id,
+      item_code: selectedItem.item_code,
+      staff_label: selectedItem.staff_label,
+      invoice_description: selectedItem.invoice_description,
+      quantity,
+      unit_price: selectedItem.unit_price,
+      invoice_status: "ready",
+    })
+
+  if (extraChargeError) {
+    setError(extraChargeError.message)
+    setLoading(false)
+    return
+  }
+}
+
+if (miscProductNote.trim()) {
+  const { error: miscError } = await supabase
+    .from("visit_extra_charges")
+    .insert({
+      visit_id: createdVisit.id,
+      scheduled_job_id: jobId,
+      property_id: propertyId,
+      item_code: "MISC-REVIEW",
+      staff_label: "Misc Product Review",
+      invoice_description: "Misc Product Review",
+      quantity: 1,
+      unit_price: 0,
+      notes: miscProductNote.trim(),
+      invoice_status: "review",
+    })
+
+  if (miscError) {
+    setError(miscError.message)
+    setLoading(false)
+    return
+  }
       }
     }
 
@@ -243,6 +408,23 @@ export function CompleteVisitDialog({
             </Field>
 
             <Field>
+              <FieldLabel htmlFor="primaryStaff">Primary Worker</FieldLabel>
+              <select
+                id="primaryStaff"
+                className="h-12 w-full rounded-md border bg-background px-3 text-sm"
+                value={primaryStaffId}
+                onChange={(e) => setPrimaryStaffId(e.target.value)}
+              >
+                <option value="">Select primary worker</option>
+                {staffOptions.map((staff) => (
+                  <option key={staff.id} value={staff.id}>
+                    {staff.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            <Field>
               <FieldLabel htmlFor="hours">Primary Worker Hours</FieldLabel>
               <Input
                 id="hours"
@@ -292,7 +474,10 @@ export function CompleteVisitDialog({
               <p className="mb-2 font-medium">Additional Labour</p>
 
               {helpers.map((helper, index) => (
-                <div key={index} className="mb-2 grid grid-cols-[1fr_96px] gap-2">
+                <div
+                  key={index}
+                  className="mb-2 grid grid-cols-[1fr_96px] gap-2"
+                >
                   <select
                     className="h-12 w-full min-w-0 rounded-md border bg-background px-2 text-sm"
                     value={helper.staff_member_id}
@@ -352,6 +537,78 @@ export function CompleteVisitDialog({
                 + Add helper
               </Button>
             </div>
+
+<div className="mt-4">
+  <p className="mb-2 font-medium">Extra Charges</p>
+
+  {selectedExtras.map((extra, index) => (
+    <div
+      key={index}
+      className="mb-2 grid grid-cols-[1fr_90px] gap-2"
+    >
+      <select
+        className="h-12 w-full rounded-md border bg-background px-2 text-sm"
+        value={extra.extra_charge_item_id}
+        onChange={(e) => {
+          const updated = [...selectedExtras]
+          updated[index].extra_charge_item_id = e.target.value
+          setSelectedExtras(updated)
+        }}
+      >
+        <option value="">Select item</option>
+
+        {extraChargeItems.map((item) => (
+          <option key={item.id} value={item.id}>
+            {item.staff_label}
+          </option>
+        ))}
+      </select>
+
+      <Input
+        type="number"
+        min="1"
+        step="1"
+        value={extra.quantity}
+        onChange={(e) => {
+          const updated = [...selectedExtras]
+          updated[index].quantity = e.target.value
+          setSelectedExtras(updated)
+        }}
+        className="h-12"
+      />
+    </div>
+  ))}
+
+  <Button
+    type="button"
+    variant="outline"
+    onClick={() =>
+      setSelectedExtras([
+        ...selectedExtras,
+        {
+          extra_charge_item_id: "",
+          quantity: "1",
+        },
+      ])
+    }
+  >
+    + Add Extra Charge
+  </Button>
+</div>
+
+<Field>
+  <FieldLabel htmlFor="miscProductNote">
+    Misc Product Note
+  </FieldLabel>
+
+  <Textarea
+    id="miscProductNote"
+    value={miscProductNote}
+    onChange={(e) => setMiscProductNote(e.target.value)}
+    rows={2}
+    placeholder="Example: Had to buy 5 timber stakes"
+  />
+</Field>
 
             <div className="rounded-md bg-muted p-3 text-sm">
               <p className="font-medium">Total billable hours</p>
