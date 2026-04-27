@@ -19,10 +19,11 @@ import {
   Play,
   CheckCircle,
   XCircle,
-  ExternalLink,
   Send,
-  AlertTriangle,
+  FileText,
+  Package,
 } from "lucide-react"
+
 import type { ScheduledJob, Visit } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { CompleteVisitDialog } from "./complete-visit-dialog"
@@ -39,26 +40,31 @@ export function JobDetail({
   latestNextVisitNote,
 }: JobDetailProps) {
   const router = useRouter()
+
   const [status, setStatus] = useState(job.status)
   const [loading, setLoading] = useState(false)
   const [showCompleteDialog, setShowCompleteDialog] = useState(false)
 
   const [internalNote, setInternalNote] = useState("")
   const [savingInternalNote, setSavingInternalNote] = useState(false)
-  const [internalNoteMessage, setInternalNoteMessage] = useState<string | null>(
-    null
-  )
-  const [internalNoteError, setInternalNoteError] = useState<string | null>(null)
+  const [internalNoteMessage, setInternalNoteMessage] =
+    useState<string | null>(null)
+  const [internalNoteError, setInternalNoteError] =
+    useState<string | null>(null)
 
   const property = job.properties
 
   const handleStartJob = async () => {
     setLoading(true)
+
     const supabase = createClient()
 
     const { error } = await supabase
       .from("scheduled_jobs")
-      .update({ status: "in_progress", updated_at: new Date().toISOString() })
+      .update({
+        status: "in_progress",
+        updated_at: new Date().toISOString(),
+      })
       .eq("id", job.id)
 
     if (!error) {
@@ -70,6 +76,7 @@ export function JobDetail({
 
   const handleCancel = async () => {
     setLoading(true)
+
     const supabase = createClient()
 
     const { error } = await supabase
@@ -96,6 +103,7 @@ export function JobDetail({
 
   const handleSubmitInternalNote = async () => {
     setSavingInternalNote(true)
+
     setInternalNoteMessage(null)
     setInternalNoteError(null)
 
@@ -160,25 +168,40 @@ export function JobDetail({
             {property?.client_name || "Unknown Client"}
           </h1>
 
-          <Badge
-            variant="secondary"
-            className={cn(
-              "mt-1",
-              status === "scheduled" && "bg-secondary text-secondary-foreground",
-              status === "in_progress" && "bg-primary text-primary-foreground",
-              status === "completed" && "bg-chart-5 text-foreground",
-              status === "cancelled" && "bg-muted text-muted-foreground"
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Badge
+              variant="secondary"
+              className={cn(
+                status === "scheduled" &&
+                  "bg-secondary text-secondary-foreground",
+
+                status === "in_progress" &&
+                  "bg-primary text-primary-foreground",
+
+                status === "completed" &&
+                  "bg-chart-5 text-foreground",
+
+                status === "cancelled" &&
+                  "bg-muted text-muted-foreground"
+              )}
+            >
+              {status === "in_progress"
+                ? "In Progress"
+                : status.charAt(0).toUpperCase() + status.slice(1)}
+            </Badge>
+
+            {job.time_limit_type === "fixed_time" && (
+              <Badge className="border border-amber-300 bg-amber-100 text-amber-900">
+                Time Fixed · {job.planned_duration_hours || "?"}h
+              </Badge>
             )}
-          >
-            {status === "in_progress"
-              ? "In Progress"
-              : status.charAt(0).toUpperCase() + status.slice(1)}
-          </Badge>
-          {job.time_limit_type === "fixed_time" && (
-  <Badge className="mt-2 bg-amber-100 text-amber-900 border border-amber-300">
-    Time = FIXED · {job.planned_duration_hours || "?"}h
-  </Badge>
-)}
+
+            {job.quoted_scope && (
+              <Badge className="border border-blue-300 bg-blue-100 text-blue-900">
+                Scope Attached
+              </Badge>
+            )}
+          </div>
         </div>
       </header>
 
@@ -190,13 +213,48 @@ export function JobDetail({
 
               <div>
                 <p className="font-medium text-foreground">Address</p>
+
                 <p className="text-muted-foreground">
                   {property?.address_line_1 || "No address"}
                 </p>
               </div>
             </div>
           </CardContent>
-</Card>
+        </Card>
+
+        {job.quoted_scope && (
+          <Card className="border-blue-200 bg-blue-50/50">
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <FileText className="h-4 w-4" />
+                Quoted Scope / Job Notes
+              </CardTitle>
+            </CardHeader>
+
+            <CardContent className="pt-0">
+              <p className="whitespace-pre-wrap text-sm text-gray-700">
+                {job.quoted_scope}
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
+        {job.quoted_materials && (
+          <Card className="border-green-200 bg-green-50/50">
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Package className="h-4 w-4" />
+                Included Materials
+              </CardTitle>
+            </CardHeader>
+
+            <CardContent className="pt-0">
+              <p className="whitespace-pre-wrap text-sm text-gray-700">
+                {job.quoted_materials}
+              </p>
+            </CardContent>
+          </Card>
+        )}
 
         {property?.property_notes_url && (
           <Card>
@@ -205,7 +263,10 @@ export function JobDetail({
                 <Key className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
 
                 <div>
-                  <p className="font-medium text-foreground">Access Notes</p>
+                  <p className="font-medium text-foreground">
+                    Access Notes
+                  </p>
+
                   <p className="whitespace-pre-wrap text-muted-foreground">
                     {property.access_notes}
                   </p>
@@ -222,7 +283,10 @@ export function JobDetail({
                 <StickyNote className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
 
                 <div>
-                  <p className="font-medium text-foreground">Permanent Notes</p>
+                  <p className="font-medium text-foreground">
+                    Permanent Notes
+                  </p>
+
                   <p className="whitespace-pre-wrap text-muted-foreground">
                     {property.permanent_notes}
                   </p>
@@ -239,7 +303,10 @@ export function JobDetail({
                 <MessageSquare className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
 
                 <div>
-                  <p className="font-medium text-foreground">Next Visit Note</p>
+                  <p className="font-medium text-foreground">
+                    Next Visit Note
+                  </p>
+
                   <p className="whitespace-pre-wrap text-muted-foreground">
                     {latestNextVisitNote}
                   </p>
@@ -289,7 +356,10 @@ export function JobDetail({
               ) : (
                 <Send className="mr-2 h-4 w-4" />
               )}
-              {savingInternalNote ? "Submitting..." : "Submit Internal Note"}
+
+              {savingInternalNote
+                ? "Submitting..."
+                : "Submit Internal Note"}
             </Button>
           </CardContent>
         </Card>
@@ -353,6 +423,7 @@ export function JobDetail({
                 ) : (
                   <Play className="mr-2 h-5 w-5" />
                 )}
+
                 Start Job
               </Button>
             )}

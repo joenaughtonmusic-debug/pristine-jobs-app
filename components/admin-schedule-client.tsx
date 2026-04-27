@@ -15,6 +15,7 @@ type Property = {
   client_name: string
   address_line_1: string | null
   suburb: string | null
+  property_category: string | null
   default_staff_id: string | null
   default_job_order: number | null
   default_duration_hours: number | null
@@ -46,6 +47,8 @@ type Job = {
   planned_start_time: string | null
   billing_mode: string | null
   time_limit_type: string | null
+  quoted_scope?: string | null
+  quoted_materials?: string | null
 
   properties?: {
     id: string
@@ -104,6 +107,7 @@ export function AdminScheduleClient({
 
   const [quickAddOpen, setQuickAddOpen] = useState(true)
   const [selectedSuburb, setSelectedSuburb] = useState("All")
+  const [selectedCategory, setSelectedCategory] = useState("All")
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null)
   const [selectedTemplate, setSelectedTemplate] =
     useState<ServiceTemplate | null>(null)
@@ -116,6 +120,8 @@ export function AdminScheduleClient({
   const [jobOrder, setJobOrder] = useState("")
   const [plannedDuration, setPlannedDuration] = useState("")
   const [plannedStartTime, setPlannedStartTime] = useState("")
+  const [quotedScope, setQuotedScope] = useState("")
+  const [quotedMaterials, setQuotedMaterials] = useState("")
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -128,20 +134,36 @@ export function AdminScheduleClient({
   )
 
   const suburbs = useMemo(() => {
-    const set = new Set<string>()
+  const set = new Set<string>()
 
-    properties.forEach((property) => {
-      if (property.suburb) set.add(property.suburb)
-    })
+  properties.forEach((property) => {
+    if (property.suburb) set.add(property.suburb)
+  })
 
-    return ["All", ...Array.from(set).sort()]
-  }, [properties])
+  return ["All", ...Array.from(set).sort()]
+}, [properties])
+
+const categories = [
+  "All",
+  "maintenance",
+  "one_off",
+  "landscaping",
+  "commercial",
+]
 
   const filteredProperties = useMemo(() => {
-    if (selectedSuburb === "All") return properties
+  return properties.filter((property) => {
+    const suburbMatch =
+      selectedSuburb === "All" ||
+      property.suburb === selectedSuburb
 
-    return properties.filter((property) => property.suburb === selectedSuburb)
-  }, [properties, selectedSuburb])
+    const categoryMatch =
+      selectedCategory === "All" ||
+      property.property_category === selectedCategory
+
+    return suburbMatch && categoryMatch
+  })
+}, [properties, selectedSuburb, selectedCategory])
 
   const getTemplatesForProperty = (propertyId: string) => {
     return serviceTemplates.filter(
@@ -201,10 +223,7 @@ export function AdminScheduleClient({
     }, 0)
   }
 
-  const openAddModal = (
-    property: Property,
-    template?: ServiceTemplate
-  ) => {
+  const openAddModal = (property: Property, template?: ServiceTemplate) => {
     setSelectedProperty(property)
     setSelectedTemplate(template || null)
 
@@ -229,6 +248,8 @@ export function AdminScheduleClient({
     )
 
     setPlannedStartTime(property.default_start_time || "")
+    setQuotedScope("")
+    setQuotedMaterials("")
 
     setError(null)
     setModalOpen(true)
@@ -257,6 +278,8 @@ export function AdminScheduleClient({
     )
 
     setPlannedStartTime(job.planned_start_time || "")
+    setQuotedScope(job.quoted_scope || "")
+    setQuotedMaterials(job.quoted_materials || "")
 
     setError(null)
     setModalOpen(true)
@@ -277,18 +300,20 @@ export function AdminScheduleClient({
     setError(null)
 
     const jobPayload = {
-  property_id: selectedProperty.id,
-  scheduled_date: jobDate,
-  status: selectedJob?.status || "scheduled",
-  job_order: parseInt(jobOrder) || getNextJobOrder(jobDate),
-  assigned_staff_id: assignedStaffId || null,
-  planned_duration_hours: plannedDuration
-    ? parseFloat(plannedDuration)
-    : null,
-  planned_start_time: plannedStartTime || null,
-  billing_mode: selectedTemplate?.billing_mode || "charge_up",
-  time_limit_type: selectedTemplate?.time_limit_type || "flexible",
-}
+      property_id: selectedProperty.id,
+      scheduled_date: jobDate,
+      status: selectedJob?.status || "scheduled",
+      job_order: parseInt(jobOrder) || getNextJobOrder(jobDate),
+      assigned_staff_id: assignedStaffId || null,
+      planned_duration_hours: plannedDuration
+        ? parseFloat(plannedDuration)
+        : null,
+      planned_start_time: plannedStartTime || null,
+      billing_mode: selectedTemplate?.billing_mode || "charge_up",
+      time_limit_type: selectedTemplate?.time_limit_type || "flexible",
+      quoted_scope: quotedScope || null,
+      quoted_materials: quotedMaterials || null,
+    }
 
     const { error } = selectedJob
       ? await supabase
@@ -308,6 +333,8 @@ export function AdminScheduleClient({
     setSelectedProperty(null)
     setSelectedTemplate(null)
     setSelectedJob(null)
+    setQuotedScope("")
+    setQuotedMaterials("")
 
     router.refresh()
   }
@@ -369,6 +396,18 @@ export function AdminScheduleClient({
 
             {job.planned_duration_hours && (
               <span>{job.planned_duration_hours}h</span>
+            )}
+
+            {job.time_limit_type === "fixed_time" && (
+              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-800">
+                Fixed time
+              </span>
+            )}
+
+            {job.quoted_scope && (
+              <span className="rounded-full bg-blue-100 px-2 py-0.5 text-blue-800">
+                Scope attached
+              </span>
             )}
           </div>
         </div>
@@ -488,6 +527,24 @@ export function AdminScheduleClient({
               ))}
             </select>
 
+            <div className="mt-4">
+  <label className="mb-1 block text-sm font-medium">
+    Category
+  </label>
+
+  <select
+    className="mb-4 h-11 w-full rounded-md border px-3"
+    value={selectedCategory}
+    onChange={(e) => setSelectedCategory(e.target.value)}
+  >
+    {categories.map((category) => (
+      <option key={category} value={category}>
+        {category}
+      </option>
+    ))}
+  </select>
+</div>
+
             <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
               {filteredProperties.map((property) => (
                 <div
@@ -541,7 +598,7 @@ export function AdminScheduleClient({
 
       {modalOpen && selectedProperty && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+          <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl bg-white p-5 shadow-xl">
             <h2 className="mb-1 text-xl font-semibold">
               {selectedJob ? "Edit Job" : "Add Job"}
             </h2>
@@ -629,6 +686,32 @@ export function AdminScheduleClient({
                 />
               </div>
 
+              <div>
+                <label className="mb-1 block text-sm font-medium">
+                  Quoted Scope / Job Notes
+                </label>
+
+                <textarea
+                  className="min-h-[120px] w-full rounded-md border p-3"
+                  value={quotedScope}
+                  onChange={(e) => setQuotedScope(e.target.value)}
+                  placeholder="Paste labour/scope notes from Xero quote"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium">
+                  Included Materials
+                </label>
+
+                <textarea
+                  className="min-h-[80px] w-full rounded-md border p-3"
+                  value={quotedMaterials}
+                  onChange={(e) => setQuotedMaterials(e.target.value)}
+                  placeholder="e.g. 2m3 mulch, 6 GW bags included"
+                />
+              </div>
+
               {error && (
                 <p className="rounded-md bg-red-50 p-2 text-sm text-red-600">
                   {error}
@@ -643,6 +726,8 @@ export function AdminScheduleClient({
                     setSelectedJob(null)
                     setSelectedProperty(null)
                     setSelectedTemplate(null)
+                    setQuotedScope("")
+                    setQuotedMaterials("")
                   }}
                   className="h-11 flex-1 rounded-md border"
                   disabled={saving}

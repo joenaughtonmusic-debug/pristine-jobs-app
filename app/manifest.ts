@@ -3,7 +3,7 @@ import type { MetadataRoute } from "next"
 export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "Pristine Jobs",
-    short_name: "Pristine",
+    short_name: "Pristine Jobs",
     description: "Pristine Gardens Operations App",
 
     start_url: "/jobs",

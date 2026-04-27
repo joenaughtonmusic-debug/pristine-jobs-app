@@ -14,6 +14,7 @@ export interface Property {
   xero_contact_id?: string | null
   is_active?: boolean | null
   property_notes_url?: string | null
+  property_category?: string | null
 }
 
 export interface ScheduledJob {
@@ -27,6 +28,8 @@ export interface ScheduledJob {
   planned_start_time?: string | null
   billing_mode?: string | null
 time_limit_type?: string | null
+quoted_scope?: string | null
+quoted_materials?: string | null
   created_at?: string
   updated_at?: string
   properties?: Property
