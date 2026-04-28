@@ -407,36 +407,18 @@ if (miscProductNote.trim()) {
               </p>
             </Field>
 
-            <Field>
-              <FieldLabel htmlFor="primaryStaff">Primary Worker</FieldLabel>
-              <select
-                id="primaryStaff"
-                className="h-12 w-full rounded-md border bg-background px-3 text-sm"
-                value={primaryStaffId}
-                onChange={(e) => setPrimaryStaffId(e.target.value)}
-              >
-                <option value="">Select primary worker</option>
-                {staffOptions.map((staff) => (
-                  <option key={staff.id} value={staff.id}>
-                    {staff.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
-
-            <Field>
-              <FieldLabel htmlFor="hours">Primary Worker Hours</FieldLabel>
-              <Input
-                id="hours"
-                type="number"
-                step="0.25"
-                min="0.25"
-                value={hoursWorked}
-                onChange={(e) => setHoursWorked(e.target.value)}
-                required
-                className="h-12"
-              />
-            </Field>
+            <FieldLabel htmlFor="hours">Hours Worked</FieldLabel>
+<Input
+  id="hours"
+  type="number"
+  step="0.25"
+  min="0.25"
+  placeholder="e.g. 4"
+  value={hoursWorked}
+  onChange={(e) => setHoursWorked(e.target.value)}
+  required
+  className="h-12"
+/>
 
             <Field>
               <FieldLabel htmlFor="greenwaste">Greenwaste Bags</FieldLabel>
@@ -539,7 +521,7 @@ if (miscProductNote.trim()) {
             </div>
 
 <div className="mt-4">
-  <p className="mb-2 font-medium">Extra Charges</p>
+  <p className="mb-2 font-medium">Extra Charges (e.g. weedkiller)</p>
 
   {selectedExtras.map((extra, index) => (
     <div
