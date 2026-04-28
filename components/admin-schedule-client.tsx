@@ -134,36 +134,35 @@ export function AdminScheduleClient({
   )
 
   const suburbs = useMemo(() => {
-  const set = new Set<string>()
+    const set = new Set<string>()
 
-  properties.forEach((property) => {
-    if (property.suburb) set.add(property.suburb)
-  })
+    properties.forEach((property) => {
+      if (property.suburb) set.add(property.suburb)
+    })
 
-  return ["All", ...Array.from(set).sort()]
-}, [properties])
+    return ["All", ...Array.from(set).sort()]
+  }, [properties])
 
-const categories = [
-  "All",
-  "maintenance",
-  "one_off",
-  "landscaping",
-  "commercial",
-]
+  const categories = [
+    "All",
+    "maintenance",
+    "one_off",
+    "landscaping",
+    "commercial",
+  ]
 
   const filteredProperties = useMemo(() => {
-  return properties.filter((property) => {
-    const suburbMatch =
-      selectedSuburb === "All" ||
-      property.suburb === selectedSuburb
+    return properties.filter((property) => {
+      const suburbMatch =
+        selectedSuburb === "All" || property.suburb === selectedSuburb
 
-    const categoryMatch =
-      selectedCategory === "All" ||
-      property.property_category === selectedCategory
+      const categoryMatch =
+        selectedCategory === "All" ||
+        property.property_category === selectedCategory
 
-    return suburbMatch && categoryMatch
-  })
-}, [properties, selectedSuburb, selectedCategory])
+      return suburbMatch && categoryMatch
+    })
+  }, [properties, selectedSuburb, selectedCategory])
 
   const getTemplatesForProperty = (propertyId: string) => {
     return serviceTemplates.filter(
@@ -172,10 +171,26 @@ const categories = [
   }
 
   const getJobsForDate = (date: string) => {
-    return jobs
-      .filter((job) => job.scheduled_date === date)
-      .sort((a, b) => (a.job_order || 999) - (b.job_order || 999))
-  }
+  return jobs
+    .filter((job) => job.scheduled_date === date)
+    .sort((a, b) => {
+      const staffA = getStaffName(a.assigned_staff_id)
+      const staffB = getStaffName(b.assigned_staff_id)
+
+      if (staffA !== staffB) {
+        return staffA.localeCompare(staffB)
+      }
+
+      const timeA = a.planned_start_time || "99:99"
+      const timeB = b.planned_start_time || "99:99"
+
+      if (timeA !== timeB) {
+        return timeA.localeCompare(timeB)
+      }
+
+      return (a.job_order || 999) - (b.job_order || 999)
+    })
+}
 
   const getStaffName = (staffId: string | null) => {
     return staff.find((member) => member.id === staffId)?.name || "Unassigned"
@@ -184,25 +199,11 @@ const categories = [
   const getStaffColourClasses = (staffId: string | null) => {
     const staffName = getStaffName(staffId)
 
-    if (staffName === "Charles") {
-      return "border-green-300 bg-green-50"
-    }
-
-    if (staffName === "Hugh") {
-      return "border-orange-300 bg-orange-50"
-    }
-
-    if (staffName === "Alex") {
-      return "border-purple-300 bg-purple-50"
-    }
-
-    if (staffName === "Graham") {
-      return "border-blue-300 bg-blue-50"
-    }
-
-    if (staffName === "Temp Worker") {
-      return "border-gray-300 bg-gray-50"
-    }
+    if (staffName === "Charles") return "border-green-300 bg-green-50"
+    if (staffName === "Hugh") return "border-orange-300 bg-orange-50"
+    if (staffName === "Alex") return "border-purple-300 bg-purple-50"
+    if (staffName === "Graham") return "border-blue-300 bg-blue-50"
+    if (staffName === "Temp Worker") return "border-gray-300 bg-gray-50"
 
     return "border-gray-200 bg-white"
   }
@@ -223,20 +224,14 @@ const categories = [
     }, 0)
   }
 
-  const openAddModal = (property: Property, template?: ServiceTemplate) => {
-    setSelectedProperty(property)
-    setSelectedTemplate(template || null)
-
-    setJobDate(thisWeekStart)
+  const applyTemplateDefaults = (
+    template: ServiceTemplate | null,
+    property: Property
+  ) => {
+    setSelectedTemplate(template)
 
     setAssignedStaffId(
       template?.default_staff_id || property.default_staff_id || ""
-    )
-
-    setJobOrder(
-      property.default_job_order
-        ? property.default_job_order.toString()
-        : getNextJobOrder(thisWeekStart).toString()
     )
 
     setPlannedDuration(
@@ -247,9 +242,32 @@ const categories = [
           : ""
     )
 
+    if (template?.default_job_notes) {
+      setQuotedScope(template.default_job_notes)
+    }
+  }
+
+  const openAddModal = (property: Property) => {
+    const templates = getTemplatesForProperty(property.id)
+    const firstTemplate = templates[0] || null
+
+    setSelectedJob(null)
+    setSelectedProperty(property)
+    setSelectedTemplate(firstTemplate)
+
+    setJobDate(thisWeekStart)
+
+    setJobOrder(
+      property.default_job_order
+        ? property.default_job_order.toString()
+        : getNextJobOrder(thisWeekStart).toString()
+    )
+
     setPlannedStartTime(property.default_start_time || "")
-    setQuotedScope("")
+    setQuotedScope(firstTemplate?.default_job_notes || "")
     setQuotedMaterials("")
+
+    applyTemplateDefaults(firstTemplate, property)
 
     setError(null)
     setModalOpen(true)
@@ -283,6 +301,25 @@ const categories = [
 
     setError(null)
     setModalOpen(true)
+  }
+
+  const handleTemplateChange = (templateId: string) => {
+    if (!selectedProperty) return
+
+    if (templateId === "custom") {
+      setSelectedTemplate(null)
+      setPlannedDuration("")
+      setQuotedScope("")
+      return
+    }
+
+    const template = getTemplatesForProperty(selectedProperty.id).find(
+      (item) => item.id === templateId
+    )
+
+    if (!template) return
+
+    applyTemplateDefaults(template, selectedProperty)
   }
 
   const handleDateChange = (date: string) => {
@@ -368,7 +405,13 @@ const categories = [
     router.refresh()
   }
 
-  const JobCard = ({ job }: { job: Job }) => (
+  const JobCard = ({
+  job,
+  displayNumber,
+}: {
+  job: Job
+  displayNumber: number
+}) => (
     <div
       className={`rounded-lg border p-3 shadow-sm ${getStaffColourClasses(
         job.assigned_staff_id
@@ -377,9 +420,8 @@ const categories = [
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="font-semibold">
-            Job {job.job_order || "?"} –{" "}
-            {job.properties?.client_name || "Unknown"}
-          </div>
+  Job {displayNumber}
+</div>
 
           <div className="truncate text-sm text-gray-500">
             {job.properties?.address_line_1 || "No address"}
@@ -465,7 +507,25 @@ const categories = [
 
               <div className="space-y-2">
                 {dayJobs.length > 0 ? (
-                  dayJobs.map((job) => <JobCard key={job.id} job={job} />)
+                  dayJobs.map((job) => {
+  const jobsForSameStaffBeforeThisJob = dayJobs.filter((otherJob) => {
+    const sameStaff = otherJob.assigned_staff_id === job.assigned_staff_id
+
+    const comesBefore =
+      dayJobs.findIndex((item) => item.id === otherJob.id) <=
+      dayJobs.findIndex((item) => item.id === job.id)
+
+    return sameStaff && comesBefore
+  })
+
+  return (
+    <JobCard
+      key={job.id}
+      job={job}
+      displayNumber={jobsForSameStaffBeforeThisJob.length}
+    />
+  )
+})
                 ) : (
                   <p className="rounded-lg border border-dashed bg-white p-3 text-sm text-gray-400">
                     No jobs
@@ -502,7 +562,8 @@ const categories = [
             <h2 className="text-lg font-semibold">Quick Add Job</h2>
 
             <p className="text-sm text-gray-500">
-              Filter by suburb, choose a customer, then schedule.
+              Filter by suburb/category, choose a customer, then add job type in
+              the modal.
             </p>
           </div>
 
@@ -527,23 +588,19 @@ const categories = [
               ))}
             </select>
 
-            <div className="mt-4">
-  <label className="mb-1 block text-sm font-medium">
-    Category
-  </label>
+            <label className="mb-1 block text-sm font-medium">Category</label>
 
-  <select
-    className="mb-4 h-11 w-full rounded-md border px-3"
-    value={selectedCategory}
-    onChange={(e) => setSelectedCategory(e.target.value)}
-  >
-    {categories.map((category) => (
-      <option key={category} value={category}>
-        {category}
-      </option>
-    ))}
-  </select>
-</div>
+            <select
+              className="mb-4 h-11 w-full rounded-md border px-3"
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+            >
+              {categories.map((category) => (
+                <option key={category} value={category}>
+                  {category}
+                </option>
+              ))}
+            </select>
 
             <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
               {filteredProperties.map((property) => (
@@ -567,28 +624,13 @@ const categories = [
                     )}
                   </div>
 
-                  <div className="flex shrink-0 flex-col gap-2">
-                    {getTemplatesForProperty(property.id).length > 0 ? (
-                      getTemplatesForProperty(property.id).map((template) => (
-                        <button
-                          key={template.id}
-                          type="button"
-                          onClick={() => openAddModal(property, template)}
-                          className="rounded-md bg-green-600 px-3 py-2 text-xs font-medium text-white"
-                        >
-                          {template.template_name}
-                        </button>
-                      ))
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => openAddModal(property)}
-                        className="rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white"
-                      >
-                        Add
-                      </button>
-                    )}
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => openAddModal(property)}
+                    className="shrink-0 rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white"
+                  >
+                    Add
+                  </button>
                 </div>
               ))}
             </div>
@@ -603,14 +645,39 @@ const categories = [
               {selectedJob ? "Edit Job" : "Add Job"}
             </h2>
 
-            <p className="mb-1 text-sm text-gray-500">
+            <p className="mb-4 text-sm text-gray-500">
               {selectedProperty.client_name}
             </p>
 
-            {selectedTemplate && (
-              <p className="mb-4 text-sm font-medium text-green-700">
-                Template: {selectedTemplate.template_name}
-              </p>
+            {!selectedJob && (
+              <div className="mb-4">
+                <label className="mb-1 block text-sm font-medium">
+                  Job Type / Template
+                </label>
+
+                <select
+                  className="h-11 w-full rounded-md border px-3"
+                  value={selectedTemplate?.id || "custom"}
+                  onChange={(e) => handleTemplateChange(e.target.value)}
+                >
+                  <option value="custom">Custom</option>
+
+                  {getTemplatesForProperty(selectedProperty.id).map(
+                    (template) => (
+                      <option key={template.id} value={template.id}>
+                        {template.template_name}
+                      </option>
+                    )
+                  )}
+                </select>
+
+                {selectedTemplate && (
+                  <p className="mt-1 text-xs text-gray-500">
+                    Billing: {selectedTemplate.billing_mode} · Time:{" "}
+                    {selectedTemplate.time_limit_type}
+                  </p>
+                )}
+              </div>
             )}
 
             <div className="space-y-4">

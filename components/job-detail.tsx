@@ -297,24 +297,38 @@ export function JobDetail({
         )}
 
         {latestNextVisitNote && (
-          <Card className="border-primary/30 bg-primary/5">
-            <CardContent className="p-4">
-              <div className="flex items-start gap-3">
-                <MessageSquare className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+  <Card className="border-primary/30 bg-primary/5">
+    <CardContent className="p-4">
+      <div className="flex items-start gap-3">
+        <MessageSquare className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
 
-                <div>
-                  <p className="font-medium text-foreground">
-                    Next Visit Note
-                  </p>
+        <div>
+          <p className="font-medium text-foreground">
+            Previous Visit Note (for this visit)
+          </p>
 
-                  <p className="whitespace-pre-wrap text-muted-foreground">
-                    {latestNextVisitNote}
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
+          <p className="whitespace-pre-wrap text-muted-foreground">
+            {latestNextVisitNote}
+          </p>
+
+          <p className="mt-2 text-xs text-muted-foreground">
+            Added{" "}
+            {new Date(
+              recentVisits.find(
+                (visit) =>
+                  visit.next_visit_notes === latestNextVisitNote
+              )?.visit_date || ""
+            ).toLocaleDateString("en-NZ", {
+              day: "numeric",
+              month: "short",
+              year: "numeric",
+            })}
+          </p>
+        </div>
+      </div>
+    </CardContent>
+  </Card>
+)}
 
         <Card>
           <CardHeader className="pb-2">
