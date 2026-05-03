@@ -36,6 +36,15 @@ type ServiceTemplate = {
   is_active: boolean
 }
 
+type ScheduledJobStaff = {
+  id: string
+  staff_member_id: string
+  staff_members?: {
+    id: string
+    name: string
+  } | null
+}
+
 type Job = {
   id: string
   property_id: string
@@ -49,6 +58,7 @@ type Job = {
   time_limit_type: string | null
   quoted_scope?: string | null
   quoted_materials?: string | null
+  scheduled_job_staff?: ScheduledJobStaff[]
 
   properties?: {
     id: string
@@ -76,7 +86,6 @@ function toLocalDateString(date: Date) {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, "0")
   const day = String(date.getDate()).padStart(2, "0")
-
   return `${year}-${month}-${day}`
 }
 
@@ -117,6 +126,7 @@ export function AdminScheduleClient({
 
   const [jobDate, setJobDate] = useState(thisWeekStart)
   const [assignedStaffId, setAssignedStaffId] = useState("")
+  const [selectedStaffIds, setSelectedStaffIds] = useState<string[]>([])
   const [jobOrder, setJobOrder] = useState("")
   const [plannedDuration, setPlannedDuration] = useState("")
   const [plannedStartTime, setPlannedStartTime] = useState("")
@@ -170,30 +180,46 @@ export function AdminScheduleClient({
     )
   }
 
-  const getJobsForDate = (date: string) => {
-  return jobs
-    .filter((job) => job.scheduled_date === date)
-    .sort((a, b) => {
-      const staffA = getStaffName(a.assigned_staff_id)
-      const staffB = getStaffName(b.assigned_staff_id)
-
-      if (staffA !== staffB) {
-        return staffA.localeCompare(staffB)
-      }
-
-      const timeA = a.planned_start_time || "99:99"
-      const timeB = b.planned_start_time || "99:99"
-
-      if (timeA !== timeB) {
-        return timeA.localeCompare(timeB)
-      }
-
-      return (a.job_order || 999) - (b.job_order || 999)
-    })
-}
-
   const getStaffName = (staffId: string | null) => {
     return staff.find((member) => member.id === staffId)?.name || "Unassigned"
+  }
+
+  const getJobStaffIds = (job: Job) => {
+    const linkedStaff =
+      job.scheduled_job_staff?.map((item) => item.staff_member_id) || []
+
+    const allStaffIds = [
+      job.assigned_staff_id || "",
+      ...linkedStaff,
+    ].filter(Boolean)
+
+    return Array.from(new Set(allStaffIds))
+  }
+
+  const getJobStaffNames = (job: Job) => {
+    const staffIds = getJobStaffIds(job)
+
+    if (staffIds.length === 0) return "Unassigned"
+
+    return staffIds.map((id) => getStaffName(id)).join(", ")
+  }
+
+  const getJobsForDate = (date: string) => {
+    return jobs
+      .filter((job) => job.scheduled_date === date)
+      .sort((a, b) => {
+        const staffA = getStaffName(a.assigned_staff_id)
+        const staffB = getStaffName(b.assigned_staff_id)
+
+        if (staffA !== staffB) return staffA.localeCompare(staffB)
+
+        const timeA = a.planned_start_time || "99:99"
+        const timeB = b.planned_start_time || "99:99"
+
+        if (timeA !== timeB) return timeA.localeCompare(timeB)
+
+        return (a.job_order || 999) - (b.job_order || 999)
+      })
   }
 
   const getStaffColourClasses = (staffId: string | null) => {
@@ -230,9 +256,11 @@ export function AdminScheduleClient({
   ) => {
     setSelectedTemplate(template)
 
-    setAssignedStaffId(
+    const leadStaffId =
       template?.default_staff_id || property.default_staff_id || ""
-    )
+
+    setAssignedStaffId(leadStaffId)
+    setSelectedStaffIds(leadStaffId ? [leadStaffId] : [])
 
     setPlannedDuration(
       template?.default_duration_hours
@@ -281,12 +309,15 @@ export function AdminScheduleClient({
       return
     }
 
+    const existingStaffIds = getJobStaffIds(job)
+
     setSelectedJob(job)
     setSelectedProperty(property)
     setSelectedTemplate(null)
 
     setJobDate(job.scheduled_date)
-    setAssignedStaffId(job.assigned_staff_id || "")
+    setAssignedStaffId(job.assigned_staff_id || existingStaffIds[0] || "")
+    setSelectedStaffIds(existingStaffIds)
     setJobOrder(job.job_order ? job.job_order.toString() : "")
 
     setPlannedDuration(
@@ -322,6 +353,31 @@ export function AdminScheduleClient({
     applyTemplateDefaults(template, selectedProperty)
   }
 
+  const handleLeadStaffChange = (staffId: string) => {
+    setAssignedStaffId(staffId)
+
+    if (staffId && !selectedStaffIds.includes(staffId)) {
+      setSelectedStaffIds([...selectedStaffIds, staffId])
+    }
+  }
+
+  const toggleStaffSelection = (staffId: string) => {
+    if (selectedStaffIds.includes(staffId)) {
+      if (staffId === assignedStaffId) {
+        setAssignedStaffId("")
+      }
+
+      setSelectedStaffIds(selectedStaffIds.filter((id) => id !== staffId))
+      return
+    }
+
+    setSelectedStaffIds([...selectedStaffIds, staffId])
+
+    if (!assignedStaffId) {
+      setAssignedStaffId(staffId)
+    }
+  }
+
   const handleDateChange = (date: string) => {
     setJobDate(date)
 
@@ -330,18 +386,51 @@ export function AdminScheduleClient({
     }
   }
 
+  const syncScheduledJobStaff = async (
+    scheduledJobId: string,
+    staffIds: string[]
+  ) => {
+    const uniqueStaffIds = Array.from(new Set(staffIds.filter(Boolean)))
+
+    const { error: deleteError } = await supabase
+      .from("scheduled_job_staff")
+      .delete()
+      .eq("scheduled_job_id", scheduledJobId)
+
+    if (deleteError) return deleteError
+
+    if (uniqueStaffIds.length === 0) return null
+
+    const rows = uniqueStaffIds.map((staffId) => ({
+      scheduled_job_id: scheduledJobId,
+      staff_member_id: staffId,
+    }))
+
+    const { error: insertError } = await supabase
+      .from("scheduled_job_staff")
+      .insert(rows)
+
+    return insertError
+  }
+
   const handleCreateJob = async () => {
     if (!selectedProperty) return
 
     setSaving(true)
     setError(null)
 
+    const finalStaffIds = Array.from(
+      new Set([assignedStaffId, ...selectedStaffIds].filter(Boolean))
+    )
+
+    const leadStaffId = assignedStaffId || finalStaffIds[0] || null
+
     const jobPayload = {
       property_id: selectedProperty.id,
       scheduled_date: jobDate,
       status: selectedJob?.status || "scheduled",
       job_order: parseInt(jobOrder) || getNextJobOrder(jobDate),
-      assigned_staff_id: assignedStaffId || null,
+      assigned_staff_id: leadStaffId,
       planned_duration_hours: plannedDuration
         ? parseFloat(plannedDuration)
         : null,
@@ -352,15 +441,42 @@ export function AdminScheduleClient({
       quoted_materials: quotedMaterials || null,
     }
 
-    const { error } = selectedJob
-      ? await supabase
-          .from("scheduled_jobs")
-          .update(jobPayload)
-          .eq("id", selectedJob.id)
-      : await supabase.from("scheduled_jobs").insert(jobPayload)
+    let savedJobId = selectedJob?.id || ""
 
-    if (error) {
-      setError(error.message)
+    if (selectedJob) {
+      const { error } = await supabase
+        .from("scheduled_jobs")
+        .update(jobPayload)
+        .eq("id", selectedJob.id)
+
+      if (error) {
+        setError(error.message)
+        setSaving(false)
+        return
+      }
+    } else {
+      const { data, error } = await supabase
+        .from("scheduled_jobs")
+        .insert(jobPayload)
+        .select("id")
+        .single()
+
+      if (error) {
+        setError(error.message)
+        setSaving(false)
+        return
+      }
+
+      savedJobId = data.id
+    }
+
+    const staffSyncError = await syncScheduledJobStaff(
+      savedJobId,
+      finalStaffIds
+    )
+
+    if (staffSyncError) {
+      setError(staffSyncError.message)
       setSaving(false)
       return
     }
@@ -370,6 +486,8 @@ export function AdminScheduleClient({
     setSelectedProperty(null)
     setSelectedTemplate(null)
     setSelectedJob(null)
+    setAssignedStaffId("")
+    setSelectedStaffIds([])
     setQuotedScope("")
     setQuotedMaterials("")
 
@@ -406,12 +524,12 @@ export function AdminScheduleClient({
   }
 
   const JobCard = ({
-  job,
-  displayNumber,
-}: {
-  job: Job
-  displayNumber: number
-}) => (
+    job,
+    displayNumber,
+  }: {
+    job: Job
+    displayNumber: number
+  }) => (
     <div
       className={`rounded-lg border p-3 shadow-sm ${getStaffColourClasses(
         job.assigned_staff_id
@@ -419,16 +537,14 @@ export function AdminScheduleClient({
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="font-semibold">
-  Job {displayNumber}
-</div>
+          <div className="font-semibold">Job {displayNumber}</div>
 
           <div className="truncate text-sm text-gray-500">
             {job.properties?.address_line_1 || "No address"}
           </div>
 
           <div className="mt-1 text-sm font-medium">
-            Staff: {getStaffName(job.assigned_staff_id)}
+            Staff: {getJobStaffNames(job)}
           </div>
 
           <div className="mt-1 flex flex-wrap gap-2 text-xs text-gray-500">
@@ -508,24 +624,28 @@ export function AdminScheduleClient({
               <div className="space-y-2">
                 {dayJobs.length > 0 ? (
                   dayJobs.map((job) => {
-  const jobsForSameStaffBeforeThisJob = dayJobs.filter((otherJob) => {
-    const sameStaff = otherJob.assigned_staff_id === job.assigned_staff_id
+                    const jobsForSameStaffBeforeThisJob = dayJobs.filter(
+                      (otherJob) => {
+                        const sameStaff =
+                          otherJob.assigned_staff_id === job.assigned_staff_id
 
-    const comesBefore =
-      dayJobs.findIndex((item) => item.id === otherJob.id) <=
-      dayJobs.findIndex((item) => item.id === job.id)
+                        const comesBefore =
+                          dayJobs.findIndex(
+                            (item) => item.id === otherJob.id
+                          ) <= dayJobs.findIndex((item) => item.id === job.id)
 
-    return sameStaff && comesBefore
-  })
+                        return sameStaff && comesBefore
+                      }
+                    )
 
-  return (
-    <JobCard
-      key={job.id}
-      job={job}
-      displayNumber={jobsForSameStaffBeforeThisJob.length}
-    />
-  )
-})
+                    return (
+                      <JobCard
+                        key={job.id}
+                        job={job}
+                        displayNumber={jobsForSameStaffBeforeThisJob.length}
+                      />
+                    )
+                  })
                 ) : (
                   <p className="rounded-lg border border-dashed bg-white p-3 text-sm text-gray-400">
                     No jobs
@@ -693,12 +813,14 @@ export function AdminScheduleClient({
               </div>
 
               <div>
-                <label className="mb-1 block text-sm font-medium">Staff</label>
+                <label className="mb-1 block text-sm font-medium">
+                  Lead Worker
+                </label>
 
                 <select
                   className="h-11 w-full rounded-md border px-3"
                   value={assignedStaffId}
-                  onChange={(e) => setAssignedStaffId(e.target.value)}
+                  onChange={(e) => handleLeadStaffChange(e.target.value)}
                 >
                   <option value="">Unassigned</option>
 
@@ -708,6 +830,34 @@ export function AdminScheduleClient({
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium">
+                  Assigned Staff
+                </label>
+
+                <div className="grid grid-cols-2 gap-2 rounded-md border p-3">
+                  {staff.map((member) => (
+                    <label
+                      key={member.id}
+                      className="flex items-center gap-2 text-sm"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedStaffIds.includes(member.id)}
+                        onChange={() => toggleStaffSelection(member.id)}
+                      />
+
+                      {member.name}
+                    </label>
+                  ))}
+                </div>
+
+                <p className="mt-1 text-xs text-gray-500">
+                  Lead worker is used for sorting. All selected staff will see
+                  this job once staff jobs page is updated.
+                </p>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -793,6 +943,8 @@ export function AdminScheduleClient({
                     setSelectedJob(null)
                     setSelectedProperty(null)
                     setSelectedTemplate(null)
+                    setAssignedStaffId("")
+                    setSelectedStaffIds([])
                     setQuotedScope("")
                     setQuotedMaterials("")
                   }}

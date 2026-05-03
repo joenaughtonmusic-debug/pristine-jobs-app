@@ -69,23 +69,34 @@ export default async function JobsPage() {
     )
   }
 
-  const { data: jobs } = await supabase
-    .from("scheduled_jobs")
-    .select(`
-      *,
-      properties (*),
-      visits (
-        property_id,
-        visit_date,
-        next_visit_notes
-      )
-    `)
-    .gte("scheduled_date", weekStart)
-    .lte("scheduled_date", weekEnd)
-    .eq("assigned_staff_id", staffMember.id)
-    .not("status", "eq", "cancelled")
-    .order("scheduled_date", { ascending: true })
-    .order("job_order", { ascending: true })
+  const { data: linkedJobRows } = await supabase
+  .from("scheduled_job_staff")
+  .select("scheduled_job_id")
+  .eq("staff_member_id", staffMember.id)
+
+const linkedJobIds =
+  linkedJobRows?.map((row) => row.scheduled_job_id) || []
+
+const { data: jobs } = await supabase
+  .from("scheduled_jobs")
+  .select(`
+    *,
+    properties (*),
+    visits (
+      property_id,
+      visit_date,
+      next_visit_notes
+    ),
+    scheduled_job_staff (
+      staff_member_id
+    )
+  `)
+  .gte("scheduled_date", weekStart)
+  .lte("scheduled_date", weekEnd)
+  .in("id", linkedJobIds.length > 0 ? linkedJobIds : ["00000000-0000-0000-0000-000000000000"])
+  .not("status", "eq", "cancelled")
+  .order("scheduled_date", { ascending: true })
+  .order("job_order", { ascending: true })
 
   const { data: timesheets } = await supabase
     .from("staff_daily_timesheets")

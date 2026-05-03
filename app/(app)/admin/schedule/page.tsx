@@ -33,20 +33,28 @@ export default async function AdminSchedulePage() {
   const endDate = toDateString(endOfNextWeek)
 
   const { data: jobs } = await supabase
-    .from("scheduled_jobs")
-    .select(`
-      *,
-      properties (
+  .from("scheduled_jobs")
+  .select(`
+    *,
+    properties (
+      id,
+      client_name,
+      address_line_1,
+      suburb
+    ),
+    scheduled_job_staff (
+      id,
+      staff_member_id,
+      staff_members (
         id,
-        client_name,
-        address_line_1,
-        suburb
+        name
       )
-    `)
-    .gte("scheduled_date", startDate)
-    .lte("scheduled_date", endDate)
-    .order("scheduled_date", { ascending: true })
-    .order("job_order", { ascending: true })
+    )
+  `)
+  .gte("scheduled_date", startDate)
+  .lte("scheduled_date", endDate)
+  .order("scheduled_date", { ascending: true })
+  .order("job_order", { ascending: true })
 
   const { data: properties } = await supabase
     .from("properties")

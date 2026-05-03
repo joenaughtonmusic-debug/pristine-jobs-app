@@ -81,7 +81,7 @@ export function PropertiesList({ properties: initialProperties }: PropertiesList
                     </div>
                     <div className="flex items-center gap-1.5 mt-1 text-muted-foreground">
                       <MapPin className="w-4 h-4 shrink-0" />
-                      <span className="text-sm truncate">{property.address}</span>
+                      <span className="text-sm truncate">{property.address_line_1}</span>
                     </div>
                   </div>
                   <ChevronRight className="w-5 h-5 text-muted-foreground shrink-0 mt-1" />

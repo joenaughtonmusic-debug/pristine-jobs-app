@@ -70,6 +70,10 @@ const [miscProductNote, setMiscProductNote] = useState("")
     { id: string; name: string }[]
   >([])
 
+const [assignedJobStaff, setAssignedJobStaff] = useState<
+  { staff_member_id: string; staff_name: string }[]
+>([])
+
   const timeOptions = (() => {
     const times: string[] = []
 
@@ -103,6 +107,38 @@ const [miscProductNote, setMiscProductNote] = useState("")
       }
 
       setStaffOptions(data || [])
+      const { data: assignedRows, error: assignedError } = await supabase
+  .from("scheduled_job_staff")
+  .select(`
+    staff_member_id,
+    staff_members (
+      id,
+      name
+    )
+  `)
+  .eq("scheduled_job_id", jobId)
+
+if (assignedError) {
+  console.error("Error loading assigned job staff:", assignedError)
+} else {
+  const assigned =
+    assignedRows?.map((row: any) => ({
+      staff_member_id: row.staff_member_id,
+      staff_name: row.staff_members?.name || "",
+    })) || []
+
+  setAssignedJobStaff(assigned)
+
+  const helperRows = assigned
+    .filter((row) => row.staff_member_id !== assignedStaffId)
+    .map((row) => ({
+      staff_member_id: row.staff_member_id,
+      staff_name: row.staff_name,
+      hours: "",
+    }))
+
+  setHelpers(helperRows)
+}
       const { data: extraItems, error: extraError } = await supabase
   .from("extra_charge_items")
   .select(`
@@ -123,7 +159,7 @@ if (extraError) {
     }
 
     loadStaff()
-  }, [])
+  }, [jobId, assignedStaffId])
 
   useEffect(() => {
     if (assignedStaffId) {
@@ -191,6 +227,19 @@ if (extraError) {
     }
 
     const visitDate = todayString()
+
+const { data: existingVisit } = await supabase
+  .from("visits")
+  .select("id")
+  .eq("scheduled_job_id", jobId)
+  .limit(1)
+  .maybeSingle()
+
+if (existingVisit) {
+  setError("This job has already been completed.")
+  setLoading(false)
+  return
+}
 
     const { data: createdVisit, error: visitError } = await supabase
       .from("visits")
