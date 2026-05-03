@@ -118,6 +118,7 @@ export function AdminScheduleClient({
   const [selectedSuburb, setSelectedSuburb] = useState("All")
   const [selectedCategory, setSelectedCategory] = useState("All")
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null)
+  const [propertySearch, setPropertySearch] = useState("")
   const [selectedTemplate, setSelectedTemplate] =
     useState<ServiceTemplate | null>(null)
 
@@ -162,17 +163,32 @@ export function AdminScheduleClient({
   ]
 
   const filteredProperties = useMemo(() => {
-    return properties.filter((property) => {
-      const suburbMatch =
-        selectedSuburb === "All" || property.suburb === selectedSuburb
+  const search = propertySearch.trim().toLowerCase()
 
-      const categoryMatch =
-        selectedCategory === "All" ||
-        property.property_category === selectedCategory
+  return properties.filter((property) => {
+    const suburbMatch =
+      selectedSuburb === "All" || property.suburb === selectedSuburb
 
-      return suburbMatch && categoryMatch
-    })
-  }, [properties, selectedSuburb, selectedCategory])
+    const categoryMatch =
+      selectedCategory === "All" ||
+      property.property_category === selectedCategory
+
+    const searchableText = [
+      property.property_code,
+      property.client_name,
+      property.address_line_1,
+      property.suburb,
+      property.property_category,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase()
+
+    const searchMatch = !search || searchableText.includes(search)
+
+    return suburbMatch && categoryMatch && searchMatch
+  })
+}, [properties, selectedSuburb, selectedCategory, propertySearch])
 
   const getTemplatesForProperty = (propertyId: string) => {
     return serviceTemplates.filter(
@@ -694,6 +710,14 @@ export function AdminScheduleClient({
 
         {quickAddOpen && (
           <div className="mt-4">
+            <label className="mb-1 block text-sm font-medium">Search Property</label>
+
+<input
+  className="mb-4 h-11 w-full rounded-md border px-3"
+  value={propertySearch}
+  onChange={(e) => setPropertySearch(e.target.value)}
+  placeholder="Search by code, client, address, suburb..."
+/>
             <label className="mb-1 block text-sm font-medium">Suburb</label>
 
             <select
