@@ -31,6 +31,30 @@ function formatDayLabel(dateString: string) {
   })
 }
 
+function isPastDay(day: string) {
+  const [year, month, date] = day.split("-").map(Number)
+
+  const d = new Date(year, month - 1, date)
+  d.setHours(0, 0, 0, 0)
+
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  return d < today
+}
+
+function isExpectedWorkDay(staffName: string, day: string) {
+  const [year, month, date] = day.split("-").map(Number)
+  const dayNumber = new Date(year, month - 1, date).getDay()
+  const name = staffName.trim().toLowerCase()
+
+  if (name.includes("charles")) {
+    return [2, 3, 4, 5].includes(dayNumber)
+  }
+
+  return [1, 2, 3, 4, 5].includes(dayNumber)
+}
+
 export default async function JobsPage() {
   const supabase = await createClient()
 
@@ -70,33 +94,38 @@ export default async function JobsPage() {
   }
 
   const { data: linkedJobRows } = await supabase
-  .from("scheduled_job_staff")
-  .select("scheduled_job_id")
-  .eq("staff_member_id", staffMember.id)
+    .from("scheduled_job_staff")
+    .select("scheduled_job_id")
+    .eq("staff_member_id", staffMember.id)
 
-const linkedJobIds =
-  linkedJobRows?.map((row) => row.scheduled_job_id) || []
+  const linkedJobIds =
+    linkedJobRows?.map((row) => row.scheduled_job_id) || []
 
-const { data: jobs } = await supabase
-  .from("scheduled_jobs")
-  .select(`
-    *,
-    properties (*),
-    visits (
-      property_id,
-      visit_date,
-      next_visit_notes
-    ),
-    scheduled_job_staff (
-      staff_member_id
+  const { data: jobs } = await supabase
+    .from("scheduled_jobs")
+    .select(`
+      *,
+      properties (*),
+      visits (
+        property_id,
+        visit_date,
+        next_visit_notes
+      ),
+      scheduled_job_staff (
+        staff_member_id
+      )
+    `)
+    .gte("scheduled_date", weekStart)
+    .lte("scheduled_date", weekEnd)
+    .in(
+      "id",
+      linkedJobIds.length > 0
+        ? linkedJobIds
+        : ["00000000-0000-0000-0000-000000000000"]
     )
-  `)
-  .gte("scheduled_date", weekStart)
-  .lte("scheduled_date", weekEnd)
-  .in("id", linkedJobIds.length > 0 ? linkedJobIds : ["00000000-0000-0000-0000-000000000000"])
-  .not("status", "eq", "cancelled")
-  .order("scheduled_date", { ascending: true })
-  .order("job_order", { ascending: true })
+    .not("status", "eq", "cancelled")
+    .order("scheduled_date", { ascending: true })
+    .order("job_order", { ascending: true })
 
   const { data: timesheets } = await supabase
     .from("staff_daily_timesheets")
@@ -117,7 +146,13 @@ const { data: jobs } = await supabase
     }, 0) || 0
 
   const missingTimesheetCount = weekDays.filter((day) => {
-    return day < todayStr && !timesheets?.some((t) => t.work_date === day)
+    const expectedWorkDay = isExpectedWorkDay(staffMember.name, day)
+
+    return (
+      expectedWorkDay &&
+      isPastDay(day) &&
+      !timesheets?.some((t) => t.work_date === day)
+    )
   }).length
 
   return (
@@ -152,10 +187,11 @@ const { data: jobs } = await supabase
           )
 
           const isToday = day === todayStr
-
           const timesheet = timesheets?.find((t) => t.work_date === day)
 
-          const previousDayMissing = day < todayStr && !timesheet
+          const expectedWorkDay = isExpectedWorkDay(staffMember.name, day)
+          const previousDayMissing =
+            expectedWorkDay && isPastDay(day) && !timesheet
 
           return (
             <section
