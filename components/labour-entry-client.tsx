@@ -62,6 +62,21 @@ function toLocalDateString(date: Date) {
   return `${year}-${month}-${day}`
 }
 
+function isExpectedWorkDay(staffName: string, day: string) {
+  const date = parseLocalDate(day)
+  const dayNumber = date.getDay()
+
+  if (staffName === "Charles") {
+    return [2, 3, 4, 5].includes(dayNumber)
+  }
+
+  if (staffName === "Fletch" || staffName === "Fletcher") {
+    return [2, 3, 4].includes(dayNumber)
+  }
+
+  return [1, 2, 3, 4, 5].includes(dayNumber)
+}
+
 function addDays(dateString: string, days: number) {
   const date = parseLocalDate(dateString)
   date.setDate(date.getDate() + days)
@@ -92,13 +107,14 @@ export function LabourEntryClient({
 
   const [selectedJobByDay, setSelectedJobByDay] = useState<Record<string, string>>({})
   const [hoursByDay, setHoursByDay] = useState<Record<string, string>>({})
-  const [deductLunchByDay, setDeductLunchByDay] = useState<Record<string, boolean>>({})
   const [notesByDay, setNotesByDay] = useState<Record<string, string>>({})
   const [billableByDay, setBillableByDay] = useState<Record<string, boolean>>({})
 
   const [totalHoursByDay, setTotalHoursByDay] = useState<Record<string, string>>({})
+  const [deductLunchFromTotalByDay, setDeductLunchFromTotalByDay] = useState<Record<string, boolean>>({})
   const [timesheetNotesByDay, setTimesheetNotesByDay] = useState<Record<string, string>>({})
   const [editingTimesheetByDay, setEditingTimesheetByDay] = useState<Record<string, boolean>>({})
+  const [manualWorkDayByDay, setManualWorkDayByDay] = useState<Record<string, boolean>>({})
 
   const [savingDay, setSavingDay] = useState<string | null>(null)
   const [messageByDay, setMessageByDay] = useState<Record<string, string>>({})
@@ -112,9 +128,7 @@ export function LabourEntryClient({
   const getCalculatedHours = (day: string) => {
     const parsed = parseFloat(hoursByDay[day] || "")
     if (isNaN(parsed) || parsed <= 0) return ""
-    return deductLunchByDay[day]
-      ? Math.max(parsed - 0.5, 0).toFixed(2)
-      : parsed.toFixed(2)
+    return parsed.toFixed(2)
   }
 
   const getEntriesForDay = (day: string) => {
@@ -210,9 +224,12 @@ export function LabourEntryClient({
     setMessageByDay((prev) => ({ ...prev, [day]: "" }))
     setErrorByDay((prev) => ({ ...prev, [day]: "" }))
 
-    const totalHours = parseFloat(totalHoursByDay[day] || "0")
+    const enteredTotalHours = parseFloat(totalHoursByDay[day] || "0")
+    const totalHours = deductLunchFromTotalByDay[day]
+      ? Math.max(enteredTotalHours - 0.5, 0)
+      : enteredTotalHours
 
-    if (isNaN(totalHours) || totalHours <= 0) {
+    if (isNaN(enteredTotalHours) || enteredTotalHours <= 0 || totalHours <= 0) {
       setErrorByDay((prev) => ({
         ...prev,
         [day]: "Enter valid total hours for the day.",
@@ -253,6 +270,7 @@ export function LabourEntryClient({
     }))
 
     setTotalHoursByDay((prev) => ({ ...prev, [day]: "" }))
+    setDeductLunchFromTotalByDay((prev) => ({ ...prev, [day]: false }))
     setTimesheetNotesByDay((prev) => ({ ...prev, [day]: "" }))
     setEditingTimesheetByDay((prev) => ({ ...prev, [day]: false }))
     setSavingDay(null)
@@ -330,7 +348,15 @@ export function LabourEntryClient({
           const dayStatus = timesheet?.day_status
           const isLeaveDay =
             dayStatus === "sick_leave" || dayStatus === "public_holiday"
-          const isMissingHours = !timesheet
+
+          const defaultExpectedWorkDay = isExpectedWorkDay(staffMember.name, day)
+          const manuallyEnabledWorkDay =
+            manualWorkDayByDay[day] || !!timesheet || entries.length > 0
+
+          const expectedWorkDay =
+            defaultExpectedWorkDay || manuallyEnabledWorkDay
+
+          const isMissingHours = expectedWorkDay && !timesheet
           const isEditingTimesheet = editingTimesheetByDay[day] || !timesheet
 
           return (
@@ -369,8 +395,26 @@ export function LabourEntryClient({
                         ? "Sick leave"
                         : dayStatus === "public_holiday"
                           ? "Public holiday"
-                          : "Missing staff total hours"}
+                          : expectedWorkDay
+                            ? "Missing staff total hours"
+                            : "Not scheduled work day"}
                     </p>
+                  )}
+
+                  {!defaultExpectedWorkDay && !timesheet && entries.length === 0 && (
+                    <label className="mt-2 flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={manualWorkDayByDay[day] || false}
+                        onChange={(e) =>
+                          setManualWorkDayByDay((prev) => ({
+                            ...prev,
+                            [day]: e.target.checked,
+                          }))
+                        }
+                      />
+                      Worked this day
+                    </label>
                   )}
                 </div>
 
@@ -379,285 +423,294 @@ export function LabourEntryClient({
                 </p>
               </div>
 
-              {entries.length > 0 && (
-                <div className="mb-4 space-y-2">
-                  {entries.map((entry) => (
-                    <div
-                      key={entry.id}
-                      className="rounded-lg border bg-white p-3 text-sm"
-                    >
-                      <p className="font-medium">
-                        {entry.job_code} — {entry.job_name}
-                      </p>
-                      <p className="text-muted-foreground">
-                        {entry.hours_worked}h{" "}
-                        {entry.billable ? "billable" : "non-billable"}
-                      </p>
-                      {entry.notes && (
-                        <p className="mt-1 text-muted-foreground">
-                          {entry.notes}
-                        </p>
-                      )}
+              {(expectedWorkDay || timesheet || entries.length > 0) && (
+                <>
+                  {entries.length > 0 && (
+                    <div className="mb-4 space-y-2">
+                      {entries.map((entry) => (
+                        <div
+                          key={entry.id}
+                          className="rounded-lg border bg-white p-3 text-sm"
+                        >
+                          <p className="font-medium">
+                            {entry.job_code} — {entry.job_name}
+                          </p>
+                          <p className="text-muted-foreground">
+                            {entry.hours_worked}h{" "}
+                            {entry.billable ? "billable" : "non-billable"}
+                          </p>
+                          {entry.notes && (
+                            <p className="mt-1 text-muted-foreground">
+                              {entry.notes}
+                            </p>
+                          )}
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              )}
+                  )}
 
-              <div className="space-y-3 rounded-lg border bg-white p-3">
-                <div>
-                  <label className="mb-1 block text-sm font-medium">
-                    Landscaping Job
-                  </label>
-                  <select
-                    className="h-11 w-full rounded-md border px-3"
-                    value={selectedJobByDay[day] || ""}
-                    onChange={(e) =>
-                      setSelectedJobByDay((prev) => ({
-                        ...prev,
-                        [day]: e.target.value,
-                      }))
-                    }
-                  >
-                    <option value="">Select job</option>
-                    {landscapingJobs.map((job) => (
-                      <option key={job.id} value={job.id}>
-                        {job.job_code} — {job.job_name}
-                      </option>
-                    ))}
-                  </select>
-
-                  <button
-                    type="button"
-                    onClick={() => copyJobToRemainingDays(day)}
-                    className="mt-2 text-sm font-medium text-green-700 hover:underline"
-                  >
-                    Use this job for remaining days
-                  </button>
-                </div>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium">
-                    Job Hours Worked
-                  </label>
-                  <input
-                    type="number"
-                    step="0.25"
-                    min="0.25"
-                    className="h-11 w-full rounded-md border px-3"
-                    placeholder="e.g. 7.5"
-                    value={hoursByDay[day] || ""}
-                    onChange={(e) =>
-                      setHoursByDay((prev) => ({
-                        ...prev,
-                        [day]: e.target.value,
-                      }))
-                    }
-                  />
-                </div>
-
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={deductLunchByDay[day] || false}
-                    onChange={(e) =>
-                      setDeductLunchByDay((prev) => ({
-                        ...prev,
-                        [day]: e.target.checked,
-                      }))
-                    }
-                  />
-                  Deduct lunch break (-0.5h)
-                </label>
-
-                <p className="text-sm text-muted-foreground">
-                  Final job hours: {calculatedHours || "0"}h
-                </p>
-
-                <div>
-                  <label className="mb-1 block text-sm font-medium">
-                    Job Notes
-                  </label>
-                  <textarea
-                    className="min-h-20 w-full rounded-md border px-3 py-2"
-                    placeholder="Optional job notes..."
-                    value={notesByDay[day] || ""}
-                    onChange={(e) =>
-                      setNotesByDay((prev) => ({
-                        ...prev,
-                        [day]: e.target.value,
-                      }))
-                    }
-                  />
-                </div>
-
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={billableByDay[day] ?? true}
-                    onChange={(e) =>
-                      setBillableByDay((prev) => ({
-                        ...prev,
-                        [day]: e.target.checked,
-                      }))
-                    }
-                  />
-                  Billable
-                </label>
-
-                <button
-                  type="button"
-                  onClick={() => handleSaveDay(day)}
-                  disabled={savingDay === day}
-                  className="h-11 w-full rounded-md bg-green-600 font-medium text-white"
-                >
-                  {savingDay === day ? "Saving..." : "Save Job Labour"}
-                </button>
-
-                <div className="mt-4 rounded-lg border bg-gray-50 p-3">
-                  <div className="mb-2 flex items-center justify-between">
-                    <p className="text-sm font-medium">
-                      Staff Total Hours for Day
-                    </p>
-
-                    {!isEditingTimesheet && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setEditingTimesheetByDay((prev) => ({
+                  <div className="space-y-3 rounded-lg border bg-white p-3">
+                    <div>
+                      <label className="mb-1 block text-sm font-medium">
+                        Landscaping Job
+                      </label>
+                      <select
+                        className="h-11 w-full rounded-md border px-3"
+                        value={selectedJobByDay[day] || ""}
+                        onChange={(e) =>
+                          setSelectedJobByDay((prev) => ({
                             ...prev,
-                            [day]: true,
+                            [day]: e.target.value,
                           }))
                         }
-                        className="text-sm font-medium text-green-700 hover:underline"
                       >
-                        Edit
+                        <option value="">Select job</option>
+                        {landscapingJobs.map((job) => (
+                          <option key={job.id} value={job.id}>
+                            {job.job_code} — {job.job_name}
+                          </option>
+                        ))}
+                      </select>
+
+                      <button
+                        type="button"
+                        onClick={() => copyJobToRemainingDays(day)}
+                        className="mt-2 text-sm font-medium text-green-700 hover:underline"
+                      >
+                        Use this job for remaining days
                       </button>
-                    )}
-                  </div>
-
-                  {!isEditingTimesheet ? (
-                    <div className="rounded-md bg-white p-3 text-sm">
-                      {dayStatus === "sick_leave" ? (
-                        <p className="font-medium text-blue-700">Sick leave</p>
-                      ) : dayStatus === "public_holiday" ? (
-                        <p className="font-medium text-blue-700">
-                          Public holiday
-                        </p>
-                      ) : (
-                        <p className="font-medium text-green-700">
-                          {totalHours}h total worked
-                        </p>
-                      )}
-
-                      {timesheet?.status_notes && (
-                        <p className="mt-1 text-muted-foreground">
-                          {timesheet.status_notes}
-                        </p>
-                      )}
                     </div>
-                  ) : (
-                    <>
-                      <p className="mb-2 text-xs text-muted-foreground">
-                        Enter total hours worked for payroll/timesheet. This is
-                        separate from billable job hours.
-                      </p>
 
+                    <div>
+                      <label className="mb-1 block text-sm font-medium">
+                        Job Hours Worked
+                      </label>
                       <input
                         type="number"
                         step="0.25"
                         min="0.25"
-                        placeholder={totalHours > 0 ? String(totalHours) : "e.g. 8"}
-                        className="mb-2 h-10 w-full rounded-md border px-3"
-                        value={totalHoursByDay[day] || ""}
+                        className="h-11 w-full rounded-md border px-3"
+                        placeholder="e.g. 7.5"
+                        value={hoursByDay[day] || ""}
                         onChange={(e) =>
-                          setTotalHoursByDay((prev) => ({
+                          setHoursByDay((prev) => ({
                             ...prev,
                             [day]: e.target.value,
                           }))
                         }
                       />
+                    </div>
 
+                    <p className="text-sm text-muted-foreground">
+                      Final job hours: {calculatedHours || "0"}h
+                    </p>
+
+                    <div>
+                      <label className="mb-1 block text-sm font-medium">
+                        Job Notes
+                      </label>
+                      <textarea
+                        className="min-h-20 w-full rounded-md border px-3 py-2"
+                        placeholder="Optional job notes..."
+                        value={notesByDay[day] || ""}
+                        onChange={(e) =>
+                          setNotesByDay((prev) => ({
+                            ...prev,
+                            [day]: e.target.value,
+                          }))
+                        }
+                      />
+                    </div>
+
+                    <label className="flex items-center gap-2 text-sm">
                       <input
-                        type="text"
-                        placeholder={
-                          timesheet?.status_notes ||
-                          "Optional note e.g. travel, yard, loading"
-                        }
-                        className="mb-2 h-10 w-full rounded-md border px-3"
-                        value={timesheetNotesByDay[day] || ""}
+                        type="checkbox"
+                        checked={billableByDay[day] ?? true}
                         onChange={(e) =>
-                          setTimesheetNotesByDay((prev) => ({
+                          setBillableByDay((prev) => ({
                             ...prev,
-                            [day]: e.target.value,
+                            [day]: e.target.checked,
                           }))
                         }
                       />
+                      Billable
+                    </label>
 
-                      <button
-                        type="button"
-                        onClick={() => handleSaveTotalHours(day)}
-                        disabled={savingDay === day}
-                        className="h-10 w-full rounded-md bg-gray-800 text-sm font-medium text-white"
-                      >
-                        {savingDay === day
-                          ? "Saving..."
-                          : "Save Staff Total Hours"}
-                      </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSaveDay(day)}
+                      disabled={savingDay === day}
+                      className="h-11 w-full rounded-md bg-green-600 font-medium text-white"
+                    >
+                      {savingDay === day ? "Saving..." : "Save Job Labour"}
+                    </button>
 
-                      <div className="mt-3 grid grid-cols-2 gap-2">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleSaveDayStatus(day, "sick_leave")
-                          }
-                          disabled={savingDay === day}
-                          className="h-10 rounded-md border bg-white text-sm font-medium"
-                        >
-                          Sick Leave
-                        </button>
+                    <div className="mt-4 rounded-lg border bg-gray-50 p-3">
+                      <div className="mb-2 flex items-center justify-between">
+                        <p className="text-sm font-medium">
+                          Staff Total Hours for Day
+                        </p>
 
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleSaveDayStatus(day, "public_holiday")
-                          }
-                          disabled={savingDay === day}
-                          className="h-10 rounded-md border bg-white text-sm font-medium"
-                        >
-                          Public Holiday
-                        </button>
+                        {!isEditingTimesheet && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setEditingTimesheetByDay((prev) => ({
+                                ...prev,
+                                [day]: true,
+                              }))
+                            }
+                            className="text-sm font-medium text-green-700 hover:underline"
+                          >
+                            Edit
+                          </button>
+                        )}
                       </div>
 
-                      {timesheet && (
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setEditingTimesheetByDay((prev) => ({
-                              ...prev,
-                              [day]: false,
-                            }))
-                          }
-                          className="mt-2 h-9 w-full rounded-md border bg-white text-sm"
-                        >
-                          Cancel Edit
-                        </button>
+                      {!isEditingTimesheet ? (
+                        <div className="rounded-md bg-white p-3 text-sm">
+                          {dayStatus === "sick_leave" ? (
+                            <p className="font-medium text-blue-700">
+                              Sick leave · {totalHours}h
+                            </p>
+                          ) : dayStatus === "public_holiday" ? (
+                            <p className="font-medium text-blue-700">
+                              Public holiday · {totalHours}h
+                            </p>
+                          ) : (
+                            <p className="font-medium text-green-700">
+                              {totalHours}h total worked
+                            </p>
+                          )}
+
+                          {timesheet?.status_notes && (
+                            <p className="mt-1 text-muted-foreground">
+                              {timesheet.status_notes}
+                            </p>
+                          )}
+                        </div>
+                      ) : (
+                        <>
+                          <p className="mb-2 text-xs text-muted-foreground">
+                            Enter total hours worked for payroll/timesheet. Tick
+                            lunch deduction here if the entered day total
+                            includes lunch.
+                          </p>
+
+                          <input
+                            type="number"
+                            step="0.25"
+                            min="0.25"
+                            placeholder={
+                              totalHours > 0 ? String(totalHours) : "e.g. 8"
+                            }
+                            className="mb-2 h-10 w-full rounded-md border px-3"
+                            value={totalHoursByDay[day] || ""}
+                            onChange={(e) =>
+                              setTotalHoursByDay((prev) => ({
+                                ...prev,
+                                [day]: e.target.value,
+                              }))
+                            }
+                          />
+
+                          <label className="mb-2 flex items-center gap-2 text-sm">
+                            <input
+                              type="checkbox"
+                              checked={deductLunchFromTotalByDay[day] || false}
+                              onChange={(e) =>
+                                setDeductLunchFromTotalByDay((prev) => ({
+                                  ...prev,
+                                  [day]: e.target.checked,
+                                }))
+                              }
+                            />
+                            Deduct lunch break from staff total (-0.5h)
+                          </label>
+
+                          <input
+                            type="text"
+                            placeholder={
+                              timesheet?.status_notes ||
+                              "Optional note e.g. travel, yard, loading"
+                            }
+                            className="mb-2 h-10 w-full rounded-md border px-3"
+                            value={timesheetNotesByDay[day] || ""}
+                            onChange={(e) =>
+                              setTimesheetNotesByDay((prev) => ({
+                                ...prev,
+                                [day]: e.target.value,
+                              }))
+                            }
+                          />
+
+                          <button
+                            type="button"
+                            onClick={() => handleSaveTotalHours(day)}
+                            disabled={savingDay === day}
+                            className="h-10 w-full rounded-md bg-gray-800 text-sm font-medium text-white"
+                          >
+                            {savingDay === day
+                              ? "Saving..."
+                              : "Save Staff Total Hours"}
+                          </button>
+
+                          <div className="mt-3 grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleSaveDayStatus(day, "sick_leave")
+                              }
+                              disabled={savingDay === day}
+                              className="h-10 rounded-md border bg-white text-sm font-medium"
+                            >
+                              Sick Leave
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleSaveDayStatus(day, "public_holiday")
+                              }
+                              disabled={savingDay === day}
+                              className="h-10 rounded-md border bg-white text-sm font-medium"
+                            >
+                              Public Holiday
+                            </button>
+                          </div>
+
+                          {timesheet && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setEditingTimesheetByDay((prev) => ({
+                                  ...prev,
+                                  [day]: false,
+                                }))
+                              }
+                              className="mt-2 h-9 w-full rounded-md border bg-white text-sm"
+                            >
+                              Cancel Edit
+                            </button>
+                          )}
+                        </>
                       )}
-                    </>
-                  )}
-                </div>
+                    </div>
 
-                {messageByDay[day] && (
-                  <p className="text-sm font-medium text-green-700">
-                    {messageByDay[day]}
-                  </p>
-                )}
+                    {messageByDay[day] && (
+                      <p className="text-sm font-medium text-green-700">
+                        {messageByDay[day]}
+                      </p>
+                    )}
 
-                {errorByDay[day] && (
-                  <p className="text-sm font-medium text-red-700">
-                    {errorByDay[day]}
-                  </p>
-                )}
-              </div>
+                    {errorByDay[day] && (
+                      <p className="text-sm font-medium text-red-700">
+                        {errorByDay[day]}
+                      </p>
+                    )}
+                  </div>
+                </>
+              )}
             </section>
           )
         })}

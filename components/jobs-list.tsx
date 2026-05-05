@@ -3,8 +3,15 @@
 import Link from "next/link"
 import type { ScheduledJob } from "@/lib/types"
 
+type JobWithStaff = ScheduledJob & {
+  scheduled_job_staff?: {
+    id: string
+    staff_member_id: string
+  }[]
+}
+
 interface JobsListProps {
-  jobs: ScheduledJob[]
+  jobs: JobWithStaff[]
 }
 
 function calculateEndTime(
@@ -40,10 +47,21 @@ export function JobsList({ jobs }: JobsListProps) {
       {jobs.map((job) => {
         const completed = job.status === "completed"
 
-        const endTime = calculateEndTime(
-          job.planned_start_time,
-          job.planned_duration_hours
-        )
+        const crewSize =
+  Math.max(
+    (job.scheduled_job_staff?.length || 0),
+    job.assigned_staff_id ? 1 : 0,
+    1
+  )
+
+const siteDurationHours = job.planned_duration_hours
+  ? job.planned_duration_hours / crewSize
+  : null
+
+const endTime = calculateEndTime(
+  job.planned_start_time,
+  siteDurationHours
+)
 
         return (
           <Link
@@ -80,9 +98,13 @@ export function JobsList({ jobs }: JobsListProps) {
 
                     {endTime ? `–${endTime}` : ""}
 
-                    {job.planned_duration_hours
-                      ? ` · ${job.planned_duration_hours}h`
-                      : ""}
+                    {siteDurationHours
+  ? ` · ${siteDurationHours}h`
+  : ""}
+
+{crewSize > 1 && job.planned_duration_hours
+  ? ` (${job.planned_duration_hours} labour-hours, ${crewSize} staff)`
+  : ""}
                   </div>
                 )}
 

@@ -136,6 +136,19 @@ export function AdminScheduleClient({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const getCrewSize = (job: Job) => {
+  return Math.max(getJobStaffIds(job).length, 1)
+}
+
+const getSiteDurationHours = (job: Job) => {
+  const labourHours = Number(job.planned_duration_hours || 0)
+  const crewSize = getCrewSize(job)
+
+  if (!labourHours || crewSize <= 1) return labourHours
+
+  return labourHours / crewSize
+}
+
   const thisWeekDays = [0, 1, 2, 3, 4].map((day) =>
     addDays(thisWeekStart, day)
   )
@@ -261,10 +274,10 @@ export function AdminScheduleClient({
   }
 
   const getDayTotalHours = (date: string) => {
-    return getJobsForDate(date).reduce((total, job) => {
-      return total + Number(job.planned_duration_hours || 0)
-    }, 0)
-  }
+  return getJobsForDate(date).reduce((total, job) => {
+    return total + getSiteDurationHours(job)
+  }, 0)
+}
 
   const applyTemplateDefaults = (
     template: ServiceTemplate | null,
@@ -569,8 +582,13 @@ export function AdminScheduleClient({
             )}
 
             {job.planned_duration_hours && (
-              <span>{job.planned_duration_hours}h</span>
-            )}
+  <span>
+    {getSiteDurationHours(job)}h site time
+    {getCrewSize(job) > 1
+      ? ` · ${job.planned_duration_hours} labour-hours`
+      : ""}
+  </span>
+)}
 
             {job.time_limit_type === "fixed_time" && (
               <span className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-800">
