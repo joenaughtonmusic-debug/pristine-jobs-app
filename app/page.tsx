@@ -34,7 +34,26 @@ export default function LoginPage() {
       return
     }
 
-    router.push("/jobs")
+    const {
+  data: { user },
+} = await supabase.auth.getUser()
+
+if (user) {
+  const { data: staffMember } = await supabase
+    .from("staff_members")
+    .select("name")
+    .eq("auth_user_id", user.id)
+    .maybeSingle()
+
+  const staffName = staffMember?.name?.trim().toLowerCase() || ""
+
+  if (staffName.includes("fletch") || staffName.includes("fletcher")) {
+    router.push("/labour")
+    return
+  }
+}
+
+router.push("/jobs")
   }
 
   return (

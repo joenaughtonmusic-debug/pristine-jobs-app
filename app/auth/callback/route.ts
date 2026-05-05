@@ -33,7 +33,7 @@ return NextResponse.redirect(
 )
       }
 
-      return NextResponse.redirect(`${origin}/TEST-CALLBACK`)
+      return NextResponse.redirect(`${origin}/jobs`)
     }
   }
 
