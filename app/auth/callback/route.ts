@@ -22,9 +22,15 @@ export async function GET(request: NextRequest) {
           .eq('auth_user_id', user.id)
           .maybeSingle()
 
-        if (staffMember?.id === '24103117-08be-4d0d-8f5e-027ff0e5734d') {
-  return NextResponse.redirect(`${origin}/labour`)
+        if (staffMember?.name?.toLowerCase().includes("fletch")) {
+  return NextResponse.redirect(`${origin}/labour?debug=fletcher-hit`)
 }
+
+return NextResponse.redirect(
+  `${origin}/jobs?debug=${encodeURIComponent(
+    staffMember ? `${staffMember.id}-${staffMember.name}` : "no-staff"
+  )}`
+)
       }
 
       return NextResponse.redirect(`${origin}/jobs`)
