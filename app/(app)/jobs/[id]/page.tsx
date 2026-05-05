@@ -41,11 +41,18 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
     .limit(1)
     .maybeSingle()
 
+    const { data: labourEntries } = await supabase
+  .from("job_labour_entries")
+  .select("*")
+  .eq("property_code", job.job_code)
+  .order("work_date", { ascending: false })
+
   return (
-    <JobDetail
-      job={job as ScheduledJob}
-      recentVisits={(recentVisits as Visit[]) || []}
-      latestNextVisitNote={latestVisitNote?.next_visit_notes || null}
-    />
+  <JobDetail
+    job={job as ScheduledJob}
+    recentVisits={(recentVisits as Visit[]) || []}
+    latestNextVisitNote={latestVisitNote?.next_visit_notes || null}
+    labourEntries={labourEntries || []}
+  />
   )
 }

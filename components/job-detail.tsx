@@ -28,16 +28,31 @@ import type { ScheduledJob, Visit } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { CompleteVisitDialog } from "./complete-visit-dialog"
 
+type LabourEntry = {
+  id: string
+  job_type: string
+  job_name: string | null
+  job_code: string | null
+  staff_member_id: string
+  staff_name: string
+  work_date: string
+  hours_worked: number
+  billable: boolean
+  notes: string | null
+}
+
 interface JobDetailProps {
   job: ScheduledJob
   recentVisits: Visit[]
   latestNextVisitNote: string | null
+  labourEntries: LabourEntry[]
 }
 
 export function JobDetail({
   job,
   recentVisits,
   latestNextVisitNote,
+  labourEntries,
 }: JobDetailProps) {
   const router = useRouter()
 
@@ -53,6 +68,10 @@ export function JobDetail({
     useState<string | null>(null)
 
   const property = job.properties
+
+  const totalLabourHours = labourEntries.reduce((total, entry) => {
+    return total + Number(entry.hours_worked || 0)
+  }, 0)
 
   const handleStartJob = async () => {
     setLoading(true)
@@ -206,6 +225,53 @@ export function JobDetail({
       </header>
 
       <div className="flex flex-col gap-4">
+        {labourEntries.length > 0 && (
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Clock className="h-4 w-4" />
+                Labour Entered
+              </CardTitle>
+            </CardHeader>
+
+            <CardContent className="p-4 pt-0">
+              <div className="mb-3 rounded-md bg-gray-50 p-3 text-sm">
+                <span className="font-medium">Total labour entered:</span>{" "}
+                {totalLabourHours}h
+              </div>
+
+              <div className="flex flex-col gap-3">
+                {labourEntries.map((entry) => (
+                  <div
+                    key={entry.id}
+                    className="border-b border-border pb-3 last:border-0 last:pb-0"
+                  >
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="font-medium">{entry.staff_name}</span>
+                      <span className="font-medium">{entry.hours_worked}h</span>
+                    </div>
+
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {new Date(entry.work_date).toLocaleDateString("en-NZ", {
+                        day: "numeric",
+                        month: "short",
+                        year: "numeric",
+                      })}{" "}
+                      · {entry.billable ? "Billable" : "Non-billable"}
+                    </p>
+
+                    {entry.notes && (
+                      <p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">
+                        {entry.notes}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         <Card>
           <CardContent className="p-4">
             <div className="flex items-start gap-3">
@@ -297,38 +363,38 @@ export function JobDetail({
         )}
 
         {latestNextVisitNote && (
-  <Card className="border-primary/30 bg-primary/5">
-    <CardContent className="p-4">
-      <div className="flex items-start gap-3">
-        <MessageSquare className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
+          <Card className="border-primary/30 bg-primary/5">
+            <CardContent className="p-4">
+              <div className="flex items-start gap-3">
+                <MessageSquare className="mt-0.5 h-5 w-5 shrink-0 text-primary" />
 
-        <div>
-          <p className="font-medium text-foreground">
-            Previous Visit Note (for this visit)
-          </p>
+                <div>
+                  <p className="font-medium text-foreground">
+                    Previous Visit Note (for this visit)
+                  </p>
 
-          <p className="whitespace-pre-wrap text-muted-foreground">
-            {latestNextVisitNote}
-          </p>
+                  <p className="whitespace-pre-wrap text-muted-foreground">
+                    {latestNextVisitNote}
+                  </p>
 
-          <p className="mt-2 text-xs text-muted-foreground">
-            Added{" "}
-            {new Date(
-              recentVisits.find(
-                (visit) =>
-                  visit.next_visit_notes === latestNextVisitNote
-              )?.visit_date || ""
-            ).toLocaleDateString("en-NZ", {
-              day: "numeric",
-              month: "short",
-              year: "numeric",
-            })}
-          </p>
-        </div>
-      </div>
-    </CardContent>
-  </Card>
-)}
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Added{" "}
+                    {new Date(
+                      recentVisits.find(
+                        (visit) =>
+                          visit.next_visit_notes === latestNextVisitNote
+                      )?.visit_date || ""
+                    ).toLocaleDateString("en-NZ", {
+                      day: "numeric",
+                      month: "short",
+                      year: "numeric",
+                    })}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <Card>
           <CardHeader className="pb-2">
