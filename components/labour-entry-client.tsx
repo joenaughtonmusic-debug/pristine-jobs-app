@@ -81,6 +81,18 @@ function addDays(dateString: string, days: number) {
   const date = parseLocalDate(dateString)
   date.setDate(date.getDate() + days)
   return toLocalDateString(date)
+
+  
+}
+
+function isPastWorkDay(day: string) {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  const date = parseLocalDate(day)
+  date.setHours(0, 0, 0, 0)
+
+  return date < today
 }
 
 function formatDayLabel(dateString: string) {
@@ -356,7 +368,7 @@ export function LabourEntryClient({
           const expectedWorkDay =
             defaultExpectedWorkDay || manuallyEnabledWorkDay
 
-          const isMissingHours = expectedWorkDay && !timesheet
+          const isMissingHours = expectedWorkDay && isPastWorkDay(day) && !timesheet
           const isEditingTimesheet = editingTimesheetByDay[day] || !timesheet
 
           return (
