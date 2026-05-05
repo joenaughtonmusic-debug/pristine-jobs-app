@@ -65,12 +65,15 @@ function toLocalDateString(date: Date) {
 function isExpectedWorkDay(staffName: string, day: string) {
   const date = parseLocalDate(day)
   const dayNumber = date.getDay()
+  const name = staffName.trim().toLowerCase()
 
-  if (staffName === "Charles") {
+  // Sunday = 0, Monday = 1, Tuesday = 2, Wednesday = 3, Thursday = 4, Friday = 5
+
+  if (name === "charles") {
     return [2, 3, 4, 5].includes(dayNumber)
   }
 
-  if (staffName === "Fletch" || staffName === "Fletcher") {
+  if (name === "fletch" || name === "fletcher") {
     return [2, 3, 4].includes(dayNumber)
   }
 
