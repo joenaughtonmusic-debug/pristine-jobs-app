@@ -130,6 +130,9 @@ export function LabourEntryClient({
   const [timesheetNotesByDay, setTimesheetNotesByDay] = useState<Record<string, string>>({})
   const [editingTimesheetByDay, setEditingTimesheetByDay] = useState<Record<string, boolean>>({})
   const [manualWorkDayByDay, setManualWorkDayByDay] = useState<Record<string, boolean>>({})
+const [editingEntryId, setEditingEntryId] = useState<string | null>(null)
+const [editEntryHours, setEditEntryHours] = useState("")
+const [editEntryNotes, setEditEntryNotes] = useState("")
 
   const [savingDay, setSavingDay] = useState<string | null>(null)
   const [messageByDay, setMessageByDay] = useState<Record<string, string>>({})
@@ -293,50 +296,116 @@ export function LabourEntryClient({
   }
 
   const handleSaveDayStatus = async (
-    day: string,
-    dayStatus: "sick_leave" | "public_holiday"
-  ) => {
-    setSavingDay(day)
-    setMessageByDay((prev) => ({ ...prev, [day]: "" }))
-    setErrorByDay((prev) => ({ ...prev, [day]: "" }))
+  day: string,
+  dayStatus: "sick_leave" | "public_holiday"
+) => {
+  setSavingDay(day)
+  setMessageByDay((prev) => ({ ...prev, [day]: "" }))
+  setErrorByDay((prev) => ({ ...prev, [day]: "" }))
 
-    const { error } = await supabase
-      .from("staff_daily_timesheets")
-      .upsert(
-        {
-          staff_member_id: staffMember.id,
-          staff_name: staffMember.name,
-          work_date: day,
-          hours_entered: 7.5,
-          total_hours: 7.5,
-          day_status: dayStatus,
-          status_notes:
-            dayStatus === "sick_leave" ? "Sick leave" : "Public holiday",
-          updated_at: new Date().toISOString(),
-        },
-        {
-          onConflict: "staff_member_id,work_date",
-        }
-      )
+  const { error } = await supabase
+    .from("staff_daily_timesheets")
+    .upsert(
+      {
+        staff_member_id: staffMember.id,
+        staff_name: staffMember.name,
+        work_date: day,
+        hours_entered: 7.5,
+        total_hours: 7.5,
+        day_status: dayStatus,
+        status_notes:
+          dayStatus === "sick_leave" ? "Sick leave" : "Public holiday",
+        updated_at: new Date().toISOString(),
+      },
+      {
+        onConflict: "staff_member_id,work_date",
+      }
+    )
 
-    if (error) {
-      setErrorByDay((prev) => ({ ...prev, [day]: error.message }))
-      setSavingDay(null)
-      return
-    }
-
-    setMessageByDay((prev) => ({
-      ...prev,
-      [day]:
-        dayStatus === "sick_leave"
-          ? "Sick leave saved."
-          : "Public holiday saved.",
-    }))
-
-    setEditingTimesheetByDay((prev) => ({ ...prev, [day]: false }))
+  if (error) {
+    setErrorByDay((prev) => ({ ...prev, [day]: error.message }))
     setSavingDay(null)
-    router.refresh()
+    return
   }
+
+  setMessageByDay((prev) => ({
+    ...prev,
+    [day]:
+      dayStatus === "sick_leave"
+        ? "Sick leave saved."
+        : "Public holiday saved.",
+  }))
+
+  setEditingTimesheetByDay((prev) => ({ ...prev, [day]: false }))
+  setSavingDay(null)
+  router.refresh()
+}
+
+const handleStartEditEntry = (entry: LabourEntry) => {
+  setEditingEntryId(entry.id)
+  setEditEntryHours(String(entry.hours_worked))
+  setEditEntryNotes(entry.notes || "")
+}
+
+const handleCancelEditEntry = () => {
+  setEditingEntryId(null)
+  setEditEntryHours("")
+  setEditEntryNotes("")
+}
+
+const handleUpdateEntry = async (entryId: string) => {
+  const parsedHours = parseFloat(editEntryHours)
+
+  if (isNaN(parsedHours) || parsedHours <= 0) {
+    setErrorByDay((prev) => ({
+      ...prev,
+      general: "Enter valid hours.",
+    }))
+    return
+  }
+
+  const { error } = await supabase
+    .from("job_labour_entries")
+    .update({
+      hours_worked: parsedHours,
+      notes: editEntryNotes.trim() || null,
+    })
+    .eq("id", entryId)
+    .eq("staff_member_id", staffMember.id)
+
+  if (error) {
+    setErrorByDay((prev) => ({
+      ...prev,
+      general: error.message,
+    }))
+    return
+  }
+
+  handleCancelEditEntry()
+  router.refresh()
+}
+
+const handleDeleteEntry = async (entryId: string) => {
+  const confirmed = window.confirm("Delete this entry? This cannot be undone.")
+
+  if (!confirmed) return
+
+  const { error } = await supabase
+    .from("job_labour_entries")
+    .delete()
+    .eq("id", entryId)
+    .eq("staff_member_id", staffMember.id)
+
+  if (error) {
+    setErrorByDay((prev) => ({
+      ...prev,
+      general: error.message,
+    }))
+    return
+  }
+
+  router.refresh()
+}
 
   return (
     <div className="p-4 pb-10">
@@ -443,24 +512,87 @@ export function LabourEntryClient({
                   {entries.length > 0 && (
                     <div className="mb-4 space-y-2">
                       {entries.map((entry) => (
-                        <div
-                          key={entry.id}
-                          className="rounded-lg border bg-white p-3 text-sm"
-                        >
-                          <p className="font-medium">
-                            {entry.job_code} — {entry.job_name}
-                          </p>
-                          <p className="text-muted-foreground">
-                            {entry.hours_worked}h{" "}
-                            {entry.billable ? "billable" : "non-billable"}
-                          </p>
-                          {entry.notes && (
-                            <p className="mt-1 text-muted-foreground">
-                              {entry.notes}
-                            </p>
-                          )}
-                        </div>
-                      ))}
+  <div
+    key={entry.id}
+    className="rounded-lg border bg-white p-3 text-sm"
+  >
+    {editingEntryId === entry.id ? (
+      <div className="space-y-2">
+        <p className="font-medium">
+          {entry.job_code} — {entry.job_name}
+        </p>
+
+        <input
+          type="number"
+          step="0.25"
+          min="0.25"
+          className="h-10 w-full rounded-md border px-3"
+          value={editEntryHours}
+          onChange={(e) => setEditEntryHours(e.target.value)}
+        />
+
+        <textarea
+          className="min-h-20 w-full rounded-md border px-3 py-2"
+          value={editEntryNotes}
+          onChange={(e) => setEditEntryNotes(e.target.value)}
+          placeholder="Optional notes..."
+        />
+
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => handleUpdateEntry(entry.id)}
+            className="h-10 rounded-md bg-green-600 text-sm font-medium text-white"
+          >
+            Save
+          </button>
+
+          <button
+            type="button"
+            onClick={handleCancelEditEntry}
+            className="h-10 rounded-md border bg-white text-sm font-medium"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    ) : (
+      <>
+        <p className="font-medium">
+          {entry.job_code} — {entry.job_name}
+        </p>
+
+        <p className="text-muted-foreground">
+          {entry.hours_worked}h {entry.billable ? "billable" : "non-billable"}
+        </p>
+
+        {entry.notes && (
+          <p className="mt-1 text-muted-foreground">
+            {entry.notes}
+          </p>
+        )}
+
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <button
+            type="button"
+            onClick={() => handleStartEditEntry(entry)}
+            className="h-9 rounded-md border bg-white text-sm font-medium"
+          >
+            Edit
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleDeleteEntry(entry.id)}
+            className="h-9 rounded-md border border-red-200 bg-red-50 text-sm font-medium text-red-700"
+          >
+            Delete
+          </button>
+        </div>
+      </>
+    )}
+  </div>
+))}
                     </div>
                   )}
 
