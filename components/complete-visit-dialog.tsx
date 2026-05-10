@@ -11,7 +11,6 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { Switch } from "@/components/ui/switch"
 import { FieldGroup, Field, FieldLabel } from "@/components/ui/field"
 import { Spinner } from "@/components/ui/spinner"
 
@@ -39,7 +38,7 @@ export function CompleteVisitDialog({
   const [greenwasteBags, setGreenwasteBags] = useState("0")
   const [workNotes, setWorkNotes] = useState("")
   const [nextVisitNotes, setNextVisitNotes] = useState("")
-  const [readyForInvoice, setReadyForInvoice] = useState(false)
+  const [readyForInvoice, setReadyForInvoice] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [primaryStaffId, setPrimaryStaffId] = useState(assignedStaffId || "")
 
@@ -252,8 +251,8 @@ if (existingVisit) {
         work_notes: workNotes.trim() || null,
         next_visit_notes: nextVisitNotes.trim() || null,
         completion_status: "completed",
-        ready_for_invoice: readyForInvoice,
-        invoice_status: readyForInvoice ? "ready" : "not_ready",
+        ready_for_invoice: true,
+invoice_status: "ready",
       })
       .select("id")
       .single()
@@ -646,16 +645,6 @@ if (miscProductNote.trim()) {
               <p className="text-muted-foreground">{totalHours} hours</p>
             </div>
 
-            <div className="flex items-center justify-between py-2">
-              <FieldLabel htmlFor="readyForInvoice" className="mb-0">
-                Ready for Invoice
-              </FieldLabel>
-              <Switch
-                id="readyForInvoice"
-                checked={readyForInvoice}
-                onCheckedChange={setReadyForInvoice}
-              />
-            </div>
           </FieldGroup>
 
           {error && (
