@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server"
 import { JobsList } from "@/components/jobs-list"
 import { StaffTimesheetForm } from "@/components/staff-timesheet-form"
 import type { ScheduledJob } from "@/lib/types"
+import { toZonedTime } from "date-fns-tz"
 
 function toDateString(date: Date) {
   const year = date.getFullYear()
@@ -37,7 +38,7 @@ function isPastDay(day: string) {
   const d = new Date(year, month - 1, date)
   d.setHours(0, 0, 0, 0)
 
-  const today = new Date()
+  const today = toZonedTime(new Date(), "Pacific/Auckland")
   today.setHours(0, 0, 0, 0)
 
   return d < today
@@ -58,7 +59,7 @@ function isExpectedWorkDay(staffName: string, day: string) {
 export default async function JobsPage() {
   const supabase = await createClient()
 
-  const today = new Date()
+  const today = toZonedTime(new Date(), "Pacific/Auckland")
   const todayStr = toDateString(today)
 
   const monday = getMonday(today)
