@@ -56,6 +56,8 @@ type Job = {
   planned_start_time: string | null
   billing_mode: string | null
   time_limit_type: string | null
+  invoice_method?: string | null
+  xero_quote_number?: string | null
   quoted_scope?: string | null
   quoted_materials?: string | null
   scheduled_job_staff?: ScheduledJobStaff[]
@@ -133,21 +135,23 @@ export function AdminScheduleClient({
   const [plannedStartTime, setPlannedStartTime] = useState("")
   const [quotedScope, setQuotedScope] = useState("")
   const [quotedMaterials, setQuotedMaterials] = useState("")
+  const [invoiceMethod, setInvoiceMethod] = useState("charge_up")
+  const [xeroQuoteNumber, setXeroQuoteNumber] = useState("")
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const getCrewSize = (job: Job) => {
-  return Math.max(getJobStaffIds(job).length, 1)
-}
+    return Math.max(getJobStaffIds(job).length, 1)
+  }
 
-const getSiteDurationHours = (job: Job) => {
-  const labourHours = Number(job.planned_duration_hours || 0)
-  const crewSize = getCrewSize(job)
+  const getSiteDurationHours = (job: Job) => {
+    const labourHours = Number(job.planned_duration_hours || 0)
+    const crewSize = getCrewSize(job)
 
-  if (!labourHours || crewSize <= 1) return labourHours
+    if (!labourHours || crewSize <= 1) return labourHours
 
-  return labourHours / crewSize
-}
+    return labourHours / crewSize
+  }
 
   const thisWeekDays = [0, 1, 2, 3, 4].map((day) =>
     addDays(thisWeekStart, day)
@@ -176,32 +180,32 @@ const getSiteDurationHours = (job: Job) => {
   ]
 
   const filteredProperties = useMemo(() => {
-  const search = propertySearch.trim().toLowerCase()
+    const search = propertySearch.trim().toLowerCase()
 
-  return properties.filter((property) => {
-    const suburbMatch =
-      selectedSuburb === "All" || property.suburb === selectedSuburb
+    return properties.filter((property) => {
+      const suburbMatch =
+        selectedSuburb === "All" || property.suburb === selectedSuburb
 
-    const categoryMatch =
-      selectedCategory === "All" ||
-      property.property_category === selectedCategory
+      const categoryMatch =
+        selectedCategory === "All" ||
+        property.property_category === selectedCategory
 
-    const searchableText = [
-      property.property_code,
-      property.client_name,
-      property.address_line_1,
-      property.suburb,
-      property.property_category,
-    ]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase()
+      const searchableText = [
+        property.property_code,
+        property.client_name,
+        property.address_line_1,
+        property.suburb,
+        property.property_category,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
 
-    const searchMatch = !search || searchableText.includes(search)
+      const searchMatch = !search || searchableText.includes(search)
 
-    return suburbMatch && categoryMatch && searchMatch
-  })
-}, [properties, selectedSuburb, selectedCategory, propertySearch])
+      return suburbMatch && categoryMatch && searchMatch
+    })
+  }, [properties, selectedSuburb, selectedCategory, propertySearch])
 
   const getTemplatesForProperty = (propertyId: string) => {
     return serviceTemplates.filter(
@@ -217,10 +221,9 @@ const getSiteDurationHours = (job: Job) => {
     const linkedStaff =
       job.scheduled_job_staff?.map((item) => item.staff_member_id) || []
 
-    const allStaffIds = [
-      job.assigned_staff_id || "",
-      ...linkedStaff,
-    ].filter(Boolean)
+    const allStaffIds = [job.assigned_staff_id || "", ...linkedStaff].filter(
+      Boolean
+    )
 
     return Array.from(new Set(allStaffIds))
   }
@@ -274,10 +277,10 @@ const getSiteDurationHours = (job: Job) => {
   }
 
   const getDayTotalHours = (date: string) => {
-  return getJobsForDate(date).reduce((total, job) => {
-    return total + getSiteDurationHours(job)
-  }, 0)
-}
+    return getJobsForDate(date).reduce((total, job) => {
+      return total + getSiteDurationHours(job)
+    }, 0)
+  }
 
   const applyTemplateDefaults = (
     template: ServiceTemplate | null,
@@ -323,6 +326,8 @@ const getSiteDurationHours = (job: Job) => {
     setPlannedStartTime(property.default_start_time || "")
     setQuotedScope(firstTemplate?.default_job_notes || "")
     setQuotedMaterials("")
+    setInvoiceMethod(firstTemplate?.billing_mode || "charge_up")
+    setXeroQuoteNumber("")
 
     applyTemplateDefaults(firstTemplate, property)
 
@@ -350,14 +355,14 @@ const getSiteDurationHours = (job: Job) => {
     setJobOrder(job.job_order ? job.job_order.toString() : "")
 
     setPlannedDuration(
-      job.planned_duration_hours
-        ? job.planned_duration_hours.toString()
-        : ""
+      job.planned_duration_hours ? job.planned_duration_hours.toString() : ""
     )
 
     setPlannedStartTime(job.planned_start_time || "")
     setQuotedScope(job.quoted_scope || "")
     setQuotedMaterials(job.quoted_materials || "")
+    setInvoiceMethod(job.invoice_method || "charge_up")
+    setXeroQuoteNumber(job.xero_quote_number || "")
 
     setError(null)
     setModalOpen(true)
@@ -380,6 +385,7 @@ const getSiteDurationHours = (job: Job) => {
     if (!template) return
 
     applyTemplateDefaults(template, selectedProperty)
+    setInvoiceMethod(template.billing_mode || "charge_up")
   }
 
   const handleLeadStaffChange = (staffId: string) => {
@@ -457,6 +463,8 @@ const getSiteDurationHours = (job: Job) => {
     const jobPayload = {
       property_id: selectedProperty.id,
       scheduled_date: jobDate,
+      invoice_method: invoiceMethod,
+      xero_quote_number: xeroQuoteNumber || null,
       status: selectedJob?.status || "scheduled",
       job_order: parseInt(jobOrder) || getNextJobOrder(jobDate),
       assigned_staff_id: leadStaffId,
@@ -519,6 +527,8 @@ const getSiteDurationHours = (job: Job) => {
     setSelectedStaffIds([])
     setQuotedScope("")
     setQuotedMaterials("")
+    setInvoiceMethod("charge_up")
+    setXeroQuoteNumber("")
 
     router.refresh()
   }
@@ -582,17 +592,24 @@ const getSiteDurationHours = (job: Job) => {
             )}
 
             {job.planned_duration_hours && (
-  <span>
-    {getSiteDurationHours(job)}h site time
-    {getCrewSize(job) > 1
-      ? ` · ${job.planned_duration_hours} labour-hours`
-      : ""}
-  </span>
-)}
+              <span>
+                {getSiteDurationHours(job)}h site time
+                {getCrewSize(job) > 1
+                  ? ` · ${job.planned_duration_hours} labour-hours`
+                  : ""}
+              </span>
+            )}
 
             {job.time_limit_type === "fixed_time" && (
               <span className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-800">
                 Fixed time
+              </span>
+            )}
+
+            {job.invoice_method === "quoted" && (
+              <span className="rounded-full bg-purple-100 px-2 py-0.5 font-medium text-purple-800">
+                QUOTED
+                {job.xero_quote_number ? ` · ${job.xero_quote_number}` : ""}
               </span>
             )}
 
@@ -728,14 +745,17 @@ const getSiteDurationHours = (job: Job) => {
 
         {quickAddOpen && (
           <div className="mt-4">
-            <label className="mb-1 block text-sm font-medium">Search Property</label>
+            <label className="mb-1 block text-sm font-medium">
+              Search Property
+            </label>
 
-<input
-  className="mb-4 h-11 w-full rounded-md border px-3"
-  value={propertySearch}
-  onChange={(e) => setPropertySearch(e.target.value)}
-  placeholder="Search by code, client, address, suburb..."
-/>
+            <input
+              className="mb-4 h-11 w-full rounded-md border px-3"
+              value={propertySearch}
+              onChange={(e) => setPropertySearch(e.target.value)}
+              placeholder="Search by code, client, address, suburb..."
+            />
+
             <label className="mb-1 block text-sm font-medium">Suburb</label>
 
             <select
@@ -947,6 +967,39 @@ const getSiteDurationHours = (job: Job) => {
 
               <div>
                 <label className="mb-1 block text-sm font-medium">
+                  Invoice Method
+                </label>
+
+                <select
+                  className="h-11 w-full rounded-md border px-3"
+                  value={invoiceMethod}
+                  onChange={(e) => setInvoiceMethod(e.target.value)}
+                >
+                  <option value="charge_up">Charge Up</option>
+                  <option value="subscription">Subscription</option>
+                  <option value="quoted">Quoted / Fixed Quote</option>
+                  <option value="non_billable">Non Billable</option>
+                </select>
+              </div>
+
+              {invoiceMethod === "quoted" && (
+                <div>
+                  <label className="mb-1 block text-sm font-medium">
+                    Xero Quote Number
+                  </label>
+
+                  <input
+                    type="text"
+                    className="h-11 w-full rounded-md border px-3"
+                    value={xeroQuoteNumber}
+                    onChange={(e) => setXeroQuoteNumber(e.target.value)}
+                    placeholder="e.g. QU-1024"
+                  />
+                </div>
+              )}
+
+              <div>
+                <label className="mb-1 block text-sm font-medium">
                   Quoted Scope / Job Notes
                 </label>
 
@@ -989,6 +1042,8 @@ const getSiteDurationHours = (job: Job) => {
                     setSelectedStaffIds([])
                     setQuotedScope("")
                     setQuotedMaterials("")
+                    setInvoiceMethod("charge_up")
+                    setXeroQuoteNumber("")
                   }}
                   className="h-11 flex-1 rounded-md border"
                   disabled={saving}
