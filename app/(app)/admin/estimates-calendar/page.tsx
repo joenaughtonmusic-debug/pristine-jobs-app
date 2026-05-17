@@ -72,12 +72,26 @@ export default async function EstimatesCalendarPage() {
     .order("scheduled_date", { ascending: true })
     .order("planned_start_time", { ascending: true })
 
+    const { data: blocks } = await supabase
+    .from("estimate_calendar_blocks")
+    .select("*")
+    .order("block_date", { ascending: true })
+    .order("start_time", { ascending: true })
+
+  const { data: enquiries } = await supabase
+    .from("admin_enquiries")
+    .select("*")
+    .in("status", ["new", "needs_scheduling"])
+    .order("created_at", { ascending: false })
+
   return (
     <AdminEstimatesCalendar
       thisWeekStart={startDate}
       nextWeekStart={toDateString(nextWeekMonday)}
       properties={properties || []}
       estimates={estimates || []}
+      blocks={blocks || []}
+      enquiries={enquiries || []}
       joeStaffId={joeStaff?.id || null}
     />
   )

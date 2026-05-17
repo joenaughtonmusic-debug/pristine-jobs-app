@@ -1,6 +1,8 @@
 "use client"
 
 import { useMemo, useState } from "react"
+import { useRouter } from "next/navigation"
+import { createClient } from "@/lib/supabase/client"
 import { NewPropertyModal } from "@/components/new-property-modal"
 
 type Property = {
@@ -13,40 +15,195 @@ type Property = {
   is_active: boolean
 }
 
+type Estimate = {
+  id: string
+  property_id: string
+  scheduled_date: string
+  status: string
+  planned_duration_hours: number | null
+  planned_start_time: string | null
+  quoted_scope: string | null
+  properties?: {
+    id: string
+    client_name: string
+    address_line_1: string | null
+    suburb: string | null
+  } | null
+}
+
+type CalendarBlock = {
+  id: string
+  block_date: string
+  start_time: string
+  end_time: string
+  title: string | null
+  notes: string | null
+}
+
+type Enquiry = {
+  id: string
+  name: string
+  email: string | null
+  phone: string | null
+  suburb: string | null
+  address: string | null
+  job_type: string | null
+  budget_range: string | null
+  notes: string | null
+  status: string
+  created_at: string
+}
+
 type Props = {
+  thisWeekStart: string
+  nextWeekStart: string
   properties: Property[]
+  estimates: Estimate[]
+  blocks: CalendarBlock[]
+  enquiries: Enquiry[]
+  joeStaffId: string | null
 }
 
-function getMonday(date: Date) {
-  const d = new Date(date)
-  const day = d.getDay()
-  const diff = d.getDate() - day + (day === 0 ? -6 : 1)
-  d.setDate(diff)
-  return d
+function parseLocalDate(dateString: string) {
+  const [year, month, day] = dateString.split("-").map(Number)
+  return new Date(year, month - 1, day)
 }
 
-function addDays(date: Date, days: number) {
-  const d = new Date(date)
-  d.setDate(d.getDate() + days)
-  return d
+function toLocalDateString(date: Date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  const day = String(date.getDate()).padStart(2, "0")
+  return `${year}-${month}-${day}`
 }
 
-function formatDay(date: Date) {
-  return date.toLocaleDateString("en-NZ", {
+function addDays(dateString: string, days: number) {
+  const date = parseLocalDate(dateString)
+  date.setDate(date.getDate() + days)
+  return toLocalDateString(date)
+}
+
+function formatDayLabel(dateString: string) {
+  return parseLocalDate(dateString).toLocaleDateString("en-NZ", {
     weekday: "short",
     day: "numeric",
     month: "short",
   })
 }
 
-export function AdminEstimatesCalendar({ properties }: Props) {
+function getAreaForSuburb(suburb: string | null | undefined) {
+  if (!suburb) return "OTHER"
+
+  const normalisedSuburb = suburb.trim().toLowerCase()
+
+  const centralSuburbs = [
+    "mt eden",
+    "mount eden",
+    "epsom",
+    "remuera",
+    "meadowbank",
+    "ellerslie",
+    "greenlane",
+    "parnell",
+    "newmarket",
+    "grey lynn",
+    "ponsonby",
+    "sandringham",
+    "st lukes",
+    "royal oak",
+    "one tree hill",
+    "onehunga",
+  ]
+
+  const eastSuburbs = [
+    "kohimarama",
+    "st heliers",
+    "glendowie",
+    "mission bay",
+    "orakei",
+    "st johns",
+    "stonefields",
+    "glen innes",
+  ]
+
+  const westSuburbs = [
+    "blockhouse bay",
+    "new lynn",
+    "titirangi",
+    "avondale",
+    "green bay",
+    "lynfield",
+    "mt roskill",
+    "mount roskill",
+  ]
+
+  const shoreSuburbs = [
+    "devonport",
+    "birkenhead",
+    "northcote",
+    "takapuna",
+    "milford",
+    "bayswater",
+  ]
+
+  if (centralSuburbs.includes(normalisedSuburb)) return "CENTRAL"
+  if (eastSuburbs.includes(normalisedSuburb)) return "EAST"
+  if (westSuburbs.includes(normalisedSuburb)) return "WEST"
+  if (shoreSuburbs.includes(normalisedSuburb)) return "SHORE"
+
+  return "OTHER"
+}
+
+function getAreaBadgeClasses(area: string) {
+  if (area === "CENTRAL") return "bg-green-100 text-green-800"
+  if (area === "EAST") return "bg-blue-100 text-blue-800"
+  if (area === "WEST") return "bg-purple-100 text-purple-800"
+  if (area === "SHORE") return "bg-cyan-100 text-cyan-800"
+
+  return "bg-gray-100 text-gray-700"
+}
+
+export function AdminEstimatesCalendar({
+  thisWeekStart,
+  nextWeekStart,
+  properties = [],
+  estimates = [],
+  blocks = [],
+  enquiries = [],
+  joeStaffId,
+}: Props) {
+  const router = useRouter()
+  const supabase = createClient()
+
   const [newPropertyOpen, setNewPropertyOpen] = useState(false)
   const [propertySearch, setPropertySearch] = useState("")
 
-  const monday = getMonday(new Date())
+  const [modalOpen, setModalOpen] = useState(false)
+  const [selectedProperty, setSelectedProperty] = useState<Property | null>(null)
+  const [selectedEstimate, setSelectedEstimate] = useState<Estimate | null>(null)
+  const [selectedEnquiry, setSelectedEnquiry] = useState<Enquiry | null>(null)
 
-  const thisWeek = [0, 1, 2, 3, 4].map((d) => addDays(monday, d))
-  const nextWeek = [7, 8, 9, 10, 11].map((d) => addDays(monday, d))
+  const [estimateDate, setEstimateDate] = useState(thisWeekStart)
+  const [estimateStartTime, setEstimateStartTime] = useState("")
+  const [estimateDuration, setEstimateDuration] = useState("1")
+  const [estimateNotes, setEstimateNotes] = useState("")
+
+  const [saving, setSaving] = useState(false)
+const [error, setError] = useState<string | null>(null)
+
+const [blockDate, setBlockDate] = useState(thisWeekStart)
+const [blockStartTime, setBlockStartTime] = useState("")
+const [blockEndTime, setBlockEndTime] = useState("")
+const [blockTitle, setBlockTitle] = useState("")
+const [blockNotes, setBlockNotes] = useState("")
+const [savingBlock, setSavingBlock] = useState(false)
+
+  const thisWeekDays = [0, 1, 2, 3, 4].map((day) =>
+    addDays(thisWeekStart, day)
+  )
+
+  const nextWeekDays = [0, 1, 2, 3, 4].map((day) =>
+    addDays(nextWeekStart, day)
+  )
 
   const filteredProperties = useMemo(() => {
     const search = propertySearch.trim().toLowerCase()
@@ -69,26 +226,384 @@ export function AdminEstimatesCalendar({ properties }: Props) {
     })
   }, [properties, propertySearch])
 
-  const renderWeek = (title: string, days: Date[]) => (
+  const getEstimatesForDate = (date: string) => {
+    return estimates
+      .filter((estimate) => estimate.scheduled_date === date)
+      .sort((a, b) => {
+        const timeA = a.planned_start_time || "99:99"
+        const timeB = b.planned_start_time || "99:99"
+        return timeA.localeCompare(timeB)
+      })
+  }
+
+  const getBlocksForDate = (date: string) => {
+    return blocks
+      .filter((block) => block.block_date === date)
+      .sort((a, b) => a.start_time.localeCompare(b.start_time))
+  }
+
+  const openAddModal = (property: Property) => {
+    setSelectedProperty(property)
+    setSelectedEstimate(null)
+    setEstimateDate(thisWeekStart)
+    setEstimateStartTime("")
+    setEstimateDuration("1")
+    setEstimateNotes("")
+    setError(null)
+    setModalOpen(true)
+  }
+
+  const openEnquiryEstimateModal = (enquiry: Enquiry) => {
+  const temporaryProperty: Property = {
+    id: "",
+    property_code: "NEW",
+    client_name: enquiry.name,
+    address_line_1: enquiry.address,
+    suburb: enquiry.suburb,
+    property_category: null,
+    is_active: true,
+  }
+
+  setSelectedProperty(temporaryProperty)
+  setSelectedEstimate(null)
+  setSelectedEnquiry(enquiry)
+  setEstimateDate(thisWeekStart)
+  setEstimateStartTime("")
+  setEstimateDuration("1")
+  setEstimateNotes(
+    [
+      enquiry.job_type ? `Job type: ${enquiry.job_type}` : null,
+      enquiry.budget_range ? `Budget: ${enquiry.budget_range}` : null,
+      enquiry.email ? `Email: ${enquiry.email}` : null,
+      enquiry.phone ? `Phone: ${enquiry.phone}` : null,
+      enquiry.notes,
+    ]
+      .filter(Boolean)
+      .join("\n")
+  )
+  setError(null)
+  setModalOpen(true)
+}
+
+  const openEditModal = (estimate: Estimate) => {
+    const property = properties.find((item) => item.id === estimate.property_id)
+
+    if (!property) {
+      alert("Could not find property for this estimate.")
+      return
+    }
+
+    setSelectedProperty(property)
+    setSelectedEstimate(estimate)
+    setEstimateDate(estimate.scheduled_date)
+    setEstimateStartTime(estimate.planned_start_time || "")
+    setEstimateDuration(
+      estimate.planned_duration_hours
+        ? estimate.planned_duration_hours.toString()
+        : "1"
+    )
+    setEstimateNotes(estimate.quoted_scope || "")
+    setError(null)
+    setModalOpen(true)
+  }
+
+  const resetModal = () => {
+    setModalOpen(false)
+    setSelectedProperty(null)
+    setSelectedEstimate(null)
+    setEstimateDate(thisWeekStart)
+    setEstimateStartTime("")
+    setEstimateDuration("1")
+    setEstimateNotes("")
+    setSaving(false)
+    setError(null)
+  }
+
+  const handleSaveEstimate = async () => {
+  if (!selectedProperty) return
+
+  if (!joeStaffId) {
+    setError("Could not find Estimator in staff_members.")
+    return
+  }
+
+  setSaving(true)
+  setError(null)
+
+  let propertyId = selectedProperty.id
+
+  /*
+    If estimate came from enquiry,
+    create a real property first
+  */
+
+  if (selectedEnquiry && !propertyId) {
+    const { data: createdProperty, error: propertyError } = await supabase
+      .from("properties")
+      .insert({
+        client_name: selectedEnquiry.name,
+        address_line_1: selectedEnquiry.address || null,
+        suburb: selectedEnquiry.suburb || null,
+        client_email: selectedEnquiry.email || null,
+        phone: selectedEnquiry.phone || null,
+        property_code: `NEW-${Date.now()}`,
+        is_active: true,
+      })
+      .select()
+      .single()
+
+    if (propertyError || !createdProperty) {
+      setError(propertyError?.message || "Failed creating property.")
+      setSaving(false)
+      return
+    }
+
+    propertyId = createdProperty.id
+  }
+
+  const payload = {
+    property_id: propertyId,
+    scheduled_date: estimateDate,
+    planned_start_time: estimateStartTime || null,
+    planned_duration_hours: estimateDuration
+      ? parseFloat(estimateDuration)
+      : 1,
+    assigned_staff_id: joeStaffId,
+    status: "scheduled",
+    job_type: "estimate",
+    invoice_method: "non_billable",
+    billing_mode: "non_billable",
+    time_limit_type: "fixed_time",
+    quoted_scope: estimateNotes || null,
+  }
+
+  if (selectedEstimate) {
+    const { error } = await supabase
+      .from("scheduled_jobs")
+      .update(payload)
+      .eq("id", selectedEstimate.id)
+
+    if (error) {
+      setError(error.message)
+      setSaving(false)
+      return
+    }
+  } else {
+    const { error } = await supabase
+      .from("scheduled_jobs")
+      .insert(payload)
+
+    if (error) {
+      setError(error.message)
+      setSaving(false)
+      return
+    }
+  }
+
+  /*
+    Mark enquiry as scheduled
+  */
+
+  if (selectedEnquiry) {
+    await supabase
+      .from("admin_enquiries")
+      .update({
+        status: "scheduled",
+      })
+      .eq("id", selectedEnquiry.id)
+  }
+
+  resetModal()
+  router.refresh()
+}
+
+  const handleSaveBlock = async () => {
+  if (!blockDate || !blockStartTime || !blockEndTime) {
+    alert("Add a date, start time and end time.")
+    return
+  }
+
+  setSavingBlock(true)
+
+  const { error } = await supabase
+    .from("estimate_calendar_blocks")
+    .insert({
+      block_date: blockDate,
+      start_time: blockStartTime,
+      end_time: blockEndTime,
+      title: blockTitle.trim() || "Blocked",
+      notes: blockNotes.trim() || null,
+    })
+
+  setSavingBlock(false)
+
+  if (error) {
+    alert(error.message)
+    return
+  }
+
+  setBlockDate(thisWeekStart)
+  setBlockStartTime("")
+  setBlockEndTime("")
+  setBlockTitle("")
+  setBlockNotes("")
+
+  router.refresh()
+}
+
+  const handleDeleteEstimate = async (estimateId: string) => {
+    const confirmed = window.confirm("Delete this estimate appointment?")
+
+    if (!confirmed) return
+
+    const { error } = await supabase
+      .from("scheduled_jobs")
+      .delete()
+      .eq("id", estimateId)
+
+    if (error) {
+      alert(error.message)
+      return
+    }
+
+    router.refresh()
+  }
+
+    const EstimateCard = ({ estimate }: { estimate: Estimate }) => {
+    const suburb = estimate.properties?.suburb || null
+    const area = getAreaForSuburb(suburb)
+
+    return (
+      <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 shadow-sm">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="font-semibold">
+              {estimate.planned_start_time
+                ? estimate.planned_start_time.slice(0, 5)
+                : "No time"}
+            </div>
+
+            <div className="truncate text-sm text-gray-600">
+              {estimate.properties?.client_name || "No client"}
+            </div>
+
+            <div className="truncate text-sm text-gray-500">
+              {estimate.properties?.address_line_1 || "No address"}
+            </div>
+
+            <div className="mt-2 flex flex-wrap gap-2 text-xs">
+              {suburb && (
+                <span className="rounded-full bg-white px-2 py-0.5 text-gray-700">
+                  {suburb}
+                </span>
+              )}
+
+              <span
+                className={`rounded-full px-2 py-0.5 font-medium ${getAreaBadgeClasses(
+                  area
+                )}`}
+              >
+                {area}
+              </span>
+            </div>
+
+            {estimate.planned_duration_hours && (
+              <div className="mt-2 text-xs text-gray-500">
+                {estimate.planned_duration_hours}h estimate
+              </div>
+            )}
+
+            {estimate.quoted_scope && (
+              <div className="mt-2 line-clamp-2 text-xs text-gray-600">
+                {estimate.quoted_scope}
+              </div>
+            )}
+          </div>
+
+          <div className="flex shrink-0 flex-col items-end gap-2">
+            <button
+              type="button"
+              onClick={() => openEditModal(estimate)}
+              className="text-xs text-blue-600 hover:underline"
+            >
+              Edit
+            </button>
+
+            <button
+              type="button"
+              onClick={() => handleDeleteEstimate(estimate.id)}
+              className="text-xs text-red-600 hover:underline"
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  const BlockCard = ({ block }: { block: CalendarBlock }) => (
+    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+      <div className="text-sm font-semibold text-amber-800">
+        {block.start_time.slice(0, 5)} - {block.end_time.slice(0, 5)}
+      </div>
+
+      <div className="text-sm text-amber-700">
+        {block.title || "Blocked"}
+      </div>
+
+      {block.notes && (
+        <div className="mt-1 text-xs text-amber-600">
+          {block.notes}
+        </div>
+      )}
+    </div>
+  )
+
+  const WeekSection = ({
+    title,
+    days,
+  }: {
+    title: string
+    days: string[]
+  }) => (
     <section className="mb-8">
       <h2 className="mb-3 text-xl font-semibold">{title}</h2>
 
       <div className="grid gap-4 md:grid-cols-5">
-        {days.map((day) => (
-          <div
-            key={day.toISOString()}
-            className="rounded-xl border bg-gray-50 p-3"
-          >
-            <div className="mb-3">
-              <div className="font-semibold">{formatDay(day)}</div>
-              <div className="text-xs text-gray-500">No appointments</div>
-            </div>
+        {days.map((day) => {
+          const dayEstimates = getEstimatesForDate(day)
+          const dayBlocks = getBlocksForDate(day)
 
-            <div className="rounded-lg border border-dashed bg-white p-3 text-sm text-gray-400">
-              Empty
+          return (
+            <div key={day} className="rounded-xl border bg-gray-50 p-3">
+              <div className="mb-3">
+                <div className="font-semibold">{formatDayLabel(day)}</div>
+
+                <div className="text-xs text-gray-500">
+                  {dayEstimates.length} appointments
+                  {dayBlocks.length > 0 ? ` · ${dayBlocks.length} blocked` : ""}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                {dayBlocks.map((block) => (
+                  <BlockCard key={block.id} block={block} />
+                ))}
+
+                {dayEstimates.length > 0 ? (
+                  dayEstimates.map((estimate) => (
+                    <EstimateCard key={estimate.id} estimate={estimate} />
+                  ))
+                ) : dayBlocks.length === 0 ? (
+                  <p className="rounded-lg border border-dashed bg-white p-3 text-sm text-gray-400">
+                    No estimates
+                  </p>
+                ) : null}
+              </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
     </section>
   )
@@ -103,9 +618,59 @@ export function AdminEstimatesCalendar({ properties }: Props) {
         </p>
       </header>
 
-      {renderWeek("This Week", thisWeek)}
+      <WeekSection title="This Week" days={thisWeekDays} />
+      <WeekSection title="Next Week" days={nextWeekDays} />
 
-      {renderWeek("Next Week", nextWeek)}
+            <section className="mb-8 rounded-xl border bg-white p-4 shadow-sm">
+        <h2 className="text-lg font-semibold">Schedule Quote Requests</h2>
+
+        <p className="mb-4 text-sm text-gray-500">
+          New enquiries waiting to be booked into the estimates calendar.
+        </p>
+
+        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+          {enquiries.length > 0 ? (
+            enquiries.map((enquiry) => (
+              <div key={enquiry.id} className="rounded-lg border p-3">
+                <div className="font-semibold">{enquiry.name}</div>
+
+                <div className="mt-1 text-sm text-gray-500">
+                  {enquiry.suburb || "No suburb"}
+                </div>
+
+                {enquiry.address && (
+                  <div className="text-sm text-gray-500">
+                    {enquiry.address}
+                  </div>
+                )}
+
+                <div className="mt-2 text-xs text-gray-400">
+                  {enquiry.job_type || "quote"}
+                  {enquiry.budget_range ? ` · ${enquiry.budget_range}` : ""}
+                </div>
+
+                {enquiry.notes && (
+                  <div className="mt-3 line-clamp-3 rounded-md bg-gray-50 p-2 text-xs text-gray-600">
+                    {enquiry.notes}
+                  </div>
+                )}
+
+                <button
+  type="button"
+  onClick={() => openEnquiryEstimateModal(enquiry)}
+  className="mt-3 h-10 w-full rounded-md bg-blue-600 text-sm font-medium text-white"
+>
+  Schedule Estimate
+</button>
+              </div>
+            ))
+          ) : (
+            <p className="rounded-lg border border-dashed p-3 text-sm text-gray-400">
+              No quote requests waiting to be scheduled.
+            </p>
+          )}
+        </div>
+      </section>
 
       <section className="mb-8 rounded-xl border bg-white p-4 shadow-sm">
         <h2 className="text-lg font-semibold">Quick Add Estimate</h2>
@@ -136,18 +701,30 @@ export function AdminEstimatesCalendar({ properties }: Props) {
               filteredProperties.map((property) => (
                 <div
                   key={property.id}
-                  className="rounded-lg border p-3"
+                  className="flex items-center justify-between gap-3 rounded-lg border p-3"
                 >
-                  <div className="font-medium">{property.client_name}</div>
+                  <div className="min-w-0">
+                    <div className="truncate font-medium">
+                      {property.client_name}
+                    </div>
 
-                  <div className="text-sm text-gray-500">
-                    {property.address_line_1 || "No address"}
+                    <div className="truncate text-sm text-gray-500">
+                      {property.address_line_1 || "No address"}
+                    </div>
+
+                    <div className="mt-1 text-xs text-gray-400">
+                      {property.property_code}
+                      {property.suburb ? ` · ${property.suburb}` : ""}
+                    </div>
                   </div>
 
-                  <div className="mt-1 text-xs text-gray-400">
-                    {property.property_code}
-                    {property.suburb ? ` · ${property.suburb}` : ""}
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => openAddModal(property)}
+                    className="shrink-0 rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white"
+                  >
+                    Add
+                  </button>
                 </div>
               ))
             ) : (
@@ -158,6 +735,181 @@ export function AdminEstimatesCalendar({ properties }: Props) {
           </div>
         )}
       </section>
+
+            <section className="mb-8 rounded-xl border bg-white p-4 shadow-sm">
+        <h2 className="text-lg font-semibold">Block Estimate Time</h2>
+
+        <p className="mb-4 text-sm text-gray-500">
+          Add unavailable time for lunch, meetings, BNI 1:1s or admin blocks.
+        </p>
+
+        <div className="grid gap-4 md:grid-cols-4">
+          <div>
+            <label className="mb-1 block text-sm font-medium">Date</label>
+
+            <input
+              type="date"
+              className="h-11 w-full rounded-md border px-3"
+              value={blockDate}
+              onChange={(e) => setBlockDate(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium">
+              Start Time
+            </label>
+
+            <input
+              type="time"
+              className="h-11 w-full rounded-md border px-3"
+              value={blockStartTime}
+              onChange={(e) => setBlockStartTime(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium">
+              End Time
+            </label>
+
+            <input
+              type="time"
+              className="h-11 w-full rounded-md border px-3"
+              value={blockEndTime}
+              onChange={(e) => setBlockEndTime(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium">Title</label>
+
+            <input
+              className="h-11 w-full rounded-md border px-3"
+              value={blockTitle}
+              onChange={(e) => setBlockTitle(e.target.value)}
+              placeholder="e.g. Lunch, BNI 1:1"
+            />
+          </div>
+
+          <div className="md:col-span-4">
+            <label className="mb-1 block text-sm font-medium">Notes</label>
+
+            <textarea
+              className="min-h-[80px] w-full rounded-md border p-3"
+              value={blockNotes}
+              onChange={(e) => setBlockNotes(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleSaveBlock}
+          disabled={savingBlock}
+          className="mt-4 h-11 w-full rounded-md bg-amber-600 font-medium text-white disabled:bg-gray-300"
+        >
+          {savingBlock ? "Saving..." : "Block Time"}
+        </button>
+      </section>
+
+      {modalOpen && selectedProperty && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl bg-white p-5 shadow-xl">
+            <h2 className="mb-1 text-xl font-semibold">
+              {selectedEstimate ? "Edit Estimate" : "Add Estimate"}
+            </h2>
+
+            <p className="mb-4 text-sm text-gray-500">
+              {selectedProperty.client_name}
+            </p>
+
+            <div className="space-y-4">
+              <div>
+                <label className="mb-1 block text-sm font-medium">Date</label>
+
+                <input
+                  type="date"
+                  className="h-11 w-full rounded-md border px-3"
+                  value={estimateDate}
+                  onChange={(e) => setEstimateDate(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium">
+                  Start Time
+                </label>
+
+                <input
+                  type="time"
+                  className="h-11 w-full rounded-md border px-3"
+                  value={estimateStartTime}
+                  onChange={(e) => setEstimateStartTime(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium">
+                  Duration
+                </label>
+
+                <input
+                  type="number"
+                  step="0.25"
+                  className="h-11 w-full rounded-md border px-3"
+                  value={estimateDuration}
+                  onChange={(e) => setEstimateDuration(e.target.value)}
+                  placeholder="e.g. 1"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium">
+                  Estimate Notes
+                </label>
+
+                <textarea
+                  className="min-h-[120px] w-full rounded-md border p-3"
+                  value={estimateNotes}
+                  onChange={(e) => setEstimateNotes(e.target.value)}
+                  placeholder="Notes for site visit, customer requirements, access details..."
+                />
+              </div>
+
+              {error && (
+                <p className="rounded-md bg-red-50 p-2 text-sm text-red-600">
+                  {error}
+                </p>
+              )}
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={resetModal}
+                  className="h-11 flex-1 rounded-md border"
+                  disabled={saving}
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleSaveEstimate}
+                  className="h-11 flex-1 rounded-md bg-blue-600 font-medium text-white"
+                  disabled={saving}
+                >
+                  {saving
+                    ? "Saving..."
+                    : selectedEstimate
+                      ? "Save Changes"
+                      : "Create Estimate"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <NewPropertyModal
         open={newPropertyOpen}
