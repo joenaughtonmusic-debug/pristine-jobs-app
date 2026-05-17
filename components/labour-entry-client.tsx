@@ -3,6 +3,7 @@
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
+import { toZonedTime } from "date-fns-tz"
 
 type StaffMember = {
   id: string
@@ -69,11 +70,15 @@ function isExpectedWorkDay(staffName: string, day: string) {
 
   // Sunday = 0, Monday = 1, Tuesday = 2, Wednesday = 3, Thursday = 4, Friday = 5
 
-  if (name === "charles") {
+  if (name.includes("graham")) {
+    return false
+  }
+
+  if (name.includes("charles")) {
     return [2, 3, 4, 5].includes(dayNumber)
   }
 
-  if (name === "fletch" || name === "fletcher") {
+  if (name.includes("fletch") || name.includes("fletcher")) {
     return [2, 3, 4].includes(dayNumber)
   }
 
@@ -89,7 +94,7 @@ function addDays(dateString: string, days: number) {
 }
 
 function isPastWorkDay(day: string) {
-  const today = new Date()
+  const today = toZonedTime(new Date(), "Pacific/Auckland")
   today.setHours(0, 0, 0, 0)
 
   const date = parseLocalDate(day)

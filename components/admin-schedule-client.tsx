@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
+import { NewPropertyModal } from "@/components/new-property-modal"
 
 type StaffMember = {
   id: string
@@ -396,6 +397,8 @@ export function AdminScheduleClient({
     }
   }
 
+  const [newPropertyOpen, setNewPropertyOpen] = useState(false)
+
   const toggleStaffSelection = (staffId: string) => {
     if (selectedStaffIds.includes(staffId)) {
       if (staffId === assignedStaffId) {
@@ -744,14 +747,22 @@ export function AdminScheduleClient({
         </button>
 
         {quickAddOpen && (
-          <div className="mt-4">
-            <label className="mb-1 block text-sm font-medium">
-              Search Property
-            </label>
+  <div className="mt-4">
+    <button
+      type="button"
+      onClick={() => setNewPropertyOpen(true)}
+      className="mb-4 flex h-11 w-full items-center justify-center rounded-md bg-black px-3 text-sm font-semibold text-white hover:bg-black"
+    >
+      + Add New Property
+    </button>
 
-            <input
-              className="mb-4 h-11 w-full rounded-md border px-3"
-              value={propertySearch}
+    <label className="mb-1 block text-sm font-medium">
+      Search Property
+    </label>
+
+    <input
+      className="mb-4 h-11 w-full rounded-md border px-3"
+      value={propertySearch}
               onChange={(e) => setPropertySearch(e.target.value)}
               placeholder="Search by code, client, address, suburb..."
             />
@@ -1068,6 +1079,11 @@ export function AdminScheduleClient({
           </div>
         </div>
       )}
+
+      <NewPropertyModal
+        open={newPropertyOpen}
+        onOpenChange={setNewPropertyOpen}
+      />
     </div>
   )
 }
