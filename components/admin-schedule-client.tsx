@@ -22,6 +22,7 @@ type Property = {
   default_duration_hours: number | null
   default_start_time: string | null
   is_active: boolean
+  client_email?: string | null
 }
 
 type ServiceTemplate = {
@@ -61,14 +62,20 @@ type Job = {
   xero_quote_number?: string | null
   quoted_scope?: string | null
   quoted_materials?: string | null
+
+  schedule_confirmation_status?: string | null
+  contact_client?: boolean | null
+  client_contact_sent_at?: string | null
+
   scheduled_job_staff?: ScheduledJobStaff[]
 
   properties?: {
-    id: string
-    client_name: string
-    address_line_1: string | null
-    suburb: string | null
-  } | null
+  id: string
+  client_name: string
+  address_line_1: string | null
+  suburb: string | null
+  client_email?: string | null
+} | null
 }
 
 type Props = {
@@ -140,6 +147,11 @@ export function AdminScheduleClient({
   const [xeroQuoteNumber, setXeroQuoteNumber] = useState("")
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [emailModalOpen, setEmailModalOpen] = useState(false)
+  const [emailJob, setEmailJob] = useState<Job | null>(null)
+  const [emailTo, setEmailTo] = useState("")
+  const [emailSubject, setEmailSubject] = useState("")
+  const [emailBody, setEmailBody] = useState("")
 
   const getCrewSize = (job: Job) => {
     return Math.max(getJobStaffIds(job).length, 1)
@@ -565,89 +577,242 @@ export function AdminScheduleClient({
     router.refresh()
   }
 
+  const toggleScheduleConfirmation = async (
+  jobId: string,
+  currentStatus: string | null
+) => {
+  const nextStatus =
+    currentStatus === "confirmed" ? "draft" : "confirmed"
+
+  const { error } = await supabase
+    .from("scheduled_jobs")
+    .update({
+      schedule_confirmation_status: nextStatus,
+    })
+    .eq("id", jobId)
+
+  if (error) {
+    alert(error.message)
+    return
+  }
+
+  router.refresh()
+}
+
+const toggleContactClient = async (
+  jobId: string,
+  currentValue: boolean | null
+) => {
+  const { error } = await supabase
+    .from("scheduled_jobs")
+    .update({
+      contact_client: !currentValue,
+    })
+    .eq("id", jobId)
+
+  if (error) {
+    alert(error.message)
+    return
+  }
+
+  router.refresh()
+}
+
+const openContactClientModal = async (job: Job) => {
+  const { data: property, error } = await supabase
+    .from("properties")
+    .select("id, client_name, address_line_1, suburb, client_email")
+    .eq("id", job.property_id)
+    .single()
+
+  if (error) {
+    alert(error.message)
+    return
+  }
+
+  const address = property?.address_line_1 || "your property"
+  const clientName = property?.client_name || "there"
+  const date = formatDayLabel(job.scheduled_date)
+  const time = job.planned_start_time
+    ? ` at approximately ${job.planned_start_time.slice(0, 5)}`
+    : ""
+
+  setEmailJob(job)
+  setEmailTo(property?.client_email || "")
+  setEmailSubject(`Upcoming garden visit to ${address}`)
+  setEmailBody(`Hi ${clientName},
+
+Just confirming our team is scheduled to attend ${address} on ${date}${time}.
+
+Please let us know if there are any access notes or anything specific you would like the team to be aware of.
+
+Kind regards,
+Pristine Gardens`)
+  setEmailModalOpen(true)
+}
+
+const handleSendClientEmail = async () => {
+  if (!emailJob) return
+
+  const { error } = await supabase
+    .from("client_contact_messages")
+    .insert({
+      scheduled_job_id: emailJob.id,
+      property_id: emailJob.property_id,
+      recipient_email: emailTo,
+      subject: emailSubject,
+      body: emailBody,
+      status: "ready_to_send",
+    })
+
+  if (error) {
+    alert(error.message)
+    return
+  }
+
+  await supabase
+    .from("scheduled_jobs")
+    .update({
+      contact_client: true,
+    })
+    .eq("id", emailJob.id)
+
+  setEmailModalOpen(false)
+  setEmailJob(null)
+  router.refresh()
+}
+
   const JobCard = ({
-    job,
-    displayNumber,
-  }: {
-    job: Job
-    displayNumber: number
-  }) => (
-    <div
-      className={`rounded-lg border p-3 shadow-sm ${getStaffColourClasses(
-        job.assigned_staff_id
-      )}`}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <div className="font-semibold">Job {displayNumber}</div>
+  job,
+  displayNumber,
+}: {
+  job: Job
+  displayNumber: number
+}) => (
+  <div
+    className={`rounded-lg border p-3 shadow-sm ${getStaffColourClasses(
+      job.assigned_staff_id
+    )}`}
+  >
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0 flex-1">
+        <div className="font-semibold">Job {displayNumber}</div>
 
-          <div className="truncate text-sm text-gray-500">
-            {job.properties?.address_line_1 || "No address"}
-          </div>
-
-          <div className="mt-1 text-sm font-medium">
-            Staff: {getJobStaffNames(job)}
-          </div>
-
-          <div className="mt-1 flex flex-wrap gap-2 text-xs text-gray-500">
-            {job.planned_start_time && (
-              <span>Start {job.planned_start_time.slice(0, 5)}</span>
-            )}
-
-            {job.planned_duration_hours && (
-              <span>
-                {getSiteDurationHours(job)}h site time
-                {getCrewSize(job) > 1
-                  ? ` · ${job.planned_duration_hours} labour-hours`
-                  : ""}
-              </span>
-            )}
-
-            {job.time_limit_type === "fixed_time" && (
-              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-800">
-                Fixed time
-              </span>
-            )}
-
-            {job.invoice_method === "quoted" && (
-              <span className="rounded-full bg-purple-100 px-2 py-0.5 font-medium text-purple-800">
-                QUOTED
-                {job.xero_quote_number ? ` · ${job.xero_quote_number}` : ""}
-              </span>
-            )}
-
-            {job.quoted_scope && (
-              <span className="rounded-full bg-blue-100 px-2 py-0.5 text-blue-800">
-                Scope attached
-              </span>
-            )}
-          </div>
+        <div className="truncate text-sm text-gray-500">
+          {job.properties?.address_line_1 || "No address"}
         </div>
 
-        <div className="flex shrink-0 flex-col items-end gap-2">
-          <div className="rounded-full bg-gray-100 px-2 py-1 text-xs capitalize text-gray-600">
-            {job.status}
-          </div>
+        <div className="mt-1 text-sm font-medium">
+          Staff: {getJobStaffNames(job)}
+        </div>
 
-          <button
-            type="button"
-            onClick={() => openEditModal(job)}
-            className="text-xs text-blue-600 hover:underline"
-          >
-            Edit
-          </button>
+        <div className="mt-1 flex flex-wrap gap-2 text-xs text-gray-500">
+          {job.planned_start_time && (
+            <span>Start {job.planned_start_time.slice(0, 5)}</span>
+          )}
 
-          <button
-            type="button"
-            onClick={() => handleDeleteJob(job.id)}
-            className="text-xs text-red-600 hover:underline"
-          >
-            Delete
-          </button>
+          {job.planned_duration_hours && (
+            <span>
+              {getSiteDurationHours(job)}h site time
+              {getCrewSize(job) > 1
+                ? ` · ${job.planned_duration_hours} labour-hours`
+                : ""}
+            </span>
+          )}
+
+          {job.time_limit_type === "fixed_time" && (
+            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-amber-800">
+              Fixed time
+            </span>
+          )}
+
+          {job.invoice_method === "quoted" && (
+            <span className="rounded-full bg-purple-100 px-2 py-0.5 font-medium text-purple-800">
+              QUOTED
+              {job.xero_quote_number ? ` · ${job.xero_quote_number}` : ""}
+            </span>
+          )}
+
+          {job.quoted_scope && (
+            <span className="rounded-full bg-blue-100 px-2 py-0.5 text-blue-800">
+              Scope attached
+            </span>
+          )}
         </div>
       </div>
+
+      <div className="flex shrink-0 flex-col items-end gap-2">
+        <div className="rounded-full bg-gray-100 px-2 py-1 text-xs capitalize text-gray-600">
+          {job.status}
+        </div>
+
+        <button
+          type="button"
+          onClick={() => openEditModal(job)}
+          className="text-xs text-blue-600 hover:underline"
+        >
+          Edit
+        </button>
+
+        <button
+          type="button"
+          onClick={() => handleDeleteJob(job.id)}
+          className="text-xs text-red-600 hover:underline"
+        >
+          Delete
+        </button>
+      </div>
     </div>
-  )
+
+    <div className="mt-3 w-full rounded-lg border bg-white p-2">
+      <div className="mb-2 text-xs font-medium text-gray-600">
+        Schedule Status
+      </div>
+
+      {job.schedule_confirmation_status === "confirmed" ? (
+        <div>
+          <div className="mb-2 rounded-md bg-green-100 px-2 py-1 text-xs font-medium text-green-800">
+            Schedule Confirmed
+          </div>
+
+          <button
+            type="button"
+            onClick={() => openContactClientModal(job)}
+            className={`rounded-md px-3 py-2 text-xs font-medium ${
+              job.contact_client
+                ? "bg-blue-100 text-blue-800"
+                : "bg-blue-600 text-white"
+            }`}
+          >
+            {job.contact_client
+              ? "Email Sent"
+              : "Contact Client"}
+          </button>
+        </div>
+      ) : (
+        <div>
+          <div className="mb-2 rounded-md bg-amber-100 px-2 py-1 text-xs font-medium text-amber-800">
+            Schedule Draft
+          </div>
+
+          <label className="flex items-center gap-2 text-xs text-gray-700">
+            <input
+              type="checkbox"
+              onChange={() =>
+                toggleScheduleConfirmation(
+                  job.id,
+                  job.schedule_confirmation_status || "draft"
+                )
+              }
+            />
+
+            Confirm Schedule
+          </label>
+        </div>
+      )}
+    </div>
+  </div>
+)
 
   const WeekSection = ({
     title,
@@ -801,7 +966,7 @@ export function AdminScheduleClient({
                   key={property.id}
                   className="flex items-center justify-between gap-3 rounded-lg border p-3"
                 >
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <div className="truncate font-medium">
                       {property.client_name}
                     </div>
@@ -1079,6 +1244,86 @@ export function AdminScheduleClient({
           </div>
         </div>
       )}
+
+{emailModalOpen && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+    <div className="w-full max-w-2xl rounded-xl bg-white p-5 shadow-xl">
+      <h2 className="mb-1 text-xl font-semibold">
+  Contact Client
+</h2>
+
+<p className="mb-4 text-sm text-gray-500">
+  Review and edit this email before sending.
+</p>
+
+      <div className="space-y-4">
+        <div>
+          <label className="mb-1 block text-sm font-medium">
+            To
+          </label>
+
+          <input
+            type="email"
+            className="h-11 w-full rounded-md border px-3"
+            value={emailTo}
+            onChange={(e) => setEmailTo(e.target.value)}
+          />
+          {!emailTo && (
+  <p className="mt-1 text-xs text-amber-600">
+    No client email found. You can type one in manually, or add it to the property.
+  </p>
+)}
+        </div>
+
+        <div>
+          <label className="mb-1 block text-sm font-medium">
+            Subject
+          </label>
+
+          <input
+            type="text"
+            className="h-11 w-full rounded-md border px-3"
+            value={emailSubject}
+            onChange={(e) => setEmailSubject(e.target.value)}
+          />
+        </div>
+
+        <div>
+          <label className="mb-1 block text-sm font-medium">
+            Email Body
+          </label>
+
+          <textarea
+            className="min-h-[250px] w-full rounded-md border p-3"
+            value={emailBody}
+            onChange={(e) => setEmailBody(e.target.value)}
+          />
+        </div>
+
+        <div className="flex gap-3 pt-2">
+          <button
+            type="button"
+            onClick={() => {
+              setEmailModalOpen(false)
+              setEmailJob(null)
+            }}
+            className="h-11 flex-1 rounded-md border"
+          >
+            Cancel
+          </button>
+
+          <button
+            type="button"
+            onClick={handleSendClientEmail}
+            className="h-11 flex-1 rounded-md bg-blue-600 font-medium text-white"
+          >
+            Send Email
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+)}
 
       <NewPropertyModal
         open={newPropertyOpen}
