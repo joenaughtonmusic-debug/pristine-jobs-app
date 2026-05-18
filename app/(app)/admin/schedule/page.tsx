@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server"
 import { AdminScheduleClient } from "@/components/admin-schedule-client"
+import { toZonedTime } from "date-fns-tz"
 
 function toDateString(date: Date) {
   const year = date.getFullYear()
@@ -20,7 +21,7 @@ function getMonday(date: Date) {
 export default async function AdminSchedulePage() {
   const supabase = await createClient()
 
-  const today = new Date()
+  const today = toZonedTime(new Date(), "Pacific/Auckland")
   const thisWeekMonday = getMonday(today)
 
   const nextWeekMonday = new Date(thisWeekMonday)
@@ -37,11 +38,15 @@ export default async function AdminSchedulePage() {
   .select(`
     *,
     properties (
-      id,
-      client_name,
-      address_line_1,
-      suburb
-    ),
+  id,
+  property_code,
+  client_name,
+  address_line_1,
+  suburb,
+  property_category,
+  client_email,
+  phone
+),
     scheduled_job_staff (
       id,
       staff_member_id,
@@ -64,12 +69,13 @@ export default async function AdminSchedulePage() {
       client_name,
       address_line_1,
       suburb,
-property_category,
-default_staff_id,
+      property_category,
+      default_staff_id,
       default_job_order,
       default_duration_hours,
       default_start_time,
-      is_active
+      is_active,
+      client_email
     `)
     .eq("is_active", true)
     .order("suburb", { ascending: true })
@@ -98,7 +104,21 @@ default_staff_id,
   .eq("is_active", true)
   .order("template_name", { ascending: true })
 
-  return (
+  const { data: schedulingQueue } = await supabase
+    .from("scheduling_queue")
+    .select(`
+      *,
+      properties (
+        id,
+        client_name,
+        address_line_1,
+        suburb
+      )
+    `)
+    .eq("status", "ready_to_schedule")
+    .order("created_at", { ascending: false })
+
+    return (
     <AdminScheduleClient
       thisWeekStart={startDate}
       nextWeekStart={toDateString(nextWeekMonday)}
@@ -106,6 +126,7 @@ default_staff_id,
       properties={properties || []}
       staff={staff || []}
       serviceTemplates={serviceTemplates || []}
+      schedulingQueue={schedulingQueue || []}
     />
   )
 }

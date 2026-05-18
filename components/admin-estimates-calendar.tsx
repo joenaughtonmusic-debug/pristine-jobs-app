@@ -23,6 +23,8 @@ type Estimate = {
   planned_duration_hours: number | null
   planned_start_time: string | null
   quoted_scope: string | null
+  estimate_outcome?: string | null
+  estimate_outcome_notes?: string | null
   properties?: {
     id: string
     client_name: string
@@ -451,6 +453,48 @@ const [savingBlock, setSavingBlock] = useState(false)
   router.refresh()
 }
 
+const handleReadyToSchedule = async (estimate: Estimate) => {
+  const confirmed = window.confirm(
+    "Mark this estimate as ready to schedule?"
+  )
+
+  if (!confirmed) return
+
+  const area = getAreaForSuburb(estimate.properties?.suburb)
+
+  const { error: queueError } = await supabase
+    .from("scheduling_queue")
+    .insert({
+      property_id: estimate.property_id,
+      source_scheduled_job_id: estimate.id,
+      job_type: "quoted_work",
+      scope_notes: estimate.quoted_scope || null,
+      status: "ready_to_schedule",
+      estimated_duration_hours: estimate.planned_duration_hours || null,
+      suburb: estimate.properties?.suburb || null,
+      area,
+    })
+
+  if (queueError) {
+    alert(queueError.message)
+    return
+  }
+
+  const { error: estimateError } = await supabase
+    .from("scheduled_jobs")
+    .update({
+      estimate_outcome: "ready_to_schedule",
+    })
+    .eq("id", estimate.id)
+
+  if (estimateError) {
+    alert(estimateError.message)
+    return
+  }
+
+  router.refresh()
+}
+
   const handleDeleteEstimate = async (estimateId: string) => {
     const confirmed = window.confirm("Delete this estimate appointment?")
 
@@ -521,22 +565,36 @@ const [savingBlock, setSavingBlock] = useState(false)
           </div>
 
           <div className="flex shrink-0 flex-col items-end gap-2">
-            <button
-              type="button"
-              onClick={() => openEditModal(estimate)}
-              className="text-xs text-blue-600 hover:underline"
-            >
-              Edit
-            </button>
+  {estimate.estimate_outcome === "ready_to_schedule" ? (
+    <div className="rounded-full bg-green-100 px-2 py-1 text-xs font-medium text-green-800">
+      Ready to Schedule
+    </div>
+  ) : (
+    <button
+      type="button"
+      onClick={() => handleReadyToSchedule(estimate)}
+      className="rounded-md bg-green-600 px-2 py-1 text-xs font-medium text-white"
+    >
+      Ready to Schedule
+    </button>
+  )}
 
-            <button
-              type="button"
-              onClick={() => handleDeleteEstimate(estimate.id)}
-              className="text-xs text-red-600 hover:underline"
-            >
-              Delete
-            </button>
-          </div>
+  <button
+    type="button"
+    onClick={() => openEditModal(estimate)}
+    className="text-xs text-blue-600 hover:underline"
+  >
+    Edit
+  </button>
+
+  <button
+    type="button"
+    onClick={() => handleDeleteEstimate(estimate.id)}
+    className="text-xs text-red-600 hover:underline"
+  >
+    Delete
+  </button>
+</div>
         </div>
       </div>
     )

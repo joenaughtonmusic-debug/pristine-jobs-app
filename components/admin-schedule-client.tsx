@@ -71,11 +71,39 @@ type Job = {
 
   properties?: {
   id: string
+  property_code: string | null
   client_name: string
   address_line_1: string | null
   suburb: string | null
+  property_category: string | null
   client_email?: string | null
+  phone?: string | null
 } | null
+}
+
+type SchedulingQueueItem = {
+  id: string
+  property_id: string
+  source_scheduled_job_id: string | null
+  job_type: string | null
+  scope_notes: string | null
+  preferred_timeframe: string | null
+  status: string | null
+  estimated_duration_hours: number | null
+  suburb: string | null
+  area: string | null
+  created_at: string
+  scheduled_at: string | null
+  properties?: {
+    id: string
+    property_code: string | null
+    client_name: string
+    address_line_1: string | null
+    suburb: string | null
+    property_category: string | null
+    client_email?: string | null
+    phone?: string | null
+  } | null
 }
 
 type Props = {
@@ -85,6 +113,7 @@ type Props = {
   properties: Property[]
   staff: StaffMember[]
   serviceTemplates: ServiceTemplate[]
+  schedulingQueue: SchedulingQueueItem[]
 }
 
 function parseLocalDate(dateString: string) {
@@ -120,6 +149,7 @@ export function AdminScheduleClient({
   properties,
   staff,
   serviceTemplates,
+  schedulingQueue = [],
 }: Props) {
   const router = useRouter()
   const supabase = createClient()
@@ -146,7 +176,19 @@ export function AdminScheduleClient({
   const [invoiceMethod, setInvoiceMethod] = useState("charge_up")
   const [xeroQuoteNumber, setXeroQuoteNumber] = useState("")
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+const [error, setError] = useState<string | null>(null)
+
+const [propertyUpdateOpen, setPropertyUpdateOpen] = useState(false)
+const [selectedQueueItem, setSelectedQueueItem] =
+  useState<SchedulingQueueItem | null>(null)
+
+const [updatePropertyCode, setUpdatePropertyCode] = useState("")
+const [updateClientName, setUpdateClientName] = useState("")
+const [updateAddress, setUpdateAddress] = useState("")
+const [updateSuburb, setUpdateSuburb] = useState("")
+const [updateCategory, setUpdateCategory] = useState("")
+const [updateEmail, setUpdateEmail] = useState("")
+const [updatePhone, setUpdatePhone] = useState("")
   const [emailModalOpen, setEmailModalOpen] = useState(false)
   const [emailJob, setEmailJob] = useState<Job | null>(null)
   const [emailTo, setEmailTo] = useState("")
@@ -288,6 +330,65 @@ export function AdminScheduleClient({
 
     return maxOrder + 1
   }
+
+  const getPropertyMissingFields = (item: SchedulingQueueItem) => {
+  const property = item.properties
+
+  const missing: string[] = []
+
+  if (!property?.client_name) missing.push("client name")
+  if (!property?.address_line_1) missing.push("address")
+  if (!property?.suburb) missing.push("suburb")
+  if (!property?.property_code || property.property_code.startsWith("NEW-")) {
+    missing.push("real property code")
+  }
+  if (!property?.property_category) missing.push("property category")
+  if (!property?.client_email && !property?.phone) {
+    missing.push("email or phone")
+  }
+
+  return missing
+}
+
+const openPropertyUpdateModal = (item: SchedulingQueueItem) => {
+  const property = item.properties
+
+  setSelectedQueueItem(item)
+  setUpdatePropertyCode(property?.property_code || "")
+  setUpdateClientName(property?.client_name || "")
+  setUpdateAddress(property?.address_line_1 || "")
+  setUpdateSuburb(property?.suburb || "")
+  setUpdateCategory(property?.property_category || "")
+  setUpdateEmail(property?.client_email || "")
+  setUpdatePhone(property?.phone || "")
+  setPropertyUpdateOpen(true)
+}
+
+const handleSavePropertyDetails = async () => {
+  if (!selectedQueueItem?.property_id) return
+
+  const { error } = await supabase
+    .from("properties")
+    .update({
+      property_code: updatePropertyCode.trim() || null,
+      client_name: updateClientName.trim() || null,
+      address_line_1: updateAddress.trim() || null,
+      suburb: updateSuburb.trim() || null,
+      property_category: updateCategory || null,
+      client_email: updateEmail.trim() || null,
+      phone: updatePhone.trim() || null,
+    })
+    .eq("id", selectedQueueItem.property_id)
+
+  if (error) {
+    alert(error.message)
+    return
+  }
+
+  setPropertyUpdateOpen(false)
+  setSelectedQueueItem(null)
+  router.refresh()
+}
 
   const getDayTotalHours = (date: string) => {
     return getJobsForDate(date).reduce((total, job) => {
@@ -775,19 +876,43 @@ const handleSendClientEmail = async () => {
             Schedule Confirmed
           </div>
 
-          <button
-            type="button"
-            onClick={() => openContactClientModal(job)}
-            className={`rounded-md px-3 py-2 text-xs font-medium ${
-              job.contact_client
-                ? "bg-blue-100 text-blue-800"
-                : "bg-blue-600 text-white"
-            }`}
-          >
-            {job.contact_client
-              ? "Email Sent"
-              : "Contact Client"}
-          </button>
+          {job.contact_client ? (
+  <div className="rounded-md bg-green-100 px-3 py-2 text-xs font-medium text-green-800">
+    Client Contacted
+  </div>
+) : (
+  <div className="flex flex-wrap gap-2">
+    <button
+      type="button"
+      onClick={() => openContactClientModal(job)}
+      className="h-9 rounded-md bg-blue-600 px-3 text-sm font-medium text-white"
+    >
+      Contact Client
+    </button>
+
+    <button
+      type="button"
+      onClick={async () => {
+        const { error } = await supabase
+          .from("scheduled_jobs")
+          .update({
+            contact_client: true,
+          })
+          .eq("id", job.id)
+
+        if (error) {
+          alert(error.message)
+          return
+        }
+
+        router.refresh()
+      }}
+      className="h-9 rounded-md border border-green-300 bg-green-50 px-3 text-sm font-medium text-green-700"
+    >
+      Mark Contacted
+    </button>
+  </div>
+)}
         </div>
       ) : (
         <div>
@@ -890,6 +1015,102 @@ const handleSendClientEmail = async () => {
 
       <WeekSection title="This Week" days={thisWeekDays} />
       <WeekSection title="Next Week" days={nextWeekDays} />
+
+      <section className="mb-8 rounded-xl border bg-white p-4 shadow-sm">
+        <h2 className="text-lg font-semibold">Ready To Schedule</h2>
+
+        <p className="mb-4 text-sm text-gray-500">
+          Accepted work waiting to be added into the operational schedule.
+        </p>
+
+        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+          {schedulingQueue.length > 0 ? (
+            schedulingQueue.map((item) => (
+              <div
+                key={item.id}
+                className="rounded-lg border border-green-200 bg-green-50 p-4"
+              >
+                <div className="font-semibold">
+                  {item.properties?.client_name || "Unknown Client"}
+                </div>
+
+                <div className="mt-1 text-sm text-gray-600">
+                  {item.properties?.suburb || item.suburb || "No suburb"}
+                </div>
+
+                {item.properties?.address_line_1 && (
+                  <div className="text-sm text-gray-500">
+                    {item.properties.address_line_1}
+                  </div>
+                )}
+
+                <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                  {item.area && (
+                    <span className="rounded-full bg-white px-2 py-1 text-gray-700">
+                      {item.area}
+                    </span>
+                  )}
+
+                  {item.job_type && (
+                    <span className="rounded-full bg-white px-2 py-1 text-gray-700">
+                      {item.job_type}
+                    </span>
+                  )}
+                </div>
+
+                {item.estimated_duration_hours && (
+                  <div className="mt-3 text-xs text-gray-500">
+                    Estimated duration: {item.estimated_duration_hours}h
+                  </div>
+                )}
+
+                {item.scope_notes && (
+                  <div className="mt-3 line-clamp-3 rounded-md bg-white p-2 text-xs text-gray-600">
+                    {item.scope_notes}
+                  </div>
+                )}
+
+                {(() => {
+  const missingFields = getPropertyMissingFields(item)
+  const isReady = missingFields.length === 0
+
+  return (
+    <div className="mt-4">
+      {!isReady && (
+  <div className="mb-3 rounded-md bg-amber-50 p-2 text-xs text-amber-700">
+    <div>
+      Property details incomplete: {missingFields.join(", ")}.
+    </div>
+
+    <button
+      type="button"
+      onClick={() => openPropertyUpdateModal(item)}
+      className="mt-2 rounded-md border border-amber-300 bg-white px-3 py-1 text-xs font-medium text-amber-800"
+    >
+      Update Property Details
+    </button>
+  </div>
+)}
+
+      <button
+        type="button"
+        disabled={!isReady}
+        className="h-10 w-full rounded-md bg-green-600 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-gray-300"
+      >
+        {isReady ? "Schedule Job" : "Update Property First"}
+      </button>
+    </div>
+  )
+})()}
+              </div>
+            ))
+          ) : (
+            <p className="rounded-lg border border-dashed p-3 text-sm text-gray-400">
+              No accepted work waiting to schedule.
+            </p>
+          )}
+        </div>
+      </section>
 
       <section className="rounded-xl border bg-white p-4 shadow-sm">
         <button
@@ -1318,6 +1539,134 @@ const handleSendClientEmail = async () => {
             className="h-11 flex-1 rounded-md bg-blue-600 font-medium text-white"
           >
             Send Email
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+)}
+
+{propertyUpdateOpen && selectedQueueItem && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+    <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-5 shadow-xl">
+      <h2 className="mb-1 text-xl font-semibold">
+        Update Property Details
+      </h2>
+
+      <p className="mb-4 text-sm text-gray-500">
+        Complete the required property details before adding this job to the schedule.
+      </p>
+
+      <div className="space-y-4">
+        <div>
+          <label className="mb-1 block text-sm font-medium">
+            Property Code
+          </label>
+
+          <input
+            className="h-11 w-full rounded-md border px-3"
+            value={updatePropertyCode}
+            onChange={(e) => setUpdatePropertyCode(e.target.value)}
+            placeholder="e.g. REM-SMITH"
+          />
+        </div>
+
+        <div>
+          <label className="mb-1 block text-sm font-medium">
+            Client Name
+          </label>
+
+          <input
+            className="h-11 w-full rounded-md border px-3"
+            value={updateClientName}
+            onChange={(e) => setUpdateClientName(e.target.value)}
+          />
+        </div>
+
+        <div>
+          <label className="mb-1 block text-sm font-medium">
+            Address
+          </label>
+
+          <input
+            className="h-11 w-full rounded-md border px-3"
+            value={updateAddress}
+            onChange={(e) => setUpdateAddress(e.target.value)}
+          />
+        </div>
+
+        <div>
+          <label className="mb-1 block text-sm font-medium">
+            Suburb
+          </label>
+
+          <input
+            className="h-11 w-full rounded-md border px-3"
+            value={updateSuburb}
+            onChange={(e) => setUpdateSuburb(e.target.value)}
+          />
+        </div>
+
+        <div>
+          <label className="mb-1 block text-sm font-medium">
+            Property Category
+          </label>
+
+          <select
+            className="h-11 w-full rounded-md border px-3"
+            value={updateCategory}
+            onChange={(e) => setUpdateCategory(e.target.value)}
+          >
+            <option value="">Select category</option>
+            <option value="maintenance">Maintenance</option>
+            <option value="one_off">One-off</option>
+            <option value="landscaping">Landscaping</option>
+            <option value="commercial">Commercial</option>
+          </select>
+        </div>
+
+        <div>
+          <label className="mb-1 block text-sm font-medium">
+            Email
+          </label>
+
+          <input
+            className="h-11 w-full rounded-md border px-3"
+            value={updateEmail}
+            onChange={(e) => setUpdateEmail(e.target.value)}
+          />
+        </div>
+
+        <div>
+          <label className="mb-1 block text-sm font-medium">
+            Phone
+          </label>
+
+          <input
+            className="h-11 w-full rounded-md border px-3"
+            value={updatePhone}
+            onChange={(e) => setUpdatePhone(e.target.value)}
+          />
+        </div>
+
+        <div className="flex gap-3 pt-2">
+          <button
+            type="button"
+            onClick={() => {
+              setPropertyUpdateOpen(false)
+              setSelectedQueueItem(null)
+            }}
+            className="h-11 flex-1 rounded-md border"
+          >
+            Cancel
+          </button>
+
+          <button
+            type="button"
+            onClick={handleSavePropertyDetails}
+            className="h-11 flex-1 rounded-md bg-green-600 font-medium text-white"
+          >
+            Save Property Details
           </button>
         </div>
       </div>
