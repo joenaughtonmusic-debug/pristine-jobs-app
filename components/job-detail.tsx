@@ -44,21 +44,38 @@ type LabourEntry = {
 interface JobDetailProps {
   job: ScheduledJob
   recentVisits: Visit[]
+  completedVisit: Visit | null
   latestNextVisitNote: string | null
   labourEntries: LabourEntry[]
+  isAdmin?: boolean
 }
 
 export function JobDetail({
   job,
   recentVisits,
+  completedVisit,
   latestNextVisitNote,
   labourEntries,
+  isAdmin = false,
 }: JobDetailProps) {
   const router = useRouter()
 
   const [status, setStatus] = useState(job.status)
   const [loading, setLoading] = useState(false)
   const [showCompleteDialog, setShowCompleteDialog] = useState(false)
+
+const [editVisitOpen, setEditVisitOpen] = useState(false)
+const [visitHoursWorked, setVisitHoursWorked] = useState(
+  completedVisit?.hours_worked?.toString() || ""
+)
+const [visitWorkNotes, setVisitWorkNotes] = useState(
+  completedVisit?.work_notes || ""
+)
+const [visitNextNotes, setVisitNextNotes] = useState(
+  completedVisit?.next_visit_notes || ""
+)
+const [savingVisit, setSavingVisit] = useState(false)
+const [visitError, setVisitError] = useState<string | null>(null)
 
   const [internalNote, setInternalNote] = useState("")
   const [savingInternalNote, setSavingInternalNote] = useState(false)
@@ -119,6 +136,35 @@ export function JobDetail({
     setStatus("completed")
     router.refresh()
   }
+
+  const handleSaveCompletedVisit = async () => {
+  if (!completedVisit) return
+
+  setSavingVisit(true)
+  setVisitError(null)
+
+  const supabase = createClient()
+
+  const { error } = await supabase
+    .from("visits")
+    .update({
+      hours_worked: visitHoursWorked ? parseFloat(visitHoursWorked) : null,
+      work_notes: visitWorkNotes.trim() || null,
+      next_visit_notes: visitNextNotes.trim() || null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", completedVisit.id)
+
+  if (error) {
+    setVisitError(error.message)
+    setSavingVisit(false)
+    return
+  }
+
+  setSavingVisit(false)
+  setEditVisitOpen(false)
+  router.refresh()
+}
 
   const handleSubmitInternalNote = async () => {
     setSavingInternalNote(true)
@@ -222,7 +268,26 @@ export function JobDetail({
             )}
           </div>
         </div>
-      </header>
+            </header>
+
+      {isAdmin && (
+        <Card className="mb-4 border-blue-200 bg-blue-50">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">Admin Actions</CardTitle>
+          </CardHeader>
+
+          <CardContent className="flex flex-col gap-2 p-4 pt-0">
+            <Button
+  type="button"
+  variant="outline"
+  onClick={() => setEditVisitOpen(true)}
+  disabled={!completedVisit}
+>
+  {completedVisit ? "Edit Completed Visit" : "No Completed Visit Yet"}
+</Button>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="flex flex-col gap-4">
         {labourEntries.length > 0 && (
@@ -533,14 +598,95 @@ export function JobDetail({
         )}
       </div>
 
-      <CompleteVisitDialog
-        open={showCompleteDialog}
-        onOpenChange={setShowCompleteDialog}
-        jobId={job.id}
-        propertyId={job.property_id}
-        assignedStaffId={job.assigned_staff_id || null}
-        onSuccess={handleCompleteSuccess}
-      />
+            <CompleteVisitDialog
+  open={showCompleteDialog}
+  onOpenChange={setShowCompleteDialog}
+  jobId={job.id}
+  propertyId={job.property_id}
+  assignedStaffId={job.assigned_staff_id || null}
+  onSuccess={handleCompleteSuccess}
+/>
+
+      {editVisitOpen && completedVisit && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-5 shadow-xl">
+            <h2 className="mb-1 text-xl font-semibold">
+              Edit Completed Visit
+            </h2>
+
+            <p className="mb-4 text-sm text-muted-foreground">
+              Update the visit details entered by the team.
+            </p>
+
+            <div className="space-y-4">
+              <div>
+                <label className="mb-1 block text-sm font-medium">
+                  Hours Worked
+                </label>
+
+                <input
+                  type="number"
+                  step="0.25"
+                  className="h-11 w-full rounded-md border px-3"
+                  value={visitHoursWorked}
+                  onChange={(e) => setVisitHoursWorked(e.target.value)}
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium">
+                  Work Notes
+                </label>
+
+                <Textarea
+                  value={visitWorkNotes}
+                  onChange={(e) => setVisitWorkNotes(e.target.value)}
+                  rows={5}
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm font-medium">
+                  Next Visit Notes
+                </label>
+
+                <Textarea
+                  value={visitNextNotes}
+                  onChange={(e) => setVisitNextNotes(e.target.value)}
+                  rows={4}
+                />
+              </div>
+
+              {visitError && (
+                <p className="rounded-md bg-red-50 p-2 text-sm text-red-600">
+                  {visitError}
+                </p>
+              )}
+
+              <div className="flex gap-3 pt-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-11 flex-1"
+                  onClick={() => setEditVisitOpen(false)}
+                  disabled={savingVisit}
+                >
+                  Cancel
+                </Button>
+
+                <Button
+                  type="button"
+                  className="h-11 flex-1"
+                  onClick={handleSaveCompletedVisit}
+                  disabled={savingVisit}
+                >
+                  {savingVisit ? "Saving..." : "Save Visit"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

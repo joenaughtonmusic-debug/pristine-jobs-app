@@ -3,11 +3,26 @@ import { revalidatePath } from "next/cache"
 
 export const dynamic = "force-dynamic"
 
+async function markReadyToConvert(formData: FormData) {
+  "use server"
+
+  const supabase = await createClient()
+  const jobId = formData.get("jobId") as string
+
+  await supabase
+    .from("scheduled_jobs")
+    .update({
+      quoted_invoice_status: "ready_to_convert",
+    })
+    .eq("id", jobId)
+
+  revalidatePath("/admin/quoted-jobs")
+}
+
 async function markConverted(formData: FormData) {
   "use server"
 
   const supabase = await createClient()
-
   const jobId = formData.get("jobId") as string
 
   await supabase
@@ -51,9 +66,13 @@ export default async function QuotedJobsPage() {
 
   return (
     <div className="mx-auto max-w-5xl p-6">
-      <h1 className="mb-6 text-3xl font-bold">
+      <h1 className="mb-2 text-3xl font-bold">
         Quoted Jobs To Invoice
       </h1>
+
+      <p className="mb-6 text-sm text-gray-500">
+        Mark quoted jobs as ready to convert first, then mark as converted once the invoice has been created.
+      </p>
 
       <div className="space-y-4">
         {jobs?.length === 0 && (
@@ -67,6 +86,9 @@ export default async function QuotedJobsPage() {
             ? job.properties[0]
             : job.properties
 
+          const invoiceStatus = job.quoted_invoice_status || "pending"
+          const isReadyToConvert = invoiceStatus === "ready_to_convert"
+
           return (
             <div
               key={job.id}
@@ -75,16 +97,22 @@ export default async function QuotedJobsPage() {
               <div className="mb-2 flex items-center justify-between">
                 <div>
                   <div className="text-lg font-semibold">
-                    {property?.property_code}
+                    {property?.property_code || "No property code"}
                   </div>
 
                   <div className="text-sm text-gray-500">
-                    {property?.address_line_1}
+                    {property?.address_line_1 || "No address"}
                   </div>
                 </div>
 
-                <div className="rounded-full bg-purple-100 px-3 py-1 text-sm font-medium text-purple-800">
-                  QUOTED
+                <div
+                  className={`rounded-full px-3 py-1 text-sm font-medium ${
+                    isReadyToConvert
+                      ? "bg-green-100 text-green-800"
+                      : "bg-purple-100 text-purple-800"
+                  }`}
+                >
+                  {isReadyToConvert ? "READY TO CONVERT" : "QUOTED"}
                 </div>
               </div>
 
@@ -105,7 +133,7 @@ export default async function QuotedJobsPage() {
                     Scope / Notes
                   </div>
 
-                  <div className="rounded-md bg-gray-50 p-3 text-sm whitespace-pre-wrap">
+                  <div className="whitespace-pre-wrap rounded-md bg-gray-50 p-3 text-sm">
                     {job.quoted_scope}
                   </div>
                 </div>
@@ -117,27 +145,39 @@ export default async function QuotedJobsPage() {
                     Included Materials
                   </div>
 
-                  <div className="rounded-md bg-gray-50 p-3 text-sm whitespace-pre-wrap">
+                  <div className="whitespace-pre-wrap rounded-md bg-gray-50 p-3 text-sm">
                     {job.quoted_materials}
                   </div>
                 </div>
               )}
 
-              <div className="mt-4 flex justify-end">
-                <form action={markConverted}>
-                  <input
-                    type="hidden"
-                    name="jobId"
-                    value={job.id}
-                  />
+              <div className="mt-4 flex justify-end gap-3">
+                {!isReadyToConvert ? (
+  <form action={markReadyToConvert}>
+    <input type="hidden" name="jobId" value={job.id} />
 
-                  <button
-                    type="submit"
-                    className="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
-                  >
-                    Mark Quote Converted
-                  </button>
-                </form>
+    <button
+  type="submit"
+  className="flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+>
+  <span className="flex h-4 w-4 items-center justify-center rounded border border-gray-400">
+  </span>
+
+  Ready to convert to invoice
+</button>
+  </form>
+) : (
+  <form action={markConverted}>
+    <input type="hidden" name="jobId" value={job.id} />
+
+    <button
+      type="submit"
+      className="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
+    >
+      Mark Converted
+    </button>
+  </form>
+)}
               </div>
             </div>
           )

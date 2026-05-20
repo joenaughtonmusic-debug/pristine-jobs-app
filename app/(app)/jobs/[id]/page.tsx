@@ -31,6 +31,12 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
     .order("visit_date", { ascending: false })
     .limit(5)
 
+    const { data: completedVisit } = await supabase
+  .from("visits")
+  .select("*")
+  .eq("scheduled_job_id", job.id)
+  .maybeSingle()
+
   const { data: latestVisitNote } = await supabase
     .from("visits")
     .select("next_visit_notes, visit_date")
@@ -51,8 +57,10 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
   <JobDetail
     job={job as ScheduledJob}
     recentVisits={(recentVisits as Visit[]) || []}
+    completedVisit={(completedVisit as Visit) || null}
     latestNextVisitNote={latestVisitNote?.next_visit_notes || null}
     labourEntries={labourEntries || []}
+    isAdmin={true}
   />
-  )
+)
 }

@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
+import Link from "next/link"
 import { createClient } from "@/lib/supabase/client"
 import { NewPropertyModal } from "@/components/new-property-modal"
 
@@ -61,7 +62,8 @@ type Job = {
   invoice_method?: string | null
   xero_quote_number?: string | null
   quoted_scope?: string | null
-  quoted_materials?: string | null
+quoted_materials?: string | null
+admin_note?: string | null
 
   schedule_confirmation_status?: string | null
   contact_client?: boolean | null
@@ -134,6 +136,12 @@ function addDays(dateString: string, days: number) {
   return toLocalDateString(date)
 }
 
+function addWeeks(dateString: string, weeks: number) {
+  const date = parseLocalDate(dateString)
+  date.setDate(date.getDate() + weeks * 7)
+  return toLocalDateString(date)
+}
+
 function formatDayLabel(dateString: string) {
   return parseLocalDate(dateString).toLocaleDateString("en-NZ", {
     weekday: "short",
@@ -172,8 +180,9 @@ export function AdminScheduleClient({
   const [plannedDuration, setPlannedDuration] = useState("")
   const [plannedStartTime, setPlannedStartTime] = useState("")
   const [quotedScope, setQuotedScope] = useState("")
-  const [quotedMaterials, setQuotedMaterials] = useState("")
-  const [invoiceMethod, setInvoiceMethod] = useState("charge_up")
+const [quotedMaterials, setQuotedMaterials] = useState("")
+const [adminNote, setAdminNote] = useState("")
+const [invoiceMethod, setInvoiceMethod] = useState("charge_up")
   const [xeroQuoteNumber, setXeroQuoteNumber] = useState("")
   const [saving, setSaving] = useState(false)
 const [error, setError] = useState<string | null>(null)
@@ -439,8 +448,9 @@ const handleSavePropertyDetails = async () => {
 
     setPlannedStartTime(property.default_start_time || "")
     setQuotedScope(firstTemplate?.default_job_notes || "")
-    setQuotedMaterials("")
-    setInvoiceMethod(firstTemplate?.billing_mode || "charge_up")
+setQuotedMaterials("")
+setAdminNote("")
+setInvoiceMethod(firstTemplate?.billing_mode || "charge_up")
     setXeroQuoteNumber("")
 
     applyTemplateDefaults(firstTemplate, property)
@@ -474,8 +484,9 @@ const handleSavePropertyDetails = async () => {
 
     setPlannedStartTime(job.planned_start_time || "")
     setQuotedScope(job.quoted_scope || "")
-    setQuotedMaterials(job.quoted_materials || "")
-    setInvoiceMethod(job.invoice_method || "charge_up")
+setQuotedMaterials(job.quoted_materials || "")
+setAdminNote(job.admin_note || "")
+setInvoiceMethod(job.invoice_method || "charge_up")
     setXeroQuoteNumber(job.xero_quote_number || "")
 
     setError(null)
@@ -591,7 +602,8 @@ const handleSavePropertyDetails = async () => {
       billing_mode: selectedTemplate?.billing_mode || "charge_up",
       time_limit_type: selectedTemplate?.time_limit_type || "flexible",
       quoted_scope: quotedScope || null,
-      quoted_materials: quotedMaterials || null,
+quoted_materials: quotedMaterials || null,
+admin_note: adminNote || null,
     }
 
     let savedJobId = selectedJob?.id || ""
@@ -834,34 +846,55 @@ const handleSendClientEmail = async () => {
             </span>
           )}
 
-          {job.quoted_scope && (
+                    {job.quoted_scope && (
             <span className="rounded-full bg-blue-100 px-2 py-0.5 text-blue-800">
               Scope attached
             </span>
           )}
         </div>
+
+        {job.admin_note && (
+          <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
+            <div className="mb-1 font-semibold">Admin / VA note</div>
+            <div className="whitespace-pre-wrap">{job.admin_note}</div>
+          </div>
+        )}
       </div>
 
       <div className="flex shrink-0 flex-col items-end gap-2">
-        <div className="rounded-full bg-gray-100 px-2 py-1 text-xs capitalize text-gray-600">
-          {job.status}
-        </div>
+  <div className="rounded-full bg-gray-100 px-2 py-1 text-xs capitalize text-gray-600">
+    {job.status}
+  </div>
 
-        <button
-          type="button"
-          onClick={() => openEditModal(job)}
-          className="text-xs text-blue-600 hover:underline"
-        >
-          Edit
-        </button>
+  <Link
+    href={`/jobs/${job.id}`}
+    onClick={(e) => e.stopPropagation()}
+    className="text-xs text-gray-700 hover:underline"
+  >
+    Open Job
+  </Link>
 
-        <button
-          type="button"
-          onClick={() => handleDeleteJob(job.id)}
-          className="text-xs text-red-600 hover:underline"
-        >
-          Delete
-        </button>
+  <button
+    type="button"
+    onClick={(e) => {
+      e.stopPropagation()
+      openEditModal(job)
+    }}
+    className="text-xs text-blue-600 hover:underline"
+  >
+    Edit
+  </button>
+
+  <button
+    type="button"
+    onClick={(e) => {
+      e.stopPropagation()
+      handleDeleteJob(job.id)
+    }}
+    className="text-xs text-red-600 hover:underline"
+  >
+    Delete
+  </button>
       </div>
     </div>
 
@@ -1006,12 +1039,48 @@ const handleSendClientEmail = async () => {
   return (
     <div className="mx-auto max-w-7xl p-4 pb-10">
       <header className="mb-6">
-        <h1 className="text-2xl font-bold">Admin Schedule</h1>
+  <h1 className="text-2xl font-bold">Admin Schedule</h1>
 
-        <p className="text-sm text-gray-500">
-          Plan this week and next week, then quick-add jobs below.
-        </p>
-      </header>
+  <p className="text-sm text-gray-500">
+    Plan this week and next week, then quick-add jobs below.
+  </p>
+
+  <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl border bg-white p-3 text-sm">
+    <form action="/admin/schedule" className="flex items-center gap-2">
+      <label className="font-medium text-gray-700">
+        Week starting
+      </label>
+
+      <input
+        type="date"
+        name="week"
+        className="h-10 rounded-md border px-3"
+        defaultValue={thisWeekStart}
+      />
+
+      <button
+        type="submit"
+        className="h-10 rounded-md bg-black px-3 text-white"
+      >
+        Go
+      </button>
+    </form>
+
+    <Link
+      href={`/admin/schedule?week=${addWeeks(thisWeekStart, -1)}`}
+      className="rounded-md border px-3 py-2 hover:bg-gray-50"
+    >
+      Previous Week
+    </Link>
+
+    <Link
+      href="/admin/schedule"
+      className="rounded-md border px-3 py-2 hover:bg-gray-50"
+    >
+      Current Week
+    </Link>
+  </div>
+</header>
 
       <WeekSection title="This Week" days={thisWeekDays} />
       <WeekSection title="Next Week" days={nextWeekDays} />
@@ -1420,6 +1489,19 @@ const handleSendClientEmail = async () => {
                   placeholder="e.g. 2m3 mulch, 6 GW bags included"
                 />
               </div>
+
+              <div>
+  <label className="mb-1 block text-sm font-medium">
+    Admin / VA Note
+  </label>
+
+  <textarea
+    className="min-h-[70px] w-full rounded-md border p-3"
+    value={adminNote}
+    onChange={(e) => setAdminNote(e.target.value)}
+    placeholder="e.g. Contact client 7 days before, confirm access, gate code needed..."
+  />
+</div>
 
               {error && (
                 <p className="rounded-md bg-red-50 p-2 text-sm text-red-600">

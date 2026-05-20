@@ -18,11 +18,23 @@ function getMonday(date: Date) {
   return d
 }
 
-export default async function AdminSchedulePage() {
+export default async function AdminSchedulePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ week?: string }>
+}) {
   const supabase = await createClient()
+  const params = await searchParams
 
   const today = toZonedTime(new Date(), "Pacific/Auckland")
-  const thisWeekMonday = getMonday(today)
+
+  const selectedWeek = params?.week
+
+  const selectedWeekDate = selectedWeek
+    ? toZonedTime(new Date(`${selectedWeek}T12:00:00`), "Pacific/Auckland")
+    : today
+
+  const thisWeekMonday = getMonday(selectedWeekDate)
 
   const nextWeekMonday = new Date(thisWeekMonday)
   nextWeekMonday.setDate(thisWeekMonday.getDate() + 7)
@@ -120,8 +132,8 @@ export default async function AdminSchedulePage() {
 
     return (
     <AdminScheduleClient
-      thisWeekStart={startDate}
-      nextWeekStart={toDateString(nextWeekMonday)}
+  thisWeekStart={startDate}
+  nextWeekStart={toDateString(nextWeekMonday)}
       jobs={jobs || []}
       properties={properties || []}
       staff={staff || []}
