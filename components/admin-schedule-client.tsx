@@ -24,6 +24,7 @@ type Property = {
   default_start_time: string | null
   is_active: boolean
   client_email?: string | null
+  scheduling_notes?: string | null
 }
 
 type ServiceTemplate = {
@@ -80,6 +81,7 @@ admin_note?: string | null
   property_category: string | null
   client_email?: string | null
   phone?: string | null
+scheduling_notes?: string | null
 } | null
 }
 
@@ -105,6 +107,7 @@ type SchedulingQueueItem = {
     property_category: string | null
     client_email?: string | null
     phone?: string | null
+    scheduling_notes?: string | null
   } | null
 }
 
@@ -198,6 +201,11 @@ const [updateSuburb, setUpdateSuburb] = useState("")
 const [updateCategory, setUpdateCategory] = useState("")
 const [updateEmail, setUpdateEmail] = useState("")
 const [updatePhone, setUpdatePhone] = useState("")
+const [updateSchedulingNotes, setUpdateSchedulingNotes] = useState("")
+const [schedulingNoteModalOpen, setSchedulingNoteModalOpen] = useState(false)
+const [schedulingNoteJob, setSchedulingNoteJob] = useState<Job | null>(null)
+const [schedulingNoteText, setSchedulingNoteText] = useState("")
+const [savingSchedulingNote, setSavingSchedulingNote] = useState(false)
   const [emailModalOpen, setEmailModalOpen] = useState(false)
   const [emailJob, setEmailJob] = useState<Job | null>(null)
   const [emailTo, setEmailTo] = useState("")
@@ -370,6 +378,7 @@ const openPropertyUpdateModal = (item: SchedulingQueueItem) => {
   setUpdateCategory(property?.property_category || "")
   setUpdateEmail(property?.client_email || "")
   setUpdatePhone(property?.phone || "")
+  setUpdateSchedulingNotes(property?.scheduling_notes || "")
   setPropertyUpdateOpen(true)
 }
 
@@ -386,6 +395,7 @@ const handleSavePropertyDetails = async () => {
       property_category: updateCategory || null,
       client_email: updateEmail.trim() || null,
       phone: updatePhone.trim() || null,
+scheduling_notes: updateSchedulingNotes.trim() || null,
     })
     .eq("id", selectedQueueItem.property_id)
 
@@ -731,6 +741,37 @@ const toggleContactClient = async (
   router.refresh()
 }
 
+const openSchedulingNoteModal = (job: Job) => {
+  setSchedulingNoteJob(job)
+  setSchedulingNoteText(job.properties?.scheduling_notes || "")
+  setSchedulingNoteModalOpen(true)
+}
+
+const handleSaveSchedulingNote = async () => {
+  if (!schedulingNoteJob?.property_id) return
+
+  setSavingSchedulingNote(true)
+
+  const { error } = await supabase
+    .from("properties")
+    .update({
+      scheduling_notes: schedulingNoteText.trim() || null,
+    })
+    .eq("id", schedulingNoteJob.property_id)
+
+  setSavingSchedulingNote(false)
+
+  if (error) {
+    alert(error.message)
+    return
+  }
+
+  setSchedulingNoteModalOpen(false)
+  setSchedulingNoteJob(null)
+  setSchedulingNoteText("")
+  router.refresh()
+}
+
 const openContactClientModal = async (job: Job) => {
   const { data: property, error } = await supabase
     .from("properties")
@@ -853,6 +894,15 @@ const handleSendClientEmail = async () => {
           )}
         </div>
 
+{job.properties?.scheduling_notes && (
+  <div className="mt-2 rounded-md border border-blue-200 bg-blue-50 p-2 text-xs text-blue-900">
+    <div className="mb-1 font-semibold">Scheduling note</div>
+    <div className="whitespace-pre-wrap">
+      {job.properties.scheduling_notes}
+    </div>
+  </div>
+)}
+
         {job.admin_note && (
           <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
             <div className="mb-1 font-semibold">Admin / VA note</div>
@@ -873,6 +923,16 @@ const handleSendClientEmail = async () => {
   >
     Open Job
   </Link>
+<button
+  type="button"
+  onClick={(e) => {
+    e.stopPropagation()
+    openSchedulingNoteModal(job)
+  }}
+  className="text-xs text-indigo-600 hover:underline"
+>
+  Scheduling Note
+</button>
 
   <button
     type="button"
@@ -1548,6 +1608,65 @@ const handleSendClientEmail = async () => {
         </div>
       )}
 
+      {schedulingNoteModalOpen && schedulingNoteJob && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+    <div className="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl">
+      <h2 className="mb-1 text-xl font-semibold">
+        Scheduling Note
+      </h2>
+
+      <p className="mb-4 text-sm text-gray-500">
+        This note is saved against the property and will show every time this customer is scheduled.
+      </p>
+
+      <div className="mb-4 rounded-md bg-gray-50 p-3 text-sm">
+        <div className="font-medium">
+          {schedulingNoteJob.properties?.client_name || "Unknown client"}
+        </div>
+
+        <div className="text-gray-500">
+          {schedulingNoteJob.properties?.address_line_1 || "No address"}
+        </div>
+      </div>
+
+      <label className="mb-1 block text-sm font-medium">
+        Permanent Scheduling Note
+      </label>
+
+      <textarea
+        className="min-h-[120px] w-full rounded-md border p-3"
+        value={schedulingNoteText}
+        onChange={(e) => setSchedulingNoteText(e.target.value)}
+        placeholder="e.g. Client prefers Friday, email 7 days before, morning visits only..."
+      />
+
+      <div className="mt-4 flex gap-3">
+        <button
+          type="button"
+          onClick={() => {
+            setSchedulingNoteModalOpen(false)
+            setSchedulingNoteJob(null)
+            setSchedulingNoteText("")
+          }}
+          className="h-11 flex-1 rounded-md border"
+          disabled={savingSchedulingNote}
+        >
+          Cancel
+        </button>
+
+        <button
+          type="button"
+          onClick={handleSaveSchedulingNote}
+          className="h-11 flex-1 rounded-md bg-indigo-600 font-medium text-white"
+          disabled={savingSchedulingNote}
+        >
+          {savingSchedulingNote ? "Saving..." : "Save Note"}
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+
 {emailModalOpen && (
   <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
     <div className="w-full max-w-2xl rounded-xl bg-white p-5 shadow-xl">
@@ -1730,6 +1849,19 @@ const handleSendClientEmail = async () => {
             onChange={(e) => setUpdatePhone(e.target.value)}
           />
         </div>
+
+        <div>
+  <label className="mb-1 block text-sm font-medium">
+    Scheduling Notes
+  </label>
+
+  <textarea
+    className="min-h-[90px] w-full rounded-md border p-3"
+    value={updateSchedulingNotes}
+    onChange={(e) => setUpdateSchedulingNotes(e.target.value)}
+    placeholder="e.g. Client prefers Friday, email 7 days before, mornings only..."
+  />
+</div>
 
         <div className="flex gap-3 pt-2">
           <button

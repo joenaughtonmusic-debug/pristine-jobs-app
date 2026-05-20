@@ -57,7 +57,8 @@ export default async function AdminSchedulePage({
   suburb,
   property_category,
   client_email,
-  phone
+  phone,
+  scheduling_notes
 ),
     scheduled_job_staff (
       id,
