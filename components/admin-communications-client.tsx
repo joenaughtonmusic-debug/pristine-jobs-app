@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import Link from "next/link"
 import { createClient } from "@/lib/supabase/client"
 import type { Communication } from "@/lib/types"
 
@@ -127,19 +128,21 @@ export default function AdminCommunicationsClient({ communications = [], initial
               <li className="text-sm text-gray-500">No communications found.</li>
             ) : (
               rows.map((t) => (
-                <li key={t.id} className="cursor-pointer rounded border p-3 hover:bg-gray-50">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="font-semibold">{t.subject || `(${t.channel} ${t.direction})`}</div>
-                      <div className="mt-1 text-sm text-gray-500">{t.body ? t.body.slice(0, 120) : ""}</div>
+                <li key={t.id} className="rounded">
+                  <Link href={`/admin/communications/${t.id}`} className="block cursor-pointer rounded border p-3 hover:bg-gray-50">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="font-semibold">{t.subject || `(${t.channel} ${t.direction})`}</div>
+                        <div className="mt-1 text-sm text-gray-500">{t.body ? t.body.slice(0, 120) : ""}</div>
+                      </div>
+                      <div className="text-xs text-gray-400">{t.created_at ? new Date(t.created_at).toLocaleString() : ""}</div>
                     </div>
-                    <div className="text-xs text-gray-400">{t.created_at ? new Date(t.created_at).toLocaleString() : ""}</div>
-                  </div>
-                  <div className="mt-2 flex gap-2 text-xs text-gray-600">
-                    <div>Channel: {t.channel}</div>
-                    <div>Direction: {t.direction}</div>
-                    <div>Status: {t.status}</div>
-                  </div>
+                    <div className="mt-2 flex gap-2 text-xs text-gray-600">
+                      <div>Channel: {t.channel}</div>
+                      <div>Direction: {t.direction}</div>
+                      <div>Status: {t.status}</div>
+                    </div>
+                  </Link>
                 </li>
               ))
             )}
