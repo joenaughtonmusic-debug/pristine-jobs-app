@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server"
+import { AdminCommunicationDetailClient } from "@/components/admin-communication-detail-client"
 
 export const dynamic = "force-dynamic"
 
@@ -13,7 +14,23 @@ export default async function AdminCommunicationThreadPage({ params }: Props) {
   const id = Array.isArray(rawId) ? rawId[0] : rawId
   const supabase = await createClient()
 
-  const { data: communication, error } = await supabase.from("communications").select("*").eq("id", id).single()
+  const { data: communication, error } = await supabase
+    .from("communications")
+    .select(`
+      *,
+      admin_enquiries (
+        id,
+        name,
+        email,
+        phone,
+        address,
+        suburb,
+        job_type,
+        status
+      )
+    `)
+    .eq("id", id)
+    .single()
 
   if (error || !communication) {
     return (
@@ -48,24 +65,7 @@ export default async function AdminCommunicationThreadPage({ params }: Props) {
       </header>
 
       <div className="rounded-xl border bg-white p-4 shadow-sm">
-        <div className="space-y-4 text-sm text-gray-700">
-          <div><strong>Channel:</strong> {communication.channel}</div>
-          <div><strong>Direction:</strong> {communication.direction}</div>
-          <div><strong>Subject:</strong> {communication.subject || ""}</div>
-          <div><strong>Body:</strong></div>
-          <div className="whitespace-pre-wrap rounded-md border p-3">{communication.body || ""}</div>
-          <div><strong>Status:</strong> {communication.status}</div>
-          <div><strong>External ID:</strong> {communication.external_id || ""}</div>
-          <div><strong>Sent by:</strong> {communication.sent_by || ""}</div>
-          <div><strong>Enquiry ID:</strong> {communication.enquiry_id || ""}</div>
-          <div><strong>Property ID:</strong> {communication.property_id || ""}</div>
-          <div><strong>Job ID:</strong> {communication.job_id || ""}</div>
-          <div><strong>Visit ID:</strong> {communication.visit_id || ""}</div>
-          <div><strong>Metadata:</strong></div>
-          <pre className="mt-2 rounded-md border p-3 text-xs">{communication.metadata ? JSON.stringify(communication.metadata, null, 2) : "{}"}</pre>
-          <div className="mt-2 text-xs text-gray-400">Created at: {communication.created_at}</div>
-          <div className="text-xs text-gray-400">Delivered at: {communication.delivered_at || ""}</div>
-        </div>
+        <AdminCommunicationDetailClient communication={communication} />
       </div>
     </div>
   )

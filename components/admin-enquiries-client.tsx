@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 
@@ -16,6 +17,7 @@ type Enquiry = {
   notes: string | null
   status: string
   created_at: string
+  communication_count?: number
 }
 
 type Props = {
@@ -387,6 +389,7 @@ export function AdminEnquiriesClient({
             enquiries.map((enquiry) => (
               <div
                 key={enquiry.id}
+                id={`enquiry-${enquiry.id}`}
                 className="rounded-lg border p-4"
               >
                 <div className="flex items-start justify-between gap-4">
@@ -414,6 +417,19 @@ export function AdminEnquiriesClient({
                         {enquiry.notes}
                       </div>
                     )}
+
+                    <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
+                      <span className="text-gray-500">
+                        {enquiry.communication_count || 0} communications
+                      </span>
+
+                      <Link
+                        href={`/admin/communications?enquiry=${enquiry.id}`}
+                        className="font-medium text-blue-600 hover:underline"
+                      >
+                        View related communications
+                      </Link>
+                    </div>
                   </div>
 
                   <div className="flex shrink-0 flex-col items-end gap-2">

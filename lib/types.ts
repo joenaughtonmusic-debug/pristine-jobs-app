@@ -60,6 +60,36 @@ export interface CompleteVisitFormData {
   ready_for_invoice: boolean
 }
 
+export type CommunicationStatus =
+  | 'new'
+  | 'needs_reply'
+  | 'needs_scheduling'
+  | 'needs_estimator'
+  | 'waiting_customer'
+  | 'escalate_to_joe'
+  | 'closed'
+
+export type CommunicationCategory =
+  | 'quote_request'
+  | 'scheduling'
+  | 'maintenance_query'
+  | 'invoice_payment'
+  | 'complaint'
+  | 'general'
+  | 'internal_note'
+
+export type CommunicationPriority = 'low' | 'normal' | 'high' | 'urgent'
+
+export type CommunicationRiskLevel = 'low' | 'medium' | 'high'
+
+export type CommunicationAssignee =
+  | 'unassigned'
+  | 'va'
+  | 'estimator'
+  | 'maintenance_team'
+  | 'landscaping_team'
+  | 'joe'
+
 export interface Communication {
   id: string
   user_id: string
@@ -73,8 +103,26 @@ export interface Communication {
   body?: string | null
   metadata?: Record<string, any> | null
   external_id?: string | null
-  status?: 'queued' | 'sent' | 'failed' | 'delivered' | 'received' | 'draft' | 'archived'
+  status?: CommunicationStatus
+  category?: CommunicationCategory
+  priority?: CommunicationPriority
+  risk_level?: CommunicationRiskLevel
+  assigned_to?: CommunicationAssignee
+  requires_review?: boolean
+  ai_summary?: string | null
+  suggested_reply?: string | null
   sent_by?: string | null
   created_at?: string
   delivered_at?: string | null
+}
+
+export interface CommunicationEnquirySummary {
+  id: string
+  name: string
+  address?: string | null
+  suburb?: string | null
+}
+
+export interface CommunicationWithEnquiry extends Communication {
+  admin_enquiries?: CommunicationEnquirySummary | CommunicationEnquirySummary[] | null
 }

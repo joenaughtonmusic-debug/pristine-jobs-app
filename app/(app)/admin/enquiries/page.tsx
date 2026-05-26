@@ -12,5 +12,26 @@ export default async function AdminEnquiriesPage() {
     .neq("status", "archived")
     .order("created_at", { ascending: false })
 
-  return <AdminEnquiriesClient enquiries={enquiries || []} />
+  const { data: communications } = await supabase
+    .from("communications")
+    .select("enquiry_id")
+    .not("enquiry_id", "is", null)
+
+  const communicationCounts = new Map<string, number>()
+
+  communications?.forEach((communication) => {
+    if (!communication.enquiry_id) return
+
+    communicationCounts.set(
+      communication.enquiry_id,
+      (communicationCounts.get(communication.enquiry_id) || 0) + 1
+    )
+  })
+
+  const enquiriesWithCounts = (enquiries || []).map((enquiry) => ({
+    ...enquiry,
+    communication_count: communicationCounts.get(enquiry.id) || 0,
+  }))
+
+  return <AdminEnquiriesClient enquiries={enquiriesWithCounts} />
 }
