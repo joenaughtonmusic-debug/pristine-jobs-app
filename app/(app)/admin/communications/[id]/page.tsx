@@ -9,6 +9,10 @@ type Props = {
 export default async function AdminCommunicationThreadPage({ params }: Props) {
   const rawId = params.id
   const id = Array.isArray(rawId) ? rawId[0] : rawId
+  // Debug logs to diagnose param forwarding issues
+  console.log("[communications] params:", params)
+  console.log("[communications] params.id:", params.id)
+  console.log("[communications] resolved id:", id)
   const supabase = await createClient()
 
   const { data: communication, error } = await supabase.from("communications").select("*").eq("id", id).single()
@@ -24,6 +28,10 @@ export default async function AdminCommunicationThreadPage({ params }: Props) {
         <div className="rounded-xl border bg-white p-4 shadow-sm">
           <h3 className="mb-2 text-lg font-semibold">Debug information</h3>
           <div className="text-sm text-red-600">
+            <div className="mb-2"><strong>params:</strong></div>
+            <pre className="mb-2 rounded-md border bg-gray-50 p-3 text-xs">{JSON.stringify(params, null, 2)}</pre>
+            <div className="mb-2"><strong>params.id:</strong> {String((params as any).id)}</div>
+            <div className="mb-2"><strong>resolved id:</strong> {String(id)}</div>
             {error ? (
               <div>
                 <div><strong>Supabase error:</strong> {error.message}</div>
