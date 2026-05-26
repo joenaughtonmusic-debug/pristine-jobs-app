@@ -61,7 +61,19 @@ export default function AdminCommunicationsClient({ communications = [], initial
     }
 
     setCreating(true)
-    const { error } = await supabase.from("communications").insert({ channel, direction, subject: subject || null, body: body || null, status: "queued" })
+    // ensure we have the authenticated user's id to satisfy RLS and NOT NULL user_id
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser()
+
+    if (userError || !user) {
+      setCreating(false)
+      alert("You must be signed in to create communications.")
+      return
+    }
+
+    const { error } = await supabase.from("communications").insert({ user_id: user.id, channel, direction, subject: subject || null, body: body || null, status: "queued" })
     setCreating(false)
 
     if (error) {
