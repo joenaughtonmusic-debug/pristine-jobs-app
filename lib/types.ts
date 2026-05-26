@@ -59,3 +59,22 @@ export interface CompleteVisitFormData {
   next_visit_notes: string
   ready_for_invoice: boolean
 }
+
+export interface Communication {
+  id: string
+  user_id: string
+  enquiry_id?: string | null
+  property_id?: string | null
+  job_id?: string | null
+  visit_id?: string | null
+  channel: 'email' | 'sms' | 'phone' | 'internal'
+  direction: 'inbound' | 'outbound'
+  subject?: string | null
+  body?: string | null
+  metadata?: Record<string, any> | null
+  external_id?: string | null
+  status?: 'queued' | 'sent' | 'failed' | 'delivered' | 'received' | 'draft' | 'archived'
+  sent_by?: string | null
+  created_at?: string
+  delivered_at?: string | null
+}
