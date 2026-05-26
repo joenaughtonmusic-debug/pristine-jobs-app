@@ -79,6 +79,24 @@ export function AdminEnquiriesClient({
     router.refresh()
   }
 
+    const handleDeleteEnquiry = async (enquiryId: string) => {
+    const confirmed = confirm("Delete this enquiry?")
+
+    if (!confirmed) return
+
+    const { error } = await supabase
+      .from("admin_enquiries")
+      .update({ status: "archived" })
+      .eq("id", enquiryId)
+
+    if (error) {
+      alert(error.message)
+      return
+    }
+
+    router.refresh()
+  }
+
   return (
     <div className="mx-auto max-w-7xl p-4 pb-10">
       <header className="mb-6">
@@ -398,9 +416,19 @@ export function AdminEnquiriesClient({
                     )}
                   </div>
 
-                  <div className="shrink-0 rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700">
-                    {enquiry.status}
-                  </div>
+                  <div className="flex shrink-0 flex-col items-end gap-2">
+  <div className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700">
+    {enquiry.status}
+  </div>
+
+  <button
+    type="button"
+    onClick={() => handleDeleteEnquiry(enquiry.id)}
+    className="rounded-md border border-red-200 px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
+  >
+    Delete
+  </button>
+</div>
                 </div>
               </div>
             ))
