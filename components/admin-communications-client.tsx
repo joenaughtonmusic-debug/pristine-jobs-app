@@ -135,7 +135,7 @@ export default function AdminCommunicationsClient({ communications = [], initial
                         <div className="font-semibold">{t.subject || `(${t.channel} ${t.direction})`}</div>
                         <div className="mt-1 text-sm text-gray-500">{t.body ? t.body.slice(0, 120) : ""}</div>
                       </div>
-                      <div className="text-xs text-gray-400">{t.created_at ? new Date(t.created_at).toLocaleString() : ""}</div>
+                      <div className="text-xs text-gray-400">{t.created_at ? new Date(t.created_at).toISOString() : ""}</div>
                     </div>
                     <div className="mt-2 flex gap-2 text-xs text-gray-600">
                       <div>Channel: {t.channel}</div>
