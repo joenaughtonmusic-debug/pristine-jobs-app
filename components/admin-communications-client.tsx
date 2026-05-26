@@ -127,24 +127,38 @@ export default function AdminCommunicationsClient({ communications = [], initial
             ) : rows.length === 0 ? (
               <li className="text-sm text-gray-500">No communications found.</li>
             ) : (
-              rows.map((t) => (
-                <li key={t.id} className="rounded">
-                  <Link href={`/admin/communications/${t.id}`} className="block cursor-pointer rounded border p-3 hover:bg-gray-50">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <div className="font-semibold">{t.subject || `(${t.channel} ${t.direction})`}</div>
-                        <div className="mt-1 text-sm text-gray-500">{t.body ? t.body.slice(0, 120) : ""}</div>
+              rows.map((t, idx) => {
+                const id = (t as any)?.id
+                if (!id) {
+                  // don't create a broken link — surface a clear warning
+                  console.warn("Communication row missing id:", t)
+                  return (
+                    <li key={`missing-id-${idx}`} className="rounded border p-3 bg-yellow-50">
+                      <div className="font-semibold text-sm text-yellow-800">Missing ID — cannot open detail</div>
+                      <div className="mt-1 text-xs text-gray-500">Subject: {t.subject || '(no subject)'}</div>
+                    </li>
+                  )
+                }
+
+                return (
+                  <li key={id} className="rounded">
+                    <Link href={`/admin/communications/${id}`} className="block cursor-pointer rounded border p-3 hover:bg-gray-50">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="font-semibold">{t.subject || `(${t.channel} ${t.direction})`}</div>
+                          <div className="mt-1 text-sm text-gray-500">{t.body ? t.body.slice(0, 120) : ""}</div>
+                        </div>
+                        <div className="text-xs text-gray-400">{t.created_at ? new Date(t.created_at).toISOString() : ""}</div>
                       </div>
-                      <div className="text-xs text-gray-400">{t.created_at ? new Date(t.created_at).toISOString() : ""}</div>
-                    </div>
-                    <div className="mt-2 flex gap-2 text-xs text-gray-600">
-                      <div>Channel: {t.channel}</div>
-                      <div>Direction: {t.direction}</div>
-                      <div>Status: {t.status}</div>
-                    </div>
-                  </Link>
-                </li>
-              ))
+                      <div className="mt-2 flex gap-2 text-xs text-gray-600">
+                        <div>Channel: {t.channel}</div>
+                        <div>Direction: {t.direction}</div>
+                        <div>Status: {t.status}</div>
+                      </div>
+                    </Link>
+                  </li>
+                )
+              })
             )}
           </ul>
         </div>
