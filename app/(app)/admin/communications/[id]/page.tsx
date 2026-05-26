@@ -3,11 +3,12 @@ import { createClient } from "@/lib/supabase/server"
 export const dynamic = "force-dynamic"
 
 type Props = {
-  params: { id: string }
+  params: { id: string | string[] }
 }
 
 export default async function AdminCommunicationThreadPage({ params }: Props) {
-  const { id } = params
+  const rawId = params.id
+  const id = Array.isArray(rawId) ? rawId[0] : rawId
   const supabase = await createClient()
 
   const { data: communication, error } = await supabase.from("communications").select("*").eq("id", id).single()
@@ -19,6 +20,20 @@ export default async function AdminCommunicationThreadPage({ params }: Props) {
           <h1 className="text-2xl font-bold">Conversation {id}</h1>
           <p className="text-sm text-gray-500">Unable to load communication.</p>
         </header>
+
+        <div className="rounded-xl border bg-white p-4 shadow-sm">
+          <h3 className="mb-2 text-lg font-semibold">Debug information</h3>
+          <div className="text-sm text-red-600">
+            {error ? (
+              <div>
+                <div><strong>Supabase error:</strong> {error.message}</div>
+                {error.details && <div><strong>Details:</strong> {String(error.details)}</div>}
+              </div>
+            ) : (
+              <div>No communication found with id {id}.</div>
+            )}
+          </div>
+        </div>
       </div>
     )
   }
