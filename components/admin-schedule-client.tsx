@@ -71,6 +71,11 @@ admin_note?: string | null
   client_contact_sent_at?: string | null
 
   scheduled_job_staff?: ScheduledJobStaff[]
+  visits?: {
+    id: string
+    ready_for_invoice?: boolean | null
+    invoice_status?: string | null
+  }[]
 
   properties?: {
   id: string
@@ -111,6 +116,20 @@ type SchedulingQueueItem = {
   } | null
 }
 
+type ClientAdjustment = {
+  id: string
+  subject: string | null
+  body: string | null
+  status: string | null
+  category: string | null
+  priority: string | null
+  risk_level: string | null
+  ai_summary: string | null
+  suggested_reply: string | null
+  metadata: Record<string, any> | string | null
+  created_at: string | null
+}
+
 type Props = {
   thisWeekStart: string
   nextWeekStart: string
@@ -119,6 +138,7 @@ type Props = {
   staff: StaffMember[]
   serviceTemplates: ServiceTemplate[]
   schedulingQueue: SchedulingQueueItem[]
+  clientAdjustments: ClientAdjustment[]
 }
 
 function parseLocalDate(dateString: string) {
@@ -153,6 +173,42 @@ function formatDayLabel(dateString: string) {
   })
 }
 
+function formatDateTime(dateString: string | null) {
+  if (!dateString) return "No date"
+
+  return new Date(dateString).toISOString()
+}
+
+function parseAdjustmentMetadata(item: ClientAdjustment) {
+  let metadata = item.metadata
+
+  if (typeof metadata === "string") {
+    try {
+      metadata = JSON.parse(metadata)
+    } catch {
+      metadata = null
+    }
+  }
+
+  return metadata && typeof metadata === "object" && !Array.isArray(metadata)
+    ? metadata
+    : {}
+}
+
+function getAdjustmentSender(item: ClientAdjustment) {
+  const metadata = parseAdjustmentMetadata(item)
+
+  if (metadata) {
+    const fromName = metadata.from_name
+    const fromEmail = metadata.from_email
+
+    if (typeof fromName === "string" && fromName.trim()) return fromName
+    if (typeof fromEmail === "string" && fromEmail.trim()) return fromEmail
+  }
+
+  return item.subject || "Scheduling request"
+}
+
 export function AdminScheduleClient({
   thisWeekStart,
   nextWeekStart,
@@ -161,9 +217,15 @@ export function AdminScheduleClient({
   staff,
   serviceTemplates,
   schedulingQueue = [],
+  clientAdjustments = [],
 }: Props) {
   const router = useRouter()
   const supabase = createClient()
+
+  const [visibleClientAdjustments, setVisibleClientAdjustments] =
+    useState(clientAdjustments)
+  const [savingClientAdjustmentId, setSavingClientAdjustmentId] =
+    useState<string | null>(null)
 
   const [quickAddOpen, setQuickAddOpen] = useState(true)
   const [selectedSuburb, setSelectedSuburb] = useState("All")
@@ -223,6 +285,32 @@ const [savingSchedulingNote, setSavingSchedulingNote] = useState(false)
     if (!labourHours || crewSize <= 1) return labourHours
 
     return labourHours / crewSize
+  }
+
+  const completeClientAdjustment = async (item: ClientAdjustment) => {
+    setSavingClientAdjustmentId(item.id)
+
+    const metadata = {
+      ...parseAdjustmentMetadata(item),
+      schedule_action_completed: true,
+      schedule_action_completed_at: new Date().toISOString(),
+    }
+
+    const { error } = await supabase
+      .from("communications")
+      .update({ metadata })
+      .eq("id", item.id)
+
+    setSavingClientAdjustmentId(null)
+
+    if (error) {
+      alert(error.message)
+      return
+    }
+
+    setVisibleClientAdjustments((items) =>
+      items.filter((adjustment) => adjustment.id !== item.id)
+    )
   }
 
   const thisWeekDays = [0, 1, 2, 3, 4].map((day) =>
@@ -306,6 +394,19 @@ const [savingSchedulingNote, setSavingSchedulingNote] = useState(false)
     if (staffIds.length === 0) return "Unassigned"
 
     return staffIds.map((id) => getStaffName(id)).join(", ")
+  }
+
+  const getInvoiceStatusLabel = (job: Job) => {
+    const completedVisit = job.visits?.[0]
+
+    if (completedVisit?.invoice_status) {
+      return completedVisit.invoice_status.replaceAll("_", " ")
+    }
+
+    if (completedVisit?.ready_for_invoice) return "ready"
+    if (job.invoice_method === "quoted") return "quoted"
+
+    return null
   }
 
   const getJobsForDate = (date: string) => {
@@ -887,6 +988,12 @@ const handleSendClientEmail = async () => {
             </span>
           )}
 
+          {getInvoiceStatusLabel(job) && (
+            <span className="rounded-full bg-green-100 px-2 py-0.5 font-medium text-green-800">
+              Invoice: {getInvoiceStatusLabel(job)}
+            </span>
+          )}
+
                     {job.quoted_scope && (
             <span className="rounded-full bg-blue-100 px-2 py-0.5 text-blue-800">
               Scope attached
@@ -1144,6 +1251,62 @@ const handleSendClientEmail = async () => {
 
       <WeekSection title="This Week" days={thisWeekDays} />
       <WeekSection title="Next Week" days={nextWeekDays} />
+
+      <section className="mb-8 rounded-xl border bg-white p-4 shadow-sm">
+        <h2 className="text-lg font-semibold">Client Adjustments</h2>
+
+        <p className="mb-4 text-sm text-gray-500">
+          Client scheduling amendments.
+        </p>
+
+        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+          {visibleClientAdjustments.length > 0 ? (
+            visibleClientAdjustments.map((item) => (
+              <div
+                key={item.id}
+                className="rounded-lg border border-blue-100 bg-blue-50 p-4"
+              >
+                <div className="font-semibold text-gray-900">
+                  {getAdjustmentSender(item)}
+                </div>
+
+                {(item.ai_summary || item.body) && (
+                  <div className="mt-3 line-clamp-3 text-sm text-gray-700">
+                    {item.ai_summary || item.body}
+                  </div>
+                )}
+
+                <div className="mt-3 text-xs text-gray-500">
+                  Email · {item.priority || "normal"} · {formatDateTime(item.created_at)}
+                  {item.risk_level === "high" ? " · High risk" : ""}
+                </div>
+
+                <Link
+                  href={`/admin/communications/${item.id}`}
+                  className="mt-3 inline-flex rounded-md border border-blue-200 bg-white px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-50"
+                >
+                  Open Communication
+                </Link>
+
+                <button
+                  type="button"
+                  onClick={() => completeClientAdjustment(item)}
+                  disabled={savingClientAdjustmentId === item.id}
+                  className="ml-2 mt-3 inline-flex rounded-md border border-green-200 bg-white px-3 py-1.5 text-xs font-medium text-green-700 hover:bg-green-50 disabled:bg-gray-100 disabled:text-gray-400"
+                >
+                  {savingClientAdjustmentId === item.id
+                    ? "Saving..."
+                    : "Schedule Amended"}
+                </button>
+              </div>
+            ))
+          ) : (
+            <p className="rounded-lg border border-dashed p-3 text-sm text-gray-400">
+              No client scheduling adjustments waiting for review.
+            </p>
+          )}
+        </div>
+      </section>
 
       <section className="mb-8 rounded-xl border bg-white p-4 shadow-sm">
         <h2 className="text-lg font-semibold">Ready To Schedule</h2>

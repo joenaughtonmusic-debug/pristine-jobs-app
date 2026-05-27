@@ -67,6 +67,11 @@ export default async function AdminSchedulePage({
         id,
         name
       )
+    ),
+    visits (
+      id,
+      ready_for_invoice,
+      invoice_status
     )
   `)
   .gte("scheduled_date", startDate)
@@ -131,6 +136,29 @@ export default async function AdminSchedulePage({
     .eq("status", "ready_to_schedule")
     .order("created_at", { ascending: false })
 
+  const { data: clientAdjustments } = await supabase
+    .from("communications")
+    .select(`
+      id,
+      subject,
+      body,
+      status,
+      category,
+      priority,
+      risk_level,
+      ai_summary,
+      suggested_reply,
+      metadata,
+      created_at
+    `)
+    .eq("category", "scheduling")
+    .eq("metadata->>schedule_action_approved", "true")
+    .or("metadata->>schedule_action_completed.is.null,metadata->>schedule_action_completed.neq.true")
+    .neq("status", "closed")
+    .neq("status", "archived")
+    .neq("status", "resolved")
+    .order("created_at", { ascending: false })
+
     return (
     <AdminScheduleClient
   thisWeekStart={startDate}
@@ -140,6 +168,7 @@ export default async function AdminSchedulePage({
       staff={staff || []}
       serviceTemplates={serviceTemplates || []}
       schedulingQueue={schedulingQueue || []}
+      clientAdjustments={clientAdjustments || []}
     />
   )
 }

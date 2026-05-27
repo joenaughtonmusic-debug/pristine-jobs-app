@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS communications (
   user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   enquiry_id UUID NULL REFERENCES admin_enquiries(id) ON DELETE SET NULL,
   property_id UUID NULL REFERENCES properties(id) ON DELETE SET NULL,
-  job_id UUID NULL REFERENCES jobs(id) ON DELETE SET NULL,
+  job_id UUID NULL REFERENCES scheduled_jobs(id) ON DELETE SET NULL,
   visit_id UUID NULL REFERENCES visits(id) ON DELETE SET NULL,
   channel TEXT NOT NULL CHECK (channel IN ('email','sms','phone','internal')),
   direction TEXT NOT NULL CHECK (direction IN ('inbound','outbound')),

@@ -12,8 +12,9 @@ export default function AdminLayout({
           <Link href="/admin/schedule">Schedule</Link>
           <Link href="/admin/estimates-calendar">Estimates</Link>
           <Link href="/admin/actions">VA Actions</Link>
-          <Link href="/admin/enquiries">Enquiries</Link>
+          <Link href="/admin/enquiries">Phone Enquiries</Link>
           <Link href="/admin/quoted-jobs">Quoted Jobs</Link>
+          <Link href="/admin/invoices">Invoices</Link>
           <Link href="/admin/communications">Communications</Link>
           <Link href="/admin/properties">Properties</Link>
         </div>

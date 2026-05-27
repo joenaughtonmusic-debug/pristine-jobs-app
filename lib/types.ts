@@ -109,6 +109,10 @@ export interface Communication {
   risk_level?: CommunicationRiskLevel
   assigned_to?: CommunicationAssignee
   requires_review?: boolean
+  ignored?: boolean | null
+  requires_action?: boolean | null
+  source_category?: string | null
+  ignore_reason?: string | null
   ai_summary?: string | null
   suggested_reply?: string | null
   sent_by?: string | null

@@ -25,6 +25,7 @@ type Props = {
   initialCategory?: string | undefined
   initialPriority?: string | undefined
   initialAssignedTo?: string | undefined
+  initialTab?: "inbox" | "ignored" | "all"
 }
 
 const statusOptions: { value: CommunicationStatus; label: string }[] = [
@@ -111,6 +112,7 @@ export default function AdminCommunicationsClient({
   initialCategory,
   initialPriority,
   initialAssignedTo,
+  initialTab = "inbox",
 }: Props) {
   const supabase = createClient()
   const [rows, setRows] = useState<CommunicationWithEnquiry[]>(communications)
@@ -121,6 +123,7 @@ export default function AdminCommunicationsClient({
   const [categoryFilter, setCategoryFilter] = useState<string | undefined>(initialCategory)
   const [priorityFilter, setPriorityFilter] = useState<string | undefined>(initialPriority)
   const [assignedToFilter, setAssignedToFilter] = useState<string | undefined>(initialAssignedTo)
+  const [activeTab, setActiveTab] = useState<"inbox" | "ignored" | "all">(initialTab)
 
   const fetchRows = async () => {
     setLoading(true)
@@ -144,6 +147,13 @@ export default function AdminCommunicationsClient({
     if (categoryFilter) q = q.eq("category", categoryFilter)
     if (priorityFilter) q = q.eq("priority", priorityFilter)
     if (assignedToFilter) q = q.eq("assigned_to", assignedToFilter)
+    if (activeTab === "inbox") {
+      q = q
+        .eq("ignored", false)
+        .eq("requires_action", true)
+        .neq("status", "closed")
+    }
+    if (activeTab === "ignored") q = q.eq("ignored", true)
 
     const { data, error } = await q
     setLoading(false)
@@ -174,7 +184,7 @@ export default function AdminCommunicationsClient({
   useEffect(() => {
     fetchRows()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter, channelFilter, enquiryFilter, categoryFilter, priorityFilter, assignedToFilter])
+  }, [statusFilter, channelFilter, enquiryFilter, categoryFilter, priorityFilter, assignedToFilter, activeTab])
 
   // Manual create form
   const [channel, setChannel] = useState("email")
@@ -241,6 +251,27 @@ export default function AdminCommunicationsClient({
         <div className="col-span-1 rounded-xl border bg-white p-4 shadow-sm">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-lg font-semibold">Conversations</h2>
+          </div>
+
+          <div className="mb-4 grid grid-cols-3 rounded-lg border bg-gray-50 p-1 text-sm">
+            {[
+              { value: "inbox", label: "Inbox" },
+              { value: "ignored", label: "Ignored" },
+              { value: "all", label: "All" },
+            ].map((tab) => (
+              <button
+                key={tab.value}
+                type="button"
+                onClick={() => setActiveTab(tab.value as "inbox" | "ignored" | "all")}
+                className={`h-9 rounded-md font-medium ${
+                  activeTab === tab.value
+                    ? "bg-white text-gray-900 shadow-sm"
+                    : "text-gray-500 hover:text-gray-900"
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
           </div>
 
           <div className="mb-4 flex flex-col gap-2">
@@ -355,7 +386,17 @@ export default function AdminCommunicationsClient({
                             Review
                           </span>
                         )}
+                        {t.source_category && (
+                          <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-indigo-800">
+                            {t.source_category}
+                          </span>
+                        )}
                       </div>
+                      {t.ignore_reason && (
+                        <div className="mt-2 text-xs text-gray-500">
+                          Ignore reason: {t.ignore_reason}
+                        </div>
+                      )}
                       <div className="mt-2 flex gap-2 text-xs text-gray-500">
                         <div>{t.channel}</div>
                         <div>{t.direction}</div>

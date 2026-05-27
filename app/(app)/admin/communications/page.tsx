@@ -12,6 +12,7 @@ type Props = {
         category?: string
         priority?: string
         assigned_to?: string
+        tab?: string
       }
     | Promise<{
         status?: string
@@ -20,12 +21,17 @@ type Props = {
         category?: string
         priority?: string
         assigned_to?: string
+        tab?: string
       }>
 }
 
 export default async function AdminCommunicationsPage({ searchParams }: Props) {
   const resolvedSearchParams = await Promise.resolve(searchParams || {})
   const supabase = await createClient()
+  const initialTab =
+    resolvedSearchParams?.tab === "ignored" || resolvedSearchParams?.tab === "all"
+      ? resolvedSearchParams.tab
+      : "inbox"
 
   let query = supabase.from("communications").select(`
     *,
@@ -61,6 +67,17 @@ export default async function AdminCommunicationsPage({ searchParams }: Props) {
     query = query.eq("assigned_to", resolvedSearchParams.assigned_to)
   }
 
+  if (initialTab === "inbox") {
+    query = query
+      .eq("ignored", false)
+      .eq("requires_action", true)
+      .neq("status", "closed")
+  }
+
+  if (initialTab === "ignored") {
+    query = query.eq("ignored", true)
+  }
+
   const { data: communications, error } = await query.order("created_at", { ascending: false }).limit(200)
 
   const { data: enquiries } = await supabase
@@ -81,6 +98,7 @@ export default async function AdminCommunicationsPage({ searchParams }: Props) {
         initialCategory={resolvedSearchParams?.category}
         initialPriority={resolvedSearchParams?.priority}
         initialAssignedTo={resolvedSearchParams?.assigned_to}
+        initialTab={initialTab}
       />
     )
   }
@@ -95,6 +113,7 @@ export default async function AdminCommunicationsPage({ searchParams }: Props) {
       initialCategory={resolvedSearchParams?.category}
       initialPriority={resolvedSearchParams?.priority}
       initialAssignedTo={resolvedSearchParams?.assigned_to}
+      initialTab={initialTab}
     />
   )
 }
