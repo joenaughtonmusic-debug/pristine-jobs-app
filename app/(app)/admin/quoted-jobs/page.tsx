@@ -3,6 +3,17 @@ import { revalidatePath } from "next/cache"
 
 export const dynamic = "force-dynamic"
 
+type QuoteDraftForJob = {
+  scheduled_job_id: string | null
+  quote_type: string | null
+}
+
+function getQuoteTypeLabel(value?: string | null) {
+  if (value === "maintenance") return "Maintenance"
+  if (value === "landscaping") return "Landscaping"
+  return "One-off"
+}
+
 async function markReadyToConvert(formData: FormData) {
   "use server"
 
@@ -56,6 +67,22 @@ export default async function QuotedJobsPage() {
     .neq("quoted_invoice_status", "converted")
     .order("scheduled_date", { ascending: false })
 
+  const jobIds = (jobs || []).map((job) => job.id)
+  const { data: linkedQuoteDrafts } =
+    jobIds.length > 0
+      ? await supabase
+          .from("quote_drafts")
+          .select("scheduled_job_id, quote_type")
+          .in("scheduled_job_id", jobIds)
+      : { data: [] }
+  const quoteTypeByJobId = ((linkedQuoteDrafts || []) as QuoteDraftForJob[]).reduce<
+    Record<string, string | null>
+  >((types, draft) => {
+    if (!draft.scheduled_job_id) return types
+    types[draft.scheduled_job_id] = draft.quote_type
+    return types
+  }, {})
+
   if (error) {
     return (
       <div className="p-6 text-red-600">
@@ -88,6 +115,7 @@ export default async function QuotedJobsPage() {
 
           const invoiceStatus = job.quoted_invoice_status || "pending"
           const isReadyToConvert = invoiceStatus === "ready_to_convert"
+          const quoteType = quoteTypeByJobId[job.id] || null
 
           return (
             <div
@@ -118,6 +146,10 @@ export default async function QuotedJobsPage() {
 
               <div className="mb-3 text-sm text-gray-600">
                 Scheduled Date: {job.scheduled_date}
+              </div>
+
+              <div className="mb-3 inline-flex rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700">
+                Quote Type: {getQuoteTypeLabel(quoteType)}
               </div>
 
               {job.xero_quote_number && (

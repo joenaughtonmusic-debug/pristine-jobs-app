@@ -3,6 +3,12 @@
 import { useEffect, useState } from "react"
 import Link from "next/link"
 import { createClient } from "@/lib/supabase/client"
+import {
+  classifyCommunication,
+  communicationTabs,
+  filterCommunicationsForTab,
+  type CommunicationTab,
+} from "@/lib/communication-classification"
 import type {
   CommunicationAssignee,
   CommunicationCategory,
@@ -25,7 +31,8 @@ type Props = {
   initialCategory?: string | undefined
   initialPriority?: string | undefined
   initialAssignedTo?: string | undefined
-  initialTab?: "inbox" | "ignored" | "all"
+  initialSourceCategory?: string | undefined
+  initialTab?: CommunicationTab
 }
 
 const statusOptions: { value: CommunicationStatus; label: string }[] = [
@@ -62,6 +69,19 @@ const assigneeOptions: { value: CommunicationAssignee; label: string }[] = [
   { value: "maintenance_team", label: "Maintenance team" },
   { value: "landscaping_team", label: "Landscaping team" },
   { value: "joe", label: "Joe" },
+]
+
+const sourceCategoryOptions = [
+  "aggregator_lead",
+  "customer_enquiry",
+  "existing_client",
+  "supplier_auto",
+  "receipt",
+  "marketing",
+  "banking",
+  "system_alert",
+  "spam",
+  "other",
 ]
 
 function getLinkedEnquiry(row: CommunicationWithEnquiry) {
@@ -103,6 +123,16 @@ function statusClasses(value?: CommunicationStatus | null) {
   return "bg-green-100 text-green-800"
 }
 
+function getSourceCategoryLabel(value?: string | null) {
+  if (value === "aggregator_lead") return "Aggregator Lead"
+  return value?.replaceAll("_", " ") || "Unset"
+}
+
+function getClassificationLabel(row: CommunicationWithEnquiry) {
+  const classification = classifyCommunication(row)
+  return classification.replaceAll("_", " ")
+}
+
 export default function AdminCommunicationsClient({
   communications = [],
   enquiries = [],
@@ -112,10 +142,13 @@ export default function AdminCommunicationsClient({
   initialCategory,
   initialPriority,
   initialAssignedTo,
-  initialTab = "inbox",
+  initialSourceCategory,
+  initialTab = "action",
 }: Props) {
   const supabase = createClient()
-  const [rows, setRows] = useState<CommunicationWithEnquiry[]>(communications)
+  const [rows, setRows] = useState<CommunicationWithEnquiry[]>(
+    filterCommunicationsForTab(communications, initialTab)
+  )
   const [loading, setLoading] = useState(false)
   const [statusFilter, setStatusFilter] = useState<string | undefined>(initialStatus)
   const [channelFilter, setChannelFilter] = useState<string | undefined>(initialChannel)
@@ -123,7 +156,8 @@ export default function AdminCommunicationsClient({
   const [categoryFilter, setCategoryFilter] = useState<string | undefined>(initialCategory)
   const [priorityFilter, setPriorityFilter] = useState<string | undefined>(initialPriority)
   const [assignedToFilter, setAssignedToFilter] = useState<string | undefined>(initialAssignedTo)
-  const [activeTab, setActiveTab] = useState<"inbox" | "ignored" | "all">(initialTab)
+  const [sourceCategoryFilter, setSourceCategoryFilter] = useState<string | undefined>(initialSourceCategory)
+  const [activeTab, setActiveTab] = useState<CommunicationTab>(initialTab)
 
   const fetchRows = async () => {
     setLoading(true)
@@ -147,14 +181,7 @@ export default function AdminCommunicationsClient({
     if (categoryFilter) q = q.eq("category", categoryFilter)
     if (priorityFilter) q = q.eq("priority", priorityFilter)
     if (assignedToFilter) q = q.eq("assigned_to", assignedToFilter)
-    if (activeTab === "inbox") {
-      q = q
-        .eq("ignored", false)
-        .eq("requires_action", true)
-        .neq("status", "closed")
-    }
-    if (activeTab === "ignored") q = q.eq("ignored", true)
-
+    if (sourceCategoryFilter) q = q.eq("source_category", sourceCategoryFilter)
     const { data, error } = await q
     setLoading(false)
 
@@ -163,7 +190,21 @@ export default function AdminCommunicationsClient({
       return
     }
 
-    setRows(data || [])
+    setRows(filterCommunicationsForTab((data || []) as CommunicationWithEnquiry[], activeTab))
+  }
+
+  const updateCommunication = async (
+    id: string,
+    values: Partial<CommunicationWithEnquiry>
+  ) => {
+    const { error } = await supabase.from("communications").update(values).eq("id", id)
+
+    if (error) {
+      alert(error.message)
+      return
+    }
+
+    await fetchRows()
   }
 
   useEffect(() => {
@@ -175,6 +216,7 @@ export default function AdminCommunicationsClient({
       !initialCategory &&
       !initialPriority &&
       !initialAssignedTo &&
+      !initialSourceCategory &&
       communications.length > 0
     ) return
     fetchRows()
@@ -184,7 +226,7 @@ export default function AdminCommunicationsClient({
   useEffect(() => {
     fetchRows()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter, channelFilter, enquiryFilter, categoryFilter, priorityFilter, assignedToFilter, activeTab])
+  }, [statusFilter, channelFilter, enquiryFilter, categoryFilter, priorityFilter, assignedToFilter, sourceCategoryFilter, activeTab])
 
   // Manual create form
   const [channel, setChannel] = useState("email")
@@ -253,16 +295,12 @@ export default function AdminCommunicationsClient({
             <h2 className="text-lg font-semibold">Conversations</h2>
           </div>
 
-          <div className="mb-4 grid grid-cols-3 rounded-lg border bg-gray-50 p-1 text-sm">
-            {[
-              { value: "inbox", label: "Inbox" },
-              { value: "ignored", label: "Ignored" },
-              { value: "all", label: "All" },
-            ].map((tab) => (
+          <div className="mb-4 grid grid-cols-2 gap-1 rounded-lg border bg-gray-50 p-1 text-sm sm:grid-cols-4">
+            {communicationTabs.map((tab) => (
               <button
                 key={tab.value}
                 type="button"
-                onClick={() => setActiveTab(tab.value as "inbox" | "ignored" | "all")}
+                onClick={() => setActiveTab(tab.value)}
                 className={`h-9 rounded-md font-medium ${
                   activeTab === tab.value
                     ? "bg-white text-gray-900 shadow-sm"
@@ -327,6 +365,15 @@ export default function AdminCommunicationsClient({
                 </option>
               ))}
             </select>
+
+            <select value={sourceCategoryFilter || ""} onChange={(e) => setSourceCategoryFilter(e.target.value || undefined)} className="h-10 rounded-md border px-3">
+              <option value="">All source categories</option>
+              {sourceCategoryOptions.map((option) => (
+                <option key={option} value={option}>
+                  {getSourceCategoryLabel(option)}
+                </option>
+              ))}
+            </select>
           </div>
 
           <ul className="space-y-3">
@@ -355,53 +402,141 @@ export default function AdminCommunicationsClient({
 
                 return (
                   <li key={id} className="rounded">
-                    <Link href={`/admin/communications/${id}`} className="block cursor-pointer rounded border p-3 hover:bg-gray-50">
-                      <div className="flex items-center justify-between">
-                        <div className="min-w-0">
-                          <div className="font-semibold">{t.subject || `(${t.channel} ${t.direction})`}</div>
-                          <div className="mt-1 text-sm text-gray-500">{t.body ? t.body.slice(0, 120) : ""}</div>
-                          {linkedEnquiry && (
-                            <div className="mt-2 text-sm text-gray-600">
-                              Enquiry: {formatEnquiryLabel(linkedEnquiry)}
-                            </div>
+                    <div className="rounded border p-3 hover:bg-gray-50">
+                      <Link href={`/admin/communications/${id}`} className="block cursor-pointer">
+                        <div className="flex items-center justify-between">
+                          <div className="min-w-0">
+                            <div className="font-semibold">{t.subject || `(${t.channel} ${t.direction})`}</div>
+                            <div className="mt-1 text-sm text-gray-500">{t.body ? t.body.slice(0, 120) : ""}</div>
+                            {linkedEnquiry && (
+                              <div className="mt-2 text-sm text-gray-600">
+                                Enquiry: {formatEnquiryLabel(linkedEnquiry)}
+                              </div>
+                            )}
+                          </div>
+                          <div className="text-xs text-gray-400">{t.created_at ? new Date(t.created_at).toISOString() : ""}</div>
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                          <span className={`rounded-full px-2 py-0.5 ${statusClasses(workflowStatus)}`}>
+                            {getOptionLabel(statusOptions, workflowStatus)}
+                          </span>
+                          <span className={`rounded-full px-2 py-0.5 ${priorityClasses(priority)}`}>
+                            {getOptionLabel(priorityOptions, priority)}
+                          </span>
+                          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-gray-700">
+                            {getOptionLabel(categoryOptions, category)}
+                          </span>
+                          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-gray-700">
+                            {getOptionLabel(assigneeOptions, assignedTo)}
+                          </span>
+                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-700">
+                            {getClassificationLabel(t)}
+                          </span>
+                          {t.requires_review && (
+                            <span className="rounded-full bg-red-100 px-2 py-0.5 font-medium text-red-800">
+                              Review
+                            </span>
+                          )}
+                          {t.source_category && (
+                            <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-indigo-800">
+                              {getSourceCategoryLabel(t.source_category)}
+                            </span>
                           )}
                         </div>
-                        <div className="text-xs text-gray-400">{t.created_at ? new Date(t.created_at).toISOString() : ""}</div>
-                      </div>
-                      <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                        <span className={`rounded-full px-2 py-0.5 ${statusClasses(workflowStatus)}`}>
-                          {getOptionLabel(statusOptions, workflowStatus)}
-                        </span>
-                        <span className={`rounded-full px-2 py-0.5 ${priorityClasses(priority)}`}>
-                          {getOptionLabel(priorityOptions, priority)}
-                        </span>
-                        <span className="rounded-full bg-gray-100 px-2 py-0.5 text-gray-700">
-                          {getOptionLabel(categoryOptions, category)}
-                        </span>
-                        <span className="rounded-full bg-gray-100 px-2 py-0.5 text-gray-700">
-                          {getOptionLabel(assigneeOptions, assignedTo)}
-                        </span>
-                        {t.requires_review && (
-                          <span className="rounded-full bg-red-100 px-2 py-0.5 font-medium text-red-800">
-                            Review
-                          </span>
+                        {t.ignore_reason && (
+                          <div className="mt-2 text-xs text-gray-500">
+                            Ignore reason: {t.ignore_reason}
+                          </div>
                         )}
-                        {t.source_category && (
-                          <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-indigo-800">
-                            {t.source_category}
-                          </span>
-                        )}
-                      </div>
-                      {t.ignore_reason && (
-                        <div className="mt-2 text-xs text-gray-500">
-                          Ignore reason: {t.ignore_reason}
+                        <div className="mt-2 flex gap-2 text-xs text-gray-500">
+                          <div>{t.channel}</div>
+                          <div>{t.direction}</div>
                         </div>
-                      )}
-                      <div className="mt-2 flex gap-2 text-xs text-gray-500">
-                        <div>{t.channel}</div>
-                        <div>{t.direction}</div>
+                      </Link>
+
+                      <div className="mt-3 flex flex-wrap gap-2 border-t pt-3 text-xs">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateCommunication(id, {
+                              ignored: true,
+                              requires_action: false,
+                            })
+                          }
+                          className="rounded-md border px-2 py-1 text-gray-700 hover:bg-gray-50"
+                        >
+                          Mark Ignored
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateCommunication(id, {
+                              ignored: false,
+                              requires_action: true,
+                              status: workflowStatus === "closed" ? "new" : workflowStatus,
+                            })
+                          }
+                          className="rounded-md border px-2 py-1 text-gray-700 hover:bg-gray-50"
+                        >
+                          Move to Inbox
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateCommunication(id, {
+                              ignored: false,
+                              requires_action: true,
+                              source_category: "aggregator_lead",
+                              category: "quote_request",
+                            })
+                          }
+                          className="rounded-md border px-2 py-1 text-gray-700 hover:bg-gray-50"
+                        >
+                          Mark Aggregator Lead
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateCommunication(id, {
+                              ignored: false,
+                              requires_action: true,
+                              source_category: "customer_enquiry",
+                              category: "quote_request",
+                            })
+                          }
+                          className="rounded-md border px-2 py-1 text-gray-700 hover:bg-gray-50"
+                        >
+                          Mark Organic Lead
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateCommunication(id, {
+                              ignored: false,
+                              requires_action: true,
+                              source_category: "existing_client",
+                              category: "general",
+                            })
+                          }
+                          className="rounded-md border px-2 py-1 text-gray-700 hover:bg-gray-50"
+                        >
+                          Mark Customer Message
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            updateCommunication(id, {
+                              ignored: false,
+                              requires_action: false,
+                              status: "closed",
+                            })
+                          }
+                          className="rounded-md border px-2 py-1 text-gray-700 hover:bg-gray-50"
+                        >
+                          Mark No Action Required
+                        </button>
                       </div>
-                    </Link>
+                    </div>
                   </li>
                 )
               })

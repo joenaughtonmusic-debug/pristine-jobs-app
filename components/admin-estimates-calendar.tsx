@@ -17,7 +17,7 @@ type Property = {
 
 type Estimate = {
   id: string
-  property_id: string
+  property_id: string | null
   scheduled_date: string
   status: string
   planned_duration_hours: number | null
@@ -33,6 +33,24 @@ type Estimate = {
   } | null
 }
 
+type LeadEstimate = {
+  id: string
+  enquiry_id: string | null
+  communication_id: string | null
+  customer_name: string
+  customer_email: string | null
+  customer_phone: string | null
+  address_line_1: string | null
+  suburb: string | null
+  enquiry_details: string | null
+  estimate_status: string
+  estimate_date: string | null
+  estimate_start_time: string | null
+  estimate_notes: string | null
+  quote_draft_id: string | null
+  converted_property_id: string | null
+}
+
 type CalendarBlock = {
   id: string
   block_date: string
@@ -40,6 +58,17 @@ type CalendarBlock = {
   end_time: string
   title: string | null
   notes: string | null
+}
+
+type CalendarBlockout = {
+  id: string
+  google_event_id: string
+  title: string | null
+  start_time: string
+  end_time: string
+  location: string | null
+  notes: string | null
+  source: string | null
 }
 
 type Enquiry = {
@@ -73,7 +102,10 @@ type Props = {
   nextWeekStart: string
   properties: Property[]
   estimates: Estimate[]
+  leadEstimates: LeadEstimate[]
   blocks: CalendarBlock[]
+  calendarBlockouts: CalendarBlockout[]
+  calendarBlockoutError?: string | null
   enquiries: Enquiry[]
   quoteRequests: QuoteRequest[]
   joeStaffId: string | null
@@ -109,6 +141,55 @@ function formatDateTime(dateString: string | null) {
   if (!dateString) return "No date"
 
   return new Date(dateString).toISOString()
+}
+
+function toNzDateString(dateString: string) {
+  const parts = new Intl.DateTimeFormat("en-NZ", {
+    timeZone: "Pacific/Auckland",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(dateString))
+
+  const year = parts.find((part) => part.type === "year")?.value || "0000"
+  const month = parts.find((part) => part.type === "month")?.value || "01"
+  const day = parts.find((part) => part.type === "day")?.value || "01"
+
+  return `${year}-${month}-${day}`
+}
+
+function formatNzTime(dateString: string) {
+  return new Date(dateString).toLocaleTimeString("en-NZ", {
+    timeZone: "Pacific/Auckland",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  })
+}
+
+function timeToMinutes(time: string | null | undefined) {
+  if (!time) return null
+
+  const [hour, minute] = time.slice(0, 5).split(":").map(Number)
+
+  if (Number.isNaN(hour) || Number.isNaN(minute)) return null
+
+  return hour * 60 + minute
+}
+
+function getBlockoutEndDateForGrouping(dateString: string) {
+  const end = new Date(dateString).getTime()
+
+  if (Number.isNaN(end)) return toNzDateString(dateString)
+
+  return toNzDateString(new Date(end - 1).toISOString())
+}
+
+function blockoutTouchesNzDate(blockout: CalendarBlockout, date: string) {
+  const startDate = toNzDateString(blockout.start_time)
+  const endDate = getBlockoutEndDateForGrouping(blockout.end_time)
+
+  return startDate <= date && endDate >= date
 }
 
 function parseQuoteRequestMetadata(item: QuoteRequest) {
@@ -243,7 +324,10 @@ export function AdminEstimatesCalendar({
   nextWeekStart,
   properties = [],
   estimates = [],
+  leadEstimates = [],
   blocks = [],
+  calendarBlockouts = [],
+  calendarBlockoutError = null,
   enquiries = [],
   quoteRequests = [],
   joeStaffId,
@@ -317,10 +401,75 @@ const [savingBlock, setSavingBlock] = useState(false)
       })
   }
 
+  const getLeadEstimatesForDate = (date: string) => {
+    return leadEstimates
+      .filter((estimate) => estimate.estimate_date === date)
+      .sort((a, b) => {
+        const timeA = a.estimate_start_time || "99:99"
+        const timeB = b.estimate_start_time || "99:99"
+        return timeA.localeCompare(timeB)
+      })
+  }
+
   const getBlocksForDate = (date: string) => {
     return blocks
       .filter((block) => block.block_date === date)
       .sort((a, b) => a.start_time.localeCompare(b.start_time))
+  }
+
+  const getCalendarBlockoutsForDate = (date: string) => {
+    return calendarBlockouts
+      .filter((blockout) => blockoutTouchesNzDate(blockout, date))
+      .sort((a, b) => a.start_time.localeCompare(b.start_time))
+  }
+
+  const getBlockoutTimeRange = (blockout: CalendarBlockout, date: string) => {
+    if (!blockoutTouchesNzDate(blockout, date)) return null
+
+    const startDate = toNzDateString(blockout.start_time)
+    const endDate = getBlockoutEndDateForGrouping(blockout.end_time)
+    const start =
+      startDate < date ? 0 : timeToMinutes(formatNzTime(blockout.start_time))
+    const end =
+      endDate > date ? 24 * 60 : timeToMinutes(formatNzTime(blockout.end_time))
+
+    if (start === null || end === null) return null
+
+    return { start, end }
+  }
+
+  const estimateOverlapsBlockout = (
+    estimate: Estimate,
+    blockout: CalendarBlockout,
+    date: string
+  ) => {
+    const start = timeToMinutes(estimate.planned_start_time)
+
+    if (start === null) return false
+
+    const end = start + Number(estimate.planned_duration_hours || 1) * 60
+    const blockoutRange = getBlockoutTimeRange(blockout, date)
+
+    if (!blockoutRange) return false
+
+    return start < blockoutRange.end && blockoutRange.start < end
+  }
+
+  const leadEstimateOverlapsBlockout = (
+    estimate: LeadEstimate,
+    blockout: CalendarBlockout,
+    date: string
+  ) => {
+    const start = timeToMinutes(estimate.estimate_start_time)
+
+    if (start === null) return false
+
+    const end = start + 60
+    const blockoutRange = getBlockoutTimeRange(blockout, date)
+
+    if (!blockoutRange) return false
+
+    return start < blockoutRange.end && blockoutRange.start < end
   }
 
   const openAddModal = (property: Property) => {
@@ -433,7 +582,7 @@ const [savingBlock, setSavingBlock] = useState(false)
   const handleSaveEstimate = async () => {
   if (!selectedProperty) return
 
-  if (!joeStaffId) {
+  if (!joeStaffId && !selectedEnquiry && !selectedQuoteRequest) {
     setError("Could not find Estimator in staff_members.")
     return
   }
@@ -443,75 +592,77 @@ const [savingBlock, setSavingBlock] = useState(false)
 
   let propertyId = selectedProperty.id
 
-  /*
-    If estimate came from enquiry,
-    create a real property first
-  */
-
   if ((selectedEnquiry || selectedQuoteRequest) && !propertyId) {
-    const { data: createdProperty, error: propertyError } = await supabase
-      .from("properties")
+    const { error: estimateError } = await supabase
+      .from("estimates")
       .insert({
-        client_name: selectedEnquiry
+        enquiry_id: selectedEnquiry?.id || null,
+        communication_id: selectedQuoteRequest?.id || null,
+        customer_name: selectedEnquiry
           ? selectedEnquiry.name
           : getQuoteRequestSender(selectedQuoteRequest!),
-        address_line_1: selectedEnquiry?.address || null,
-        suburb: selectedEnquiry?.suburb || null,
-        client_email: selectedEnquiry
+        customer_email: selectedEnquiry
           ? selectedEnquiry.email || null
           : getQuoteRequestEmail(selectedQuoteRequest!),
-        phone: selectedEnquiry?.phone || null,
-        property_code: `NEW-${Date.now()}`,
-        is_active: true,
+        customer_phone: selectedEnquiry?.phone || null,
+        address_line_1: selectedEnquiry?.address || null,
+        suburb: selectedEnquiry?.suburb || null,
+        enquiry_details: estimateNotes || null,
+        estimate_status: "scheduled",
+        estimate_date: estimateDate,
+        estimate_start_time: estimateStartTime || null,
+        estimate_notes: estimateNotes || null,
       })
-      .select()
-      .single()
 
-    if (propertyError || !createdProperty) {
-      setError(propertyError?.message || "Failed creating property.")
-      setSaving(false)
-      return
-    }
-
-    propertyId = createdProperty.id
-  }
-
-  const payload = {
-    property_id: propertyId,
-    scheduled_date: estimateDate,
-    planned_start_time: estimateStartTime || null,
-    planned_duration_hours: estimateDuration
-      ? parseFloat(estimateDuration)
-      : 1,
-    assigned_staff_id: joeStaffId,
-    status: "scheduled",
-    job_type: "estimate",
-    invoice_method: "non_billable",
-    billing_mode: "non_billable",
-    time_limit_type: "fixed_time",
-    quoted_scope: estimateNotes || null,
-  }
-
-  if (selectedEstimate) {
-    const { error } = await supabase
-      .from("scheduled_jobs")
-      .update(payload)
-      .eq("id", selectedEstimate.id)
-
-    if (error) {
-      setError(error.message)
+    if (estimateError) {
+      setError(estimateError.message)
       setSaving(false)
       return
     }
   } else {
-    const { error } = await supabase
-      .from("scheduled_jobs")
-      .insert(payload)
-
-    if (error) {
-      setError(error.message)
+    if (!joeStaffId) {
+      setError("Could not find Estimator in staff_members.")
       setSaving(false)
       return
+    }
+
+    const payload = {
+      property_id: propertyId,
+      scheduled_date: estimateDate,
+      planned_start_time: estimateStartTime || null,
+      planned_duration_hours: estimateDuration
+        ? parseFloat(estimateDuration)
+        : 1,
+      assigned_staff_id: joeStaffId,
+      status: "scheduled",
+      job_type: "estimate",
+      invoice_method: "non_billable",
+      billing_mode: "non_billable",
+      time_limit_type: "fixed_time",
+      quoted_scope: estimateNotes || null,
+    }
+
+    if (selectedEstimate) {
+      const { error } = await supabase
+        .from("scheduled_jobs")
+        .update(payload)
+        .eq("id", selectedEstimate.id)
+
+      if (error) {
+        setError(error.message)
+        setSaving(false)
+        return
+      }
+    } else {
+      const { error } = await supabase
+        .from("scheduled_jobs")
+        .insert(payload)
+
+      if (error) {
+        setError(error.message)
+        setSaving(false)
+        return
+      }
     }
   }
 
@@ -643,7 +794,101 @@ const handleReadyToSchedule = async (estimate: Estimate) => {
     router.refresh()
   }
 
-    const EstimateCard = ({ estimate }: { estimate: Estimate }) => {
+  const handleCompleteLeadEstimate = async (estimateId: string) => {
+    const { error } = await supabase
+      .from("estimates")
+      .update({
+        estimate_status: "completed",
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", estimateId)
+
+    if (error) {
+      alert(error.message)
+      return
+    }
+
+    router.refresh()
+  }
+
+  const LeadEstimateCard = ({
+    estimate,
+    hasBlockoutOverlap = false,
+  }: {
+    estimate: LeadEstimate
+    hasBlockoutOverlap?: boolean
+  }) => (
+    <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-3 shadow-sm">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="font-semibold">
+            {estimate.estimate_start_time
+              ? estimate.estimate_start_time.slice(0, 5)
+              : "No time"}
+          </div>
+
+          <div className="truncate text-sm text-gray-700">
+            {estimate.customer_name}
+          </div>
+
+          <div className="truncate text-sm text-gray-500">
+            {[estimate.address_line_1, estimate.suburb].filter(Boolean).join(", ") ||
+              "No address"}
+          </div>
+
+          <div className="mt-2 flex flex-wrap gap-2 text-xs">
+            <span className="rounded-full bg-white px-2 py-0.5 text-indigo-700">
+              Lead estimate
+            </span>
+            <span className="rounded-full bg-white px-2 py-0.5 text-gray-700">
+              {estimate.estimate_status}
+            </span>
+            {hasBlockoutOverlap && (
+              <span className="rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 font-medium text-amber-800">
+                Overlaps busy time
+              </span>
+            )}
+          </div>
+
+          {estimate.estimate_notes && (
+            <div className="mt-2 line-clamp-2 text-xs text-gray-600">
+              {estimate.estimate_notes}
+            </div>
+          )}
+        </div>
+
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          {estimate.estimate_status !== "completed" &&
+            estimate.estimate_status !== "quote_created" &&
+            estimate.estimate_status !== "accepted" &&
+            estimate.estimate_status !== "converted" && (
+              <button
+                type="button"
+                onClick={() => handleCompleteLeadEstimate(estimate.id)}
+                className="rounded-md bg-indigo-600 px-2 py-1 text-xs font-medium text-white"
+              >
+                Mark Completed
+              </button>
+            )}
+
+          <a
+            href={`/admin/quotes?estimate=${estimate.id}`}
+            className="rounded-md bg-blue-600 px-2 py-1 text-xs font-medium text-white"
+          >
+            Create Quote
+          </a>
+        </div>
+      </div>
+    </div>
+  )
+
+    const EstimateCard = ({
+      estimate,
+      hasBlockoutOverlap = false,
+    }: {
+      estimate: Estimate
+      hasBlockoutOverlap?: boolean
+    }) => {
     const suburb = estimate.properties?.suburb || null
     const area = getAreaForSuburb(suburb)
 
@@ -679,6 +924,12 @@ const handleReadyToSchedule = async (estimate: Estimate) => {
               >
                 {area}
               </span>
+
+              {hasBlockoutOverlap && (
+                <span className="rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 font-medium text-amber-800">
+                  Overlaps busy time
+                </span>
+              )}
             </div>
 
             {estimate.planned_duration_hours && (
@@ -748,6 +999,42 @@ const handleReadyToSchedule = async (estimate: Estimate) => {
     </div>
   )
 
+  const CalendarBlockoutCard = ({
+    blockout,
+  }: {
+    blockout: CalendarBlockout
+  }) => (
+    <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-emerald-900">
+            {formatNzTime(blockout.start_time)} - {formatNzTime(blockout.end_time)}
+          </div>
+
+          <div className="mt-1 text-sm font-medium text-emerald-800">
+            {blockout.title || "Busy"}
+          </div>
+        </div>
+
+        <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-[10px] font-medium uppercase text-emerald-700">
+          Google Calendar
+        </span>
+      </div>
+
+      {blockout.location && (
+        <div className="mt-2 text-xs text-emerald-700">
+          {blockout.location}
+        </div>
+      )}
+
+      {blockout.notes && (
+        <div className="mt-1 line-clamp-3 whitespace-pre-wrap text-xs text-emerald-700">
+          {blockout.notes}
+        </div>
+      )}
+    </div>
+  )
+
   const WeekSection = ({
     title,
     days,
@@ -761,7 +1048,10 @@ const handleReadyToSchedule = async (estimate: Estimate) => {
       <div className="grid gap-4 md:grid-cols-5">
         {days.map((day) => {
           const dayEstimates = getEstimatesForDate(day)
+          const dayLeadEstimates = getLeadEstimatesForDate(day)
           const dayBlocks = getBlocksForDate(day)
+          const dayCalendarBlockouts = getCalendarBlockoutsForDate(day)
+          const appointmentCount = dayEstimates.length + dayLeadEstimates.length
 
           return (
             <div key={day} className="rounded-xl border bg-gray-50 p-3">
@@ -769,21 +1059,46 @@ const handleReadyToSchedule = async (estimate: Estimate) => {
                 <div className="font-semibold">{formatDayLabel(day)}</div>
 
                 <div className="text-xs text-gray-500">
-                  {dayEstimates.length} appointments
+                  {appointmentCount} appointments
                   {dayBlocks.length > 0 ? ` · ${dayBlocks.length} blocked` : ""}
+                  {dayCalendarBlockouts.length > 0
+                    ? ` · ${dayCalendarBlockouts.length} busy`
+                    : ""}
                 </div>
               </div>
 
               <div className="space-y-2">
+                {dayCalendarBlockouts.map((blockout) => (
+                  <CalendarBlockoutCard key={blockout.id} blockout={blockout} />
+                ))}
+
                 {dayBlocks.map((block) => (
                   <BlockCard key={block.id} block={block} />
                 ))}
 
+                {dayLeadEstimates.map((estimate) => (
+                  <LeadEstimateCard
+                    key={estimate.id}
+                    estimate={estimate}
+                    hasBlockoutOverlap={dayCalendarBlockouts.some((blockout) =>
+                      leadEstimateOverlapsBlockout(estimate, blockout, day)
+                    )}
+                  />
+                ))}
+
                 {dayEstimates.length > 0 ? (
                   dayEstimates.map((estimate) => (
-                    <EstimateCard key={estimate.id} estimate={estimate} />
+                    <EstimateCard
+                      key={estimate.id}
+                      estimate={estimate}
+                      hasBlockoutOverlap={dayCalendarBlockouts.some((blockout) =>
+                        estimateOverlapsBlockout(estimate, blockout, day)
+                      )}
+                    />
                   ))
-                ) : dayBlocks.length === 0 ? (
+                ) : dayBlocks.length === 0 &&
+                  dayCalendarBlockouts.length === 0 &&
+                  dayLeadEstimates.length === 0 ? (
                   <p className="rounded-lg border border-dashed bg-white p-3 text-sm text-gray-400">
                     No estimates
                   </p>
@@ -804,6 +1119,12 @@ const handleReadyToSchedule = async (estimate: Estimate) => {
         <p className="text-sm text-gray-500">
           Site visits, estimates, follow-ups and customer care scheduling.
         </p>
+
+        {calendarBlockoutError && (
+          <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            Google Calendar blockout query error: {calendarBlockoutError}
+          </div>
+        )}
       </header>
 
       <WeekSection title="This Week" days={thisWeekDays} />
@@ -917,7 +1238,7 @@ const handleReadyToSchedule = async (estimate: Estimate) => {
         <h2 className="text-lg font-semibold">Quick Add Estimate</h2>
 
         <p className="mb-4 text-sm text-gray-500">
-          Add a new property or search existing customers before booking an
+          Add a new lead/estimate or search existing customers before booking an
           estimate.
         </p>
 
@@ -926,7 +1247,7 @@ const handleReadyToSchedule = async (estimate: Estimate) => {
           onClick={() => setNewPropertyOpen(true)}
           className="mb-4 flex h-11 w-full items-center justify-center rounded-md bg-blue-600 px-3 text-sm font-semibold text-white hover:bg-blue-700"
         >
-          + Add New Property
+          + Add New Lead/Estimate
         </button>
 
         <input

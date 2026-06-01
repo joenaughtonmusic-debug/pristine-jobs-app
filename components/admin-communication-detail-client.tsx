@@ -143,6 +143,11 @@ function getMetadataFromEmail(metadata: unknown) {
     : null
 }
 
+function getSourceCategoryLabel(value?: string | null) {
+  if (value === "aggregator_lead") return "Aggregator Lead"
+  return value?.replaceAll("_", " ") || "Unset"
+}
+
 export function getRecommendedActionLabel(action: RecommendedAction) {
   if (action === "create_schedule_note") return "Create schedule note"
   if (action === "create_estimate") return "Create estimate"
@@ -157,6 +162,7 @@ export function AdminCommunicationDetailClient({ communication }: Props) {
   const supabase = createClient()
   const linkedEnquiry = getLinkedEnquiry(communication)
   const recommendedAction = getRecommendedAction(communication.metadata)
+  const isAggregatorLead = communication.source_category === "aggregator_lead"
 
   const [status, setStatus] = useState<CommunicationStatus>(normalizeStatus(communication.status))
   const [category, setCategory] = useState<CommunicationCategory>(communication.category || "general")
@@ -459,6 +465,11 @@ export function AdminCommunicationDetailClient({ communication }: Props) {
 
       <section className="rounded-lg border p-4">
         <h2 className="mb-3 text-lg font-semibold">Recommended Action</h2>
+        {communication.source_category && (
+          <div className="mb-3 inline-flex rounded-full bg-indigo-100 px-2 py-1 text-xs font-medium text-indigo-800">
+            {getSourceCategoryLabel(communication.source_category)}
+          </div>
+        )}
         <div className="text-sm text-gray-700">
           {getRecommendedActionLabel(recommendedAction)}
         </div>
@@ -607,47 +618,54 @@ export function AdminCommunicationDetailClient({ communication }: Props) {
               className="min-h-[140px] w-full rounded-md border p-3"
               value={suggestedReply}
               onChange={(event) => setSuggestedReply(event.target.value)}
+              disabled={isAggregatorLead}
             />
             <p className="mt-1 text-xs text-gray-500">
               Internal draft only. This does not send email or SMS.
             </p>
           </div>
 
-          <div className="md:col-span-2">
-            <label className="mb-1 block text-sm font-medium">Editable Reply Draft</label>
-            <textarea
-              className="min-h-[140px] w-full rounded-md border p-3"
-              value={replyDraft}
-              onChange={(event) => setReplyDraft(event.target.value)}
-            />
-            <div className="mt-3 flex items-center gap-3">
-              <button
-                type="button"
-                onClick={saveReplyDraft}
-                disabled={savingDraft || sendingReply}
-                className="h-10 rounded bg-blue-600 px-4 text-sm font-medium text-white disabled:bg-gray-300"
-              >
-                {savingDraft ? "Saving..." : "Save Draft"}
-              </button>
-
-              <button
-                type="button"
-                onClick={sendReply}
-                disabled={savingDraft || sendingReply}
-                className="h-10 rounded bg-green-600 px-4 text-sm font-medium text-white disabled:bg-gray-300"
-              >
-                {sendingReply ? "Sending..." : "Send Reply"}
-              </button>
-
-              {draftMessage && (
-                <span className="text-sm text-green-700">{draftMessage}</span>
-              )}
-
-              {draftError && (
-                <span className="text-sm text-red-600">{draftError}</span>
-              )}
+          {isAggregatorLead ? (
+            <div className="md:col-span-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+              Aggregator lead — reply should be handled in Builderscrack/Bark, not by email.
             </div>
-          </div>
+          ) : (
+            <div className="md:col-span-2">
+              <label className="mb-1 block text-sm font-medium">Editable Reply Draft</label>
+              <textarea
+                className="min-h-[140px] w-full rounded-md border p-3"
+                value={replyDraft}
+                onChange={(event) => setReplyDraft(event.target.value)}
+              />
+              <div className="mt-3 flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={saveReplyDraft}
+                  disabled={savingDraft || sendingReply}
+                  className="h-10 rounded bg-blue-600 px-4 text-sm font-medium text-white disabled:bg-gray-300"
+                >
+                  {savingDraft ? "Saving..." : "Save Draft"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={sendReply}
+                  disabled={savingDraft || sendingReply}
+                  className="h-10 rounded bg-green-600 px-4 text-sm font-medium text-white disabled:bg-gray-300"
+                >
+                  {sendingReply ? "Sending..." : "Send Reply"}
+                </button>
+
+                {draftMessage && (
+                  <span className="text-sm text-green-700">{draftMessage}</span>
+                )}
+
+                {draftError && (
+                  <span className="text-sm text-red-600">{draftError}</span>
+                )}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="mt-5 flex justify-end">

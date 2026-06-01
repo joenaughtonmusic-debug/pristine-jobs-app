@@ -26,6 +26,10 @@ import {
 
 import type { ScheduledJob, Visit } from "@/lib/types"
 import { cn } from "@/lib/utils"
+import {
+  formatServiceFrequency,
+  formatServiceValue,
+} from "@/lib/service-frequency"
 import { CompleteVisitDialog } from "./complete-visit-dialog"
 
 type LabourEntry = {
@@ -39,6 +43,25 @@ type LabourEntry = {
   hours_worked: number
   billable: boolean
   notes: string | null
+}
+
+function hasServiceValue(value?: string | null) {
+  return Boolean(value && value.trim())
+}
+
+function getJobTypeLabel(job: ScheduledJob) {
+  const serviceType = job.properties?.service_type
+  const serviceFrequency = job.properties?.service_frequency
+
+  if (job.job_type === "one_off" || serviceFrequency === "one_off") {
+    return "One-off Job"
+  }
+
+  if (job.job_type === "landscaping" || serviceType === "landscaping") {
+    return "Landscaping Job"
+  }
+
+  return null
 }
 
 interface JobDetailProps {
@@ -85,6 +108,32 @@ const [visitError, setVisitError] = useState<string | null>(null)
     useState<string | null>(null)
 
   const property = job.properties
+  const hasServiceDetails =
+    hasServiceValue(property?.service_type) ||
+    hasServiceValue(property?.service_frequency)
+  const jobTypeLabel = getJobTypeLabel(job)
+  const isQuotedJob =
+    job.invoice_method === "quoted" || job.billing_mode === "quoted"
+  const isChargeUpJob =
+    !isQuotedJob &&
+    (job.invoice_method === "charge_up" || job.billing_mode === "charge_up")
+  const isTimeFlexible = job.time_limit_type === "flexible"
+  const showChargeUpFlexibleGuidance = isChargeUpJob && isTimeFlexible
+  const plannedGuideHours =
+    job.planned_duration_hours !== null && job.planned_duration_hours !== undefined
+      ? Number(job.planned_duration_hours)
+      : null
+  const quotedAmount =
+    job.quoted_amount !== null && job.quoted_amount !== undefined
+      ? Number(job.quoted_amount)
+      : null
+  const formattedQuotedAmount =
+    quotedAmount !== null && Number.isFinite(quotedAmount)
+      ? new Intl.NumberFormat("en-NZ", {
+          style: "currency",
+          currency: "NZD",
+        }).format(quotedAmount)
+      : null
 
   const totalLabourHours = labourEntries.reduce((total, entry) => {
     return total + Number(entry.hours_worked || 0)
@@ -261,14 +310,96 @@ const [visitError, setVisitError] = useState<string | null>(null)
               </Badge>
             )}
 
+            {isChargeUpJob && (
+              <Badge className="border border-emerald-300 bg-emerald-100 text-emerald-900">
+                Charge-up
+              </Badge>
+            )}
+
+            {showChargeUpFlexibleGuidance && (
+              <Badge className="border border-sky-300 bg-sky-100 text-sky-900">
+                Time Flexible
+              </Badge>
+            )}
+
+            {isQuotedJob && (
+              <Badge className="border border-purple-300 bg-purple-100 text-purple-900">
+                Fixed Quote Job
+                {formattedQuotedAmount ? ` · ${formattedQuotedAmount}` : ""}
+              </Badge>
+            )}
+
             {job.quoted_scope && (
               <Badge className="border border-blue-300 bg-blue-100 text-blue-900">
                 Scope Attached
               </Badge>
             )}
+
+            {jobTypeLabel && (
+              <Badge variant="outline">{jobTypeLabel}</Badge>
+            )}
+
+            {!jobTypeLabel && hasServiceDetails && (
+              <Badge variant="outline" className="capitalize">
+                {[
+                  hasServiceValue(property?.service_type)
+                    ? formatServiceValue(property?.service_type)
+                    : null,
+                  hasServiceValue(property?.service_frequency)
+                    ? formatServiceFrequency(property?.service_frequency)
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </Badge>
+            )}
           </div>
         </div>
             </header>
+
+      {isQuotedJob && (
+        <Card className="mb-4 border-purple-300 bg-purple-50 shadow-sm">
+          <CardContent className="p-4">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <Badge className="mb-2 border border-purple-400 bg-white text-purple-900">
+                  Quoted / Fixed Price
+                </Badge>
+
+                <p className="text-sm font-semibold text-purple-950">
+                  Complete the quoted scope. Do not add extra charge-up time unless approved.
+                </p>
+              </div>
+
+              {formattedQuotedAmount && (
+                <div className="rounded-lg border border-purple-200 bg-white px-3 py-2 text-sm font-semibold text-purple-950">
+                  Quote amount: {formattedQuotedAmount}
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {showChargeUpFlexibleGuidance && (
+        <Card className="mb-4 border-emerald-300 bg-emerald-50 shadow-sm">
+          <CardContent className="p-4">
+            <Badge className="mb-2 border border-emerald-400 bg-white text-emerald-900">
+              Charge-up / Time Flexible
+            </Badge>
+
+            <p className="text-sm font-semibold text-emerald-950">
+              Record actual hours worked. Planned time is a guide only.
+            </p>
+
+            {plannedGuideHours !== null && Number.isFinite(plannedGuideHours) && (
+              <p className="mt-2 text-sm text-emerald-900">
+                Planned guide: {plannedGuideHours} hours
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {isAdmin && (
         <Card className="mb-4 border-blue-200 bg-blue-50">
@@ -352,6 +483,35 @@ const [visitError, setVisitError] = useState<string | null>(null)
             </div>
           </CardContent>
         </Card>
+
+        {jobTypeLabel && (
+          <Card>
+            <CardContent className="p-4">
+              <p className="font-medium text-foreground">{jobTypeLabel}</p>
+            </CardContent>
+          </Card>
+        )}
+
+        {!jobTypeLabel && hasServiceDetails && (
+          <Card>
+          <CardContent className="p-4">
+            <p className="font-medium text-foreground">Service</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {hasServiceValue(property?.service_type) && (
+                <Badge variant="outline" className="capitalize">
+                  {formatServiceValue(property?.service_type)}
+                </Badge>
+              )}
+
+              {hasServiceValue(property?.service_frequency) && (
+                <Badge variant="outline">
+                  {formatServiceFrequency(property?.service_frequency)}
+                </Badge>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+        )}
 
         {job.quoted_scope && (
           <Card className="border-blue-200 bg-blue-50/50">

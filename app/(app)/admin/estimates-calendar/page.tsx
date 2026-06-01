@@ -33,7 +33,6 @@ export default async function EstimatesCalendarPage() {
 
   const startDate = toDateString(thisWeekMonday)
   const endDate = toDateString(endOfNextWeek)
-
   const { data: properties } = await supabase
     .from("properties")
     .select(`
@@ -72,11 +71,25 @@ export default async function EstimatesCalendarPage() {
     .order("scheduled_date", { ascending: true })
     .order("planned_start_time", { ascending: true })
 
+  const { data: leadEstimates } = await supabase
+    .from("estimates")
+    .select("*")
+    .gte("estimate_date", startDate)
+    .lte("estimate_date", endDate)
+    .order("estimate_date", { ascending: true })
+    .order("estimate_start_time", { ascending: true })
+
     const { data: blocks } = await supabase
     .from("estimate_calendar_blocks")
     .select("*")
     .order("block_date", { ascending: true })
     .order("start_time", { ascending: true })
+
+  const { data: calendarBlockouts, error: calendarBlockoutsError } = await supabase
+    .from("calendar_blockouts")
+    .select("*")
+    .order("start_time", { ascending: true })
+    .limit(50)
 
   const { data: enquiries } = await supabase
     .from("admin_enquiries")
@@ -98,7 +111,10 @@ export default async function EstimatesCalendarPage() {
       nextWeekStart={toDateString(nextWeekMonday)}
       properties={properties || []}
       estimates={estimates || []}
+      leadEstimates={leadEstimates || []}
       blocks={blocks || []}
+      calendarBlockouts={calendarBlockouts || []}
+      calendarBlockoutError={calendarBlockoutsError?.message || null}
       enquiries={enquiries || []}
       quoteRequests={quoteRequests || []}
       joeStaffId={joeStaff?.id || null}

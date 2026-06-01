@@ -14,6 +14,21 @@ interface JobsListProps {
   jobs: JobWithStaff[]
 }
 
+function getJobTypeLabel(job: ScheduledJob) {
+  const serviceType = job.properties?.service_type
+  const serviceFrequency = job.properties?.service_frequency
+
+  if (job.job_type === "one_off" || serviceFrequency === "one_off") {
+    return "One-off Job"
+  }
+
+  if (job.job_type === "landscaping" || serviceType === "landscaping") {
+    return "Landscaping Job"
+  }
+
+  return null
+}
+
 function calculateEndTime(
   startTime: string | null | undefined,
   durationHours: number | null | undefined
@@ -46,6 +61,13 @@ export function JobsList({ jobs }: JobsListProps) {
     <div className="space-y-3">
       {jobs.map((job) => {
         const completed = job.status === "completed"
+        const isQuotedJob =
+          job.invoice_method === "quoted" || job.billing_mode === "quoted"
+        const isChargeUpJob =
+          !isQuotedJob &&
+          (job.invoice_method === "charge_up" || job.billing_mode === "charge_up")
+        const isTimeFlexible = job.time_limit_type === "flexible"
+        const jobTypeLabel = getJobTypeLabel(job)
 
         const crewSize =
   Math.max(
@@ -83,6 +105,30 @@ const endTime = calculateEndTime(
                   {completed && (
                     <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
                       Completed
+                    </span>
+                  )}
+
+                  {isQuotedJob && (
+                    <span className="rounded-full bg-purple-100 px-2 py-0.5 text-xs font-semibold text-purple-800">
+                      Fixed Price
+                    </span>
+                  )}
+
+                  {isChargeUpJob && (
+                    <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">
+                      Charge-up
+                    </span>
+                  )}
+
+                  {isChargeUpJob && isTimeFlexible && (
+                    <span className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-semibold text-sky-800">
+                      Time Flexible
+                    </span>
+                  )}
+
+                  {jobTypeLabel && (
+                    <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-700">
+                      {jobTypeLabel}
                     </span>
                   )}
                 </div>

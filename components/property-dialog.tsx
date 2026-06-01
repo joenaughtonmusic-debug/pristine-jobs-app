@@ -14,6 +14,10 @@ import { Textarea } from "@/components/ui/textarea"
 import { FieldGroup, Field, FieldLabel } from "@/components/ui/field"
 import { Spinner } from "@/components/ui/spinner"
 import type { Property } from "@/lib/types"
+import {
+  getServiceIntervalWeeks,
+  serviceFrequencyOptions,
+} from "@/lib/service-frequency"
 
 interface PropertyDialogProps {
   open: boolean
@@ -33,6 +37,9 @@ export function PropertyDialog({
   const [address, setAddress] = useState("")
   const [accessNotes, setAccessNotes] = useState("")
   const [permanentNotes, setPermanentNotes] = useState("")
+  const [invoiceHandlingNote, setInvoiceHandlingNote] = useState("")
+  const [serviceType, setServiceType] = useState("")
+  const [serviceFrequency, setServiceFrequency] = useState("")
   const [error, setError] = useState<string | null>(null)
 
   const isEditing = !!property
@@ -43,11 +50,17 @@ export function PropertyDialog({
       setAddress(property.address_line_1 ?? "")
       setAccessNotes(property.access_notes || "")
       setPermanentNotes(property.permanent_notes || "")
+      setInvoiceHandlingNote(property.invoice_handling_note || "")
+      setServiceType(property.service_type || "")
+      setServiceFrequency(property.service_frequency || "")
     } else {
       setClientName("")
       setAddress("")
       setAccessNotes("")
       setPermanentNotes("")
+      setInvoiceHandlingNote("")
+      setServiceType("")
+      setServiceFrequency("")
     }
     setError(null)
   }, [property, open])
@@ -71,6 +84,10 @@ export function PropertyDialog({
   address_line_1: address.trim(),
   access_notes: accessNotes.trim() || null,
   permanent_notes: permanentNotes.trim() || null,
+  invoice_handling_note: invoiceHandlingNote.trim() || null,
+  service_type: serviceType.trim() || null,
+  service_frequency: serviceFrequency || null,
+  service_interval_weeks: getServiceIntervalWeeks(serviceFrequency),
   updated_at: new Date().toISOString(),
 }
 
@@ -163,6 +180,48 @@ export function PropertyDialog({
                 placeholder="Special instructions, preferences..."
                 value={permanentNotes}
                 onChange={(e) => setPermanentNotes(e.target.value)}
+                rows={3}
+              />
+            </Field>
+
+            <Field>
+              <FieldLabel htmlFor="serviceType">Service Type</FieldLabel>
+              <Input
+                id="serviceType"
+                placeholder="e.g. maintenance, commercial, one-off"
+                value={serviceType}
+                onChange={(e) => setServiceType(e.target.value)}
+                className="h-12"
+              />
+            </Field>
+
+            <Field>
+              <FieldLabel htmlFor="serviceFrequency">
+                Service Frequency
+              </FieldLabel>
+              <select
+                id="serviceFrequency"
+                className="h-12 w-full rounded-md border bg-background px-3 text-sm"
+                value={serviceFrequency}
+                onChange={(e) => setServiceFrequency(e.target.value)}
+              >
+                {serviceFrequencyOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            <Field>
+              <FieldLabel htmlFor="invoiceHandlingNote">
+                Invoice Handling Note
+              </FieldLabel>
+              <Textarea
+                id="invoiceHandlingNote"
+                placeholder="Invoice exclusions, special billing instructions..."
+                value={invoiceHandlingNote}
+                onChange={(e) => setInvoiceHandlingNote(e.target.value)}
                 rows={3}
               />
             </Field>

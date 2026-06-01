@@ -50,7 +50,7 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
     const { data: labourEntries } = await supabase
   .from("job_labour_entries")
   .select("*")
-  .eq("job_code", job.job_code)
+  .eq("scheduled_job_id", job.id)
   .order("work_date", { ascending: false })
 
   return (

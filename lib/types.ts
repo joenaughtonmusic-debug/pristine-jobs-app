@@ -15,6 +15,10 @@ export interface Property {
   is_active?: boolean | null
   property_notes_url?: string | null
   property_category?: string | null
+  invoice_handling_note?: string | null
+  service_type?: string | null
+  service_frequency?: string | null
+  service_interval_weeks?: number | null
 }
 
 export interface ScheduledJob {
@@ -22,14 +26,17 @@ export interface ScheduledJob {
   property_id: string
   scheduled_date: string
   status: "scheduled" | "in_progress" | "completed" | "cancelled"
+  job_type?: string | null
   job_order?: number | null
   assigned_staff_id?: string | null
   planned_duration_hours?: number | null
   planned_start_time?: string | null
   billing_mode?: string | null
+  invoice_method?: string | null
 time_limit_type?: string | null
 quoted_scope?: string | null
 quoted_materials?: string | null
+  quoted_amount?: number | string | null
   created_at?: string
   updated_at?: string
   properties?: Property
@@ -48,6 +55,7 @@ export interface Visit {
   completion_status: string
   ready_for_invoice: boolean
   invoice_status: string
+  invoice_note?: string | null
   created_at?: string
   updated_at?: string
 }

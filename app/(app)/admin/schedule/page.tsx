@@ -58,7 +58,10 @@ export default async function AdminSchedulePage({
   property_category,
   client_email,
   phone,
-  scheduling_notes
+  scheduling_notes,
+  service_type,
+  service_frequency,
+  service_interval_weeks
 ),
     scheduled_job_staff (
       id,
@@ -71,7 +74,19 @@ export default async function AdminSchedulePage({
     visits (
       id,
       ready_for_invoice,
-      invoice_status
+      invoice_status,
+      xero_invoice_number,
+      invoice_amount
+    ),
+    internal_job_notes (
+      id,
+      note,
+      submitted_by_staff_name,
+      created_at,
+      status,
+      completed_at,
+      completed_by,
+      email_status
     )
   `)
   .gte("scheduled_date", startDate)
@@ -93,7 +108,11 @@ export default async function AdminSchedulePage({
       default_duration_hours,
       default_start_time,
       is_active,
-      client_email
+      billing_type,
+      client_email,
+      service_type,
+      service_frequency,
+      service_interval_weeks
     `)
     .eq("is_active", true)
     .order("suburb", { ascending: true })
@@ -128,9 +147,17 @@ export default async function AdminSchedulePage({
       *,
       properties (
         id,
+        property_code,
         client_name,
         address_line_1,
-        suburb
+        suburb,
+        property_category,
+        client_email,
+        phone,
+        scheduling_notes,
+        service_type,
+        service_frequency,
+        service_interval_weeks
       )
     `)
     .eq("status", "ready_to_schedule")

@@ -5,6 +5,12 @@ import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { createClient } from "@/lib/supabase/client"
 import { NewPropertyModal } from "@/components/new-property-modal"
+import {
+  formatServiceFrequency,
+  formatServiceValue,
+  getServiceIntervalWeeks,
+  serviceFrequencyOptions,
+} from "@/lib/service-frequency"
 
 type StaffMember = {
   id: string
@@ -23,8 +29,12 @@ type Property = {
   default_duration_hours: number | null
   default_start_time: string | null
   is_active: boolean
+  billing_type?: string | null
   client_email?: string | null
   scheduling_notes?: string | null
+  service_type?: string | null
+  service_frequency?: string | null
+  service_interval_weeks?: number | null
 }
 
 type ServiceTemplate = {
@@ -49,9 +59,21 @@ type ScheduledJobStaff = {
   } | null
 }
 
+type InternalJobNote = {
+  id: string
+  note: string | null
+  submitted_by_staff_name?: string | null
+  created_at?: string | null
+  status?: string | null
+  completed_at?: string | null
+  completed_by?: string | null
+  email_status?: string | null
+}
+
 type Job = {
   id: string
   property_id: string
+  job_type?: string | null
   scheduled_date: string
   status: string
   job_order: number | null
@@ -62,6 +84,7 @@ type Job = {
   time_limit_type: string | null
   invoice_method?: string | null
   xero_quote_number?: string | null
+  quoted_amount?: number | string | null
   quoted_scope?: string | null
 quoted_materials?: string | null
 admin_note?: string | null
@@ -75,7 +98,10 @@ admin_note?: string | null
     id: string
     ready_for_invoice?: boolean | null
     invoice_status?: string | null
+    xero_invoice_number?: string | null
+    invoice_amount?: number | null
   }[]
+  internal_job_notes?: InternalJobNote[]
 
   properties?: {
   id: string
@@ -87,6 +113,9 @@ admin_note?: string | null
   client_email?: string | null
   phone?: string | null
 scheduling_notes?: string | null
+service_type?: string | null
+service_frequency?: string | null
+service_interval_weeks?: number | null
 } | null
 }
 
@@ -113,6 +142,9 @@ type SchedulingQueueItem = {
     client_email?: string | null
     phone?: string | null
     scheduling_notes?: string | null
+    service_type?: string | null
+    service_frequency?: string | null
+    service_interval_weeks?: number | null
   } | null
 }
 
@@ -179,6 +211,17 @@ function formatDateTime(dateString: string | null) {
   return new Date(dateString).toISOString()
 }
 
+function formatShortDateTime(dateString?: string | null) {
+  if (!dateString) return "No date"
+
+  return new Date(dateString).toLocaleString("en-NZ", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+}
+
 function parseAdjustmentMetadata(item: ClientAdjustment) {
   let metadata = item.metadata
 
@@ -207,6 +250,25 @@ function getAdjustmentSender(item: ClientAdjustment) {
   }
 
   return item.subject || "Scheduling request"
+}
+
+function hasServiceValue(value?: string | null) {
+  return Boolean(value && value.trim())
+}
+
+function getScheduleJobTypeLabel(job: Job) {
+  const serviceType = job.properties?.service_type
+  const serviceFrequency = job.properties?.service_frequency
+
+  if (job.job_type === "one_off" || serviceFrequency === "one_off") {
+    return "One-off Job"
+  }
+
+  if (job.job_type === "landscaping" || serviceType === "landscaping") {
+    return "Landscaping Job"
+  }
+
+  return null
 }
 
 export function AdminScheduleClient({
@@ -264,6 +326,8 @@ const [updateCategory, setUpdateCategory] = useState("")
 const [updateEmail, setUpdateEmail] = useState("")
 const [updatePhone, setUpdatePhone] = useState("")
 const [updateSchedulingNotes, setUpdateSchedulingNotes] = useState("")
+const [updateServiceType, setUpdateServiceType] = useState("")
+const [updateServiceFrequency, setUpdateServiceFrequency] = useState("")
 const [schedulingNoteModalOpen, setSchedulingNoteModalOpen] = useState(false)
 const [schedulingNoteJob, setSchedulingNoteJob] = useState<Job | null>(null)
 const [schedulingNoteText, setSchedulingNoteText] = useState("")
@@ -273,6 +337,13 @@ const [savingSchedulingNote, setSavingSchedulingNote] = useState(false)
   const [emailTo, setEmailTo] = useState("")
   const [emailSubject, setEmailSubject] = useState("")
   const [emailBody, setEmailBody] = useState("")
+  const [reassignModalOpen, setReassignModalOpen] = useState(false)
+  const [reassignJob, setReassignJob] = useState<Job | null>(null)
+  const [reassignLeadStaffId, setReassignLeadStaffId] = useState("")
+  const [reassignStaffIds, setReassignStaffIds] = useState<string[]>([])
+  const [savingReassignment, setSavingReassignment] = useState(false)
+  const [reassignError, setReassignError] = useState<string | null>(null)
+  const [expandedNoteJobIds, setExpandedNoteJobIds] = useState<string[]>([])
 
   const getCrewSize = (job: Job) => {
     return Math.max(getJobStaffIds(job).length, 1)
@@ -285,6 +356,13 @@ const [savingSchedulingNote, setSavingSchedulingNote] = useState(false)
     if (!labourHours || crewSize <= 1) return labourHours
 
     return labourHours / crewSize
+  }
+
+  const getDefaultInvoiceMethod = (property: Property) => {
+    if (property.billing_type === "subscription") return "subscription"
+    if (property.billing_type === "non_billable") return "non_billable"
+
+    return "charge_up"
   }
 
   const completeClientAdjustment = async (item: ClientAdjustment) => {
@@ -396,17 +474,64 @@ const [savingSchedulingNote, setSavingSchedulingNote] = useState(false)
     return staffIds.map((id) => getStaffName(id)).join(", ")
   }
 
-  const getInvoiceStatusLabel = (job: Job) => {
+  const getInvoiceStatus = (job: Job) => {
     const completedVisit = job.visits?.[0]
 
-    if (completedVisit?.invoice_status) {
-      return completedVisit.invoice_status.replaceAll("_", " ")
-    }
+    if (completedVisit?.invoice_status) return completedVisit.invoice_status
 
     if (completedVisit?.ready_for_invoice) return "ready"
-    if (job.invoice_method === "quoted") return "quoted"
 
-    return null
+    return "not_invoiced"
+  }
+
+  const getInvoiceStatusLabel = (status: string) => {
+    if (status === "not_invoiced") return "Not Invoiced"
+    if (status === "ready") return "Ready"
+    if (status === "processing") return "Processing"
+    if (status === "draft" || status === "created") return "Draft Created"
+    if (status === "sent") return "Sent"
+    if (status === "paid") return "Paid"
+    if (status === "error") return "Error"
+    if (status === "excluded") return "Excluded"
+
+    return status.replaceAll("_", " ")
+  }
+
+  const getInvoiceStatusClasses = (status: string) => {
+    if (status === "error") return "border-red-200 bg-red-50 text-red-800"
+    if (status === "excluded") return "border-slate-200 bg-slate-50 text-slate-700"
+    if (status === "paid") return "border-green-200 bg-green-50 text-green-800"
+    if (status === "sent") return "border-blue-200 bg-blue-50 text-blue-800"
+    if (status === "draft" || status === "created") {
+      return "border-purple-200 bg-purple-50 text-purple-800"
+    }
+    if (status === "processing") return "border-amber-200 bg-amber-50 text-amber-800"
+    if (status === "ready") return "border-gray-200 bg-gray-50 text-gray-700"
+
+    return "border-gray-200 bg-gray-50 text-gray-500"
+  }
+
+  const getOpenInternalNotes = (job: Job) => {
+    return (job.internal_job_notes || [])
+      .filter((note) => {
+        const status = String(note.status || "open").toLowerCase()
+
+        return !["completed", "actioned", "archived", "resolved"].includes(status)
+      })
+      .sort((a, b) => {
+        const aTime = a.created_at ? new Date(a.created_at).getTime() : 0
+        const bTime = b.created_at ? new Date(b.created_at).getTime() : 0
+
+        return bTime - aTime
+      })
+  }
+
+  const toggleInternalNotes = (jobId: string) => {
+    setExpandedNoteJobIds((current) =>
+      current.includes(jobId)
+        ? current.filter((id) => id !== jobId)
+        : [...current, jobId]
+    )
   }
 
   const getJobsForDate = (date: string) => {
@@ -480,6 +605,8 @@ const openPropertyUpdateModal = (item: SchedulingQueueItem) => {
   setUpdateEmail(property?.client_email || "")
   setUpdatePhone(property?.phone || "")
   setUpdateSchedulingNotes(property?.scheduling_notes || "")
+  setUpdateServiceType(property?.service_type || "")
+  setUpdateServiceFrequency(property?.service_frequency || "")
   setPropertyUpdateOpen(true)
 }
 
@@ -497,6 +624,9 @@ const handleSavePropertyDetails = async () => {
       client_email: updateEmail.trim() || null,
       phone: updatePhone.trim() || null,
 scheduling_notes: updateSchedulingNotes.trim() || null,
+      service_type: updateServiceType.trim() || null,
+      service_frequency: updateServiceFrequency || null,
+      service_interval_weeks: getServiceIntervalWeeks(updateServiceFrequency),
     })
     .eq("id", selectedQueueItem.property_id)
 
@@ -561,7 +691,7 @@ scheduling_notes: updateSchedulingNotes.trim() || null,
     setQuotedScope(firstTemplate?.default_job_notes || "")
 setQuotedMaterials("")
 setAdminNote("")
-setInvoiceMethod(firstTemplate?.billing_mode || "charge_up")
+setInvoiceMethod(getDefaultInvoiceMethod(property))
     setXeroQuoteNumber("")
 
     applyTemplateDefaults(firstTemplate, property)
@@ -621,7 +751,6 @@ setInvoiceMethod(job.invoice_method || "charge_up")
     if (!template) return
 
     applyTemplateDefaults(template, selectedProperty)
-    setInvoiceMethod(template.billing_mode || "charge_up")
   }
 
   const handleLeadStaffChange = (staffId: string) => {
@@ -684,6 +813,93 @@ setInvoiceMethod(job.invoice_method || "charge_up")
       .insert(rows)
 
     return insertError
+  }
+
+  const openReassignStaffModal = (job: Job) => {
+    if (job.visits && job.visits.length > 0) {
+      alert("This job has a completed visit attached, so staff cannot be reassigned.")
+      return
+    }
+
+    const existingStaffIds = getJobStaffIds(job)
+    const leadStaffId = job.assigned_staff_id || existingStaffIds[0] || ""
+
+    setReassignJob(job)
+    setReassignLeadStaffId(leadStaffId)
+    setReassignStaffIds(existingStaffIds)
+    setReassignError(null)
+    setReassignModalOpen(true)
+  }
+
+  const handleReassignLeadStaffChange = (staffId: string) => {
+    setReassignLeadStaffId(staffId)
+
+    if (staffId && !reassignStaffIds.includes(staffId)) {
+      setReassignStaffIds([...reassignStaffIds, staffId])
+    }
+  }
+
+  const toggleReassignStaffSelection = (staffId: string) => {
+    if (reassignStaffIds.includes(staffId)) {
+      if (staffId === reassignLeadStaffId) {
+        setReassignLeadStaffId("")
+      }
+
+      setReassignStaffIds(reassignStaffIds.filter((id) => id !== staffId))
+      return
+    }
+
+    setReassignStaffIds([...reassignStaffIds, staffId])
+
+    if (!reassignLeadStaffId) {
+      setReassignLeadStaffId(staffId)
+    }
+  }
+
+  const handleSaveStaffReassignment = async () => {
+    if (!reassignJob) return
+
+    const finalStaffIds = Array.from(
+      new Set([reassignLeadStaffId, ...reassignStaffIds].filter(Boolean))
+    )
+    const leadStaffId = reassignLeadStaffId || finalStaffIds[0] || null
+
+    if (finalStaffIds.length === 0 || !leadStaffId) {
+      setReassignError("Select at least one active staff member.")
+      return
+    }
+
+    setSavingReassignment(true)
+    setReassignError(null)
+
+    const { error: jobError } = await supabase
+      .from("scheduled_jobs")
+      .update({ assigned_staff_id: leadStaffId })
+      .eq("id", reassignJob.id)
+
+    if (jobError) {
+      setSavingReassignment(false)
+      setReassignError(jobError.message)
+      return
+    }
+
+    const staffSyncError = await syncScheduledJobStaff(
+      reassignJob.id,
+      finalStaffIds
+    )
+
+    if (staffSyncError) {
+      setSavingReassignment(false)
+      setReassignError(staffSyncError.message)
+      return
+    }
+
+    setSavingReassignment(false)
+    setReassignModalOpen(false)
+    setReassignJob(null)
+    setReassignLeadStaffId("")
+    setReassignStaffIds([])
+    router.refresh()
   }
 
   const handleCreateJob = async () => {
@@ -943,7 +1159,23 @@ const handleSendClientEmail = async () => {
 }: {
   job: Job
   displayNumber: number
-}) => (
+}) => {
+    const invoiceStatus = getInvoiceStatus(job)
+    const completedVisit = job.visits?.[0]
+    const isQuotedJob =
+      job.invoice_method === "quoted" || job.billing_mode === "quoted"
+    const isChargeUpJob =
+      !isQuotedJob &&
+      (job.invoice_method === "charge_up" || job.billing_mode === "charge_up")
+    const isTimeFlexible = job.time_limit_type === "flexible"
+    const openInternalNotes = getOpenInternalNotes(job)
+    const isNotesExpanded = expandedNoteJobIds.includes(job.id)
+    const jobTypeLabel = getScheduleJobTypeLabel(job)
+    const hasServiceDetails =
+      hasServiceValue(job.properties?.service_type) ||
+      hasServiceValue(job.properties?.service_frequency)
+
+    return (
   <div
     className={`rounded-lg border p-3 shadow-sm ${getStaffColourClasses(
       job.assigned_staff_id
@@ -981,24 +1213,74 @@ const handleSendClientEmail = async () => {
             </span>
           )}
 
-          {job.invoice_method === "quoted" && (
+          {isQuotedJob && (
             <span className="rounded-full bg-purple-100 px-2 py-0.5 font-medium text-purple-800">
-              QUOTED
+              Fixed Price
               {job.xero_quote_number ? ` · ${job.xero_quote_number}` : ""}
             </span>
           )}
 
-          {getInvoiceStatusLabel(job) && (
-            <span className="rounded-full bg-green-100 px-2 py-0.5 font-medium text-green-800">
-              Invoice: {getInvoiceStatusLabel(job)}
+          {isChargeUpJob && (
+            <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-medium text-emerald-800">
+              Charge-up
             </span>
           )}
 
-                    {job.quoted_scope && (
-            <span className="rounded-full bg-blue-100 px-2 py-0.5 text-blue-800">
-              Scope attached
+          {isChargeUpJob && isTimeFlexible && (
+            <span className="rounded-full bg-sky-100 px-2 py-0.5 font-medium text-sky-800">
+              Time Flexible
             </span>
           )}
+
+          {jobTypeLabel && (
+            <span className="rounded-full bg-gray-100 px-2 py-0.5 font-medium text-gray-700">
+              {jobTypeLabel}
+            </span>
+          )}
+
+          {!jobTypeLabel && hasServiceDetails && (
+            <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-medium capitalize text-emerald-800">
+              {[
+                hasServiceValue(job.properties?.service_type)
+                  ? formatServiceValue(job.properties?.service_type)
+                  : null,
+                hasServiceValue(job.properties?.service_frequency)
+                  ? formatServiceFrequency(job.properties?.service_frequency)
+                  : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </span>
+          )}
+
+          <span
+            className={`rounded-full border px-2 py-0.5 font-medium ${getInvoiceStatusClasses(
+              invoiceStatus
+            )}`}
+          >
+            Invoice: {getInvoiceStatusLabel(invoiceStatus)}
+          </span>
+
+          {completedVisit?.xero_invoice_number && (
+            <span className="rounded-full bg-blue-100 px-2 py-0.5 font-medium text-blue-800">
+              {completedVisit.xero_invoice_number}
+            </span>
+          )}
+
+          {openInternalNotes.length > 0 && (
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation()
+                toggleInternalNotes(job.id)
+              }}
+              className="rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 font-semibold text-amber-900 hover:bg-amber-200"
+            >
+              {openInternalNotes.length}{" "}
+              {openInternalNotes.length === 1 ? "note" : "notes"}
+            </button>
+          )}
+
         </div>
 
 {job.properties?.scheduling_notes && (
@@ -1014,6 +1296,54 @@ const handleSendClientEmail = async () => {
           <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs text-amber-900">
             <div className="mb-1 font-semibold">Admin / VA note</div>
             <div className="whitespace-pre-wrap">{job.admin_note}</div>
+          </div>
+        )}
+
+        {openInternalNotes.length > 0 && isNotesExpanded && (
+          <div className="mt-2 space-y-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs text-amber-950">
+            <div className="flex items-center justify-between gap-2">
+              <div className="font-semibold">Open internal notes</div>
+
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  toggleInternalNotes(job.id)
+                }}
+                className="text-amber-800 hover:underline"
+              >
+                Hide
+              </button>
+            </div>
+
+            {openInternalNotes.map((note) => (
+              <div key={note.id} className="rounded-md bg-white p-2">
+                <div className="mb-1 flex flex-wrap items-center gap-2 text-[11px] text-amber-800">
+                  <span>{formatShortDateTime(note.created_at)}</span>
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 font-medium">
+                    {note.status || "open"}
+                  </span>
+                  {note.submitted_by_staff_name && (
+                    <span>by {note.submitted_by_staff_name}</span>
+                  )}
+                </div>
+
+                <div className="whitespace-pre-wrap text-gray-800">
+                  {note.note || "No note text"}
+                </div>
+              </div>
+            ))}
+
+            <div className="pt-1">
+              {/* TODO: Wire this to send open internal notes to the staff assigned to this scheduled job. */}
+              <button
+                type="button"
+                disabled
+                className="rounded-md border border-amber-200 bg-white px-2 py-1 text-[11px] font-medium text-amber-700 opacity-60"
+              >
+                Notify assigned staff
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -1040,6 +1370,17 @@ const handleSendClientEmail = async () => {
 >
   Scheduling Note
 </button>
+
+  <button
+    type="button"
+    onClick={(e) => {
+      e.stopPropagation()
+      openReassignStaffModal(job)
+    }}
+    className="text-xs text-purple-700 hover:underline"
+  >
+    Reassign Staff
+  </button>
 
   <button
     type="button"
@@ -1137,7 +1478,8 @@ const handleSendClientEmail = async () => {
       )}
     </div>
   </div>
-)
+    )
+}
 
   const WeekSection = ({
     title,
@@ -1771,6 +2113,115 @@ const handleSendClientEmail = async () => {
         </div>
       )}
 
+      {reassignModalOpen && reassignJob && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+            <h2 className="mb-1 text-xl font-semibold">Reassign Staff</h2>
+
+            <p className="mb-4 text-sm text-gray-500">
+              {reassignJob.properties?.client_name || "Scheduled job"} ·{" "}
+              {formatDayLabel(reassignJob.scheduled_date)}
+            </p>
+
+            {reassignJob.visits && reassignJob.visits.length > 0 ? (
+              <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                This job has a completed visit attached. Reassignment is blocked
+                to avoid changing completed work records.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div>
+                  <label className="mb-1 block text-sm font-medium">
+                    Lead Worker
+                  </label>
+
+                  <select
+                    className="h-11 w-full rounded-md border px-3"
+                    value={reassignLeadStaffId}
+                    onChange={(e) =>
+                      handleReassignLeadStaffChange(e.target.value)
+                    }
+                  >
+                    <option value="">Select lead worker</option>
+
+                    {staff.map((member) => (
+                      <option key={member.id} value={member.id}>
+                        {member.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium">
+                    Assigned Staff
+                  </label>
+
+                  <div className="grid grid-cols-2 gap-2 rounded-md border p-3">
+                    {staff.map((member) => (
+                      <label
+                        key={member.id}
+                        className="flex items-center gap-2 text-sm"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={reassignStaffIds.includes(member.id)}
+                          onChange={() =>
+                            toggleReassignStaffSelection(member.id)
+                          }
+                        />
+
+                        {member.name}
+                      </label>
+                    ))}
+                  </div>
+
+                  <p className="mt-1 text-xs text-gray-500">
+                    Lead worker is stored on the job. All selected staff are
+                    stored in the staff assignment table.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {reassignError && (
+              <p className="mt-4 rounded-md bg-red-50 p-2 text-sm text-red-600">
+                {reassignError}
+              </p>
+            )}
+
+            <div className="mt-5 flex gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setReassignModalOpen(false)
+                  setReassignJob(null)
+                  setReassignLeadStaffId("")
+                  setReassignStaffIds([])
+                  setReassignError(null)
+                }}
+                className="h-11 flex-1 rounded-md border"
+                disabled={savingReassignment}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSaveStaffReassignment}
+                className="h-11 flex-1 rounded-md bg-purple-600 font-medium text-white disabled:bg-gray-300"
+                disabled={
+                  savingReassignment ||
+                  Boolean(reassignJob.visits && reassignJob.visits.length > 0)
+                }
+              >
+                {savingReassignment ? "Saving..." : "Save Staff"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {schedulingNoteModalOpen && schedulingNoteJob && (
   <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
     <div className="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl">
@@ -2011,6 +2462,37 @@ const handleSendClientEmail = async () => {
             value={updatePhone}
             onChange={(e) => setUpdatePhone(e.target.value)}
           />
+        </div>
+
+        <div>
+          <label className="mb-1 block text-sm font-medium">
+            Service Type
+          </label>
+
+          <input
+            className="h-11 w-full rounded-md border px-3"
+            value={updateServiceType}
+            onChange={(e) => setUpdateServiceType(e.target.value)}
+            placeholder="e.g. maintenance, commercial, one-off"
+          />
+        </div>
+
+        <div>
+          <label className="mb-1 block text-sm font-medium">
+            Service Frequency
+          </label>
+
+          <select
+            className="h-11 w-full rounded-md border px-3"
+            value={updateServiceFrequency}
+            onChange={(e) => setUpdateServiceFrequency(e.target.value)}
+          >
+            {serviceFrequencyOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div>

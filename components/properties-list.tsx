@@ -6,6 +6,10 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { MapPin, Building2, Plus, ChevronRight } from "lucide-react"
 import type { Property } from "@/lib/types"
+import {
+  formatServiceFrequency,
+  formatServiceValue,
+} from "@/lib/service-frequency"
 import { PropertyDialog } from "./property-dialog"
 
 interface PropertiesListProps {
@@ -83,6 +87,19 @@ export function PropertiesList({ properties: initialProperties }: PropertiesList
                       <MapPin className="w-4 h-4 shrink-0" />
                       <span className="text-sm truncate">{property.address_line_1}</span>
                     </div>
+                    <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                      <Badge variant="outline" className="capitalize">
+                        {formatServiceValue(property.service_type)}
+                      </Badge>
+                      <Badge variant="outline">
+                        {formatServiceFrequency(property.service_frequency)}
+                      </Badge>
+                    </div>
+                    {property.invoice_handling_note && (
+                      <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">
+                        Invoice: {property.invoice_handling_note}
+                      </p>
+                    )}
                   </div>
                   <ChevronRight className="w-5 h-5 text-muted-foreground shrink-0 mt-1" />
                 </div>
