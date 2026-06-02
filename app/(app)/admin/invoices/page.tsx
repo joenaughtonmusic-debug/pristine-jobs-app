@@ -45,6 +45,7 @@ type InvoiceVisit = {
   invoice_paid_at?: string | null
   invoice_amount?: number | null
   invoice_error?: string | null
+  invoice_error_message?: string | null
   scheduled_jobs?: ScheduledJobSummary | ScheduledJobSummary[] | null
   properties?: PropertySummary | PropertySummary[] | null
 }
@@ -144,6 +145,25 @@ async function resetInvoiceStatusToReady(formData: FormData) {
   revalidatePath("/admin/invoices")
 }
 
+async function updateInvoiceNote(formData: FormData) {
+  "use server"
+
+  const supabase = await createClient()
+  const visitId = formData.get("visitId") as string
+  const invoiceNote = formData.get("invoiceNote") as string
+
+  if (!visitId) return
+
+  await supabase
+    .from("visits")
+    .update({
+      invoice_note: invoiceNote.trim() || null,
+    })
+    .eq("id", visitId)
+
+  revalidatePath("/admin/invoices")
+}
+
 function getPropertyAddress(property?: PropertySummary | null) {
   return [property?.address_line_1, property?.suburb].filter(Boolean).join(", ")
 }
@@ -158,8 +178,13 @@ function invoiceStatusClasses(status?: string | null) {
   if (status === "error") return "border-red-200 bg-red-50 text-red-800"
   if (status === "excluded") return "border-slate-200 bg-slate-50 text-slate-700"
   if (status === "paid") return "border-green-200 bg-green-50 text-green-800"
-  if (status === "sent") return "border-blue-200 bg-blue-50 text-blue-800"
-  if (status === "draft" || status === "created") {
+  if (status === "sent" || status === "invoiced") {
+    return "border-blue-200 bg-blue-50 text-blue-800"
+  }
+  if (status === "authorised" || status === "authorized") {
+    return "border-amber-200 bg-amber-50 text-amber-800"
+  }
+  if (status === "draft_created" || status === "draft" || status === "created") {
     return "border-purple-200 bg-purple-50 text-purple-800"
   }
   if (status === "processing") {
@@ -222,12 +247,99 @@ function shouldShowInActiveInvoiceQueue(visit: InvoiceVisit) {
   )
 }
 
-function WarningBadge({ children, tone = "amber" }: { children: string; tone?: "amber" | "red" | "blue" | "gray" }) {
+type InvoiceTab =
+  | "needs_review"
+  | "drafts"
+  | "authorised"
+  | "sent"
+  | "paid"
+  | "excluded"
+  | "errors"
+  | "all"
+
+const invoiceTabs: { value: InvoiceTab; label: string }[] = [
+  { value: "needs_review", label: "Needs Review" },
+  { value: "drafts", label: "Draft Created" },
+  { value: "authorised", label: "Authorised" },
+  { value: "sent", label: "Sent" },
+  { value: "paid", label: "Paid" },
+  { value: "excluded", label: "Excluded" },
+  { value: "errors", label: "Error" },
+  { value: "all", label: "All" },
+]
+
+function normalizeInvoiceStatus(status?: string | null) {
+  if (status === "draft" || status === "created") return "draft_created"
+  if (status === "authorized") return "authorised"
+  if (status === "invoiced") return "invoiced"
+  return status || "ready"
+}
+
+function isInvoiceRelevantVisit(visit: InvoiceVisit) {
+  const status = normalizeInvoiceStatus(visit.invoice_status)
+  const invoiceStatuses = new Set([
+    "ready",
+    "review",
+    "processing",
+    "draft_created",
+    "authorised",
+    "sent",
+    "paid",
+    "excluded",
+    "error",
+    "invoiced",
+  ])
+
+  return (
+    Boolean(visit.ready_for_invoice) ||
+    invoiceStatuses.has(status) ||
+    Boolean(visit.xero_invoice_id) ||
+    Boolean(visit.xero_invoice_number) ||
+    (visit.invoice_amount !== null && visit.invoice_amount !== undefined)
+  )
+}
+
+function visitMatchesInvoiceTab(visit: InvoiceVisit, tab: InvoiceTab) {
+  const status = normalizeInvoiceStatus(visit.invoice_status)
+
+  if (tab === "all") return true
+
+  if (tab === "needs_review") {
+    return status === "ready" || status === "review" || status === "processing"
+  }
+
+  if (tab === "drafts") {
+    return status === "draft_created"
+  }
+
+  if (tab === "authorised") {
+    return status === "authorised"
+  }
+
+  if (tab === "sent") {
+    return status === "sent" || status === "invoiced"
+  }
+
+  if (tab === "errors") {
+    return status === "error"
+  }
+
+  return status === tab
+}
+
+function WarningBadge({
+  children,
+  tone = "amber",
+}: {
+  children: string
+  tone?: "amber" | "red" | "blue" | "gray" | "green"
+}) {
   const classes = {
     amber: "border-amber-200 bg-amber-50 text-amber-800",
     red: "border-red-200 bg-red-50 text-red-800",
     blue: "border-blue-200 bg-blue-50 text-blue-800",
     gray: "border-gray-200 bg-gray-50 text-gray-700",
+    green: "border-green-200 bg-green-50 text-green-800",
   }
 
   return (
@@ -237,7 +349,15 @@ function WarningBadge({ children, tone = "amber" }: { children: string; tone?: "
   )
 }
 
-export default async function AdminInvoicesPage() {
+export default async function AdminInvoicesPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ tab?: string }> | { tab?: string }
+}) {
+  const params = await Promise.resolve(searchParams || {})
+  const activeTab = invoiceTabs.some((tab) => tab.value === params.tab)
+    ? (params.tab as InvoiceTab)
+    : "needs_review"
   const supabase = await createClient()
 
   const visitSelect = `
@@ -293,16 +413,17 @@ export default async function AdminInvoicesPage() {
   const { data: visits, error } = await supabase
     .from("visits")
     .select(visitSelect)
-    .eq("ready_for_invoice", true)
-    .or("invoice_status.is.null,invoice_status.neq.excluded")
     .order("visit_date", { ascending: false })
-    .limit(200)
+    .limit(500)
 
-  const activeInvoiceVisits = ((visits || []) as InvoiceVisit[]).filter(
-    shouldShowInActiveInvoiceQueue
+  const invoiceQueueVisits = ((visits || []) as InvoiceVisit[])
+    .filter(isInvoiceRelevantVisit)
+    .filter(shouldShowInActiveInvoiceQueue)
+  const activeInvoiceVisits = invoiceQueueVisits.filter((visit) =>
+    visitMatchesInvoiceTab(visit, activeTab)
   )
 
-  const activeVisitIds = activeInvoiceVisits.map((visit) => visit.id)
+  const activeVisitIds = invoiceQueueVisits.map((visit) => visit.id)
   const { data: extraCharges, error: extraChargesError } =
     activeVisitIds.length > 0
       ? await supabase
@@ -333,13 +454,6 @@ export default async function AdminInvoicesPage() {
     return grouped
   }, {})
 
-  const { data: excludedVisits, error: excludedError } = await supabase
-    .from("visits")
-    .select(visitSelect)
-    .eq("invoice_status", "excluded")
-    .order("visit_date", { ascending: false })
-    .limit(200)
-
   return (
     <div className="mx-auto max-w-7xl p-4 pb-10">
       <header className="mb-6">
@@ -354,7 +468,7 @@ export default async function AdminInvoicesPage() {
           <div>
             <h2 className="text-lg font-semibold">Job Invoice Board</h2>
             <p className="text-sm text-gray-500">
-              Uses completed visits marked ready for invoice. Supplier/fuel emails are handled in Communications, not here.
+              Shows app invoice previews beside synced Xero invoice status and amounts.
             </p>
           </div>
 
@@ -364,6 +478,33 @@ export default async function AdminInvoicesPage() {
           >
             Quoted Jobs
           </Link>
+        </div>
+
+        <div className="mb-4 grid gap-1 rounded-lg border bg-gray-50 p-1 text-sm md:grid-cols-8">
+          {invoiceTabs.map((tab) => {
+            const count = invoiceQueueVisits.filter((visit) =>
+              visitMatchesInvoiceTab(visit, tab.value)
+            ).length
+
+            return (
+              <Link
+                key={tab.value}
+                href={
+                  tab.value === "needs_review"
+                    ? "/admin/invoices"
+                    : `/admin/invoices?tab=${tab.value}`
+                }
+                className={`flex min-h-10 items-center justify-center rounded-md px-2 text-center font-medium ${
+                  activeTab === tab.value
+                    ? "bg-white text-gray-900 shadow-sm"
+                    : "text-gray-500 hover:text-gray-900"
+                }`}
+              >
+                {tab.label}
+                <span className="ml-1 text-xs text-gray-400">({count})</span>
+              </Link>
+            )
+          })}
         </div>
 
         {error ? (
@@ -382,23 +523,35 @@ export default async function AdminInvoicesPage() {
                 firstOrValue(job?.properties) || firstOrValue(visit.properties)
               const address = getPropertyAddress(property)
               const invoiceStatus = visit.invoice_status || "ready"
+              const normalizedInvoiceStatus = normalizeInvoiceStatus(invoiceStatus)
               const visitExtraCharges = extraChargesByVisit[visit.id] || []
               const hasExtraCharges = visitExtraCharges.length > 0
               const invoiceNote = visit.invoice_note?.trim()
               const invoiceHandlingNote = property?.invoice_handling_note?.trim()
               const ready = Boolean(visit.ready_for_invoice)
-              const processing = invoiceStatus === "processing"
+              const processing = normalizedInvoiceStatus === "processing"
               const draftCreated =
-                invoiceStatus === "draft" ||
-                invoiceStatus === "created" ||
+                normalizedInvoiceStatus === "draft_created" ||
                 Boolean(visit.invoice_draft_created_at) ||
-                Boolean(visit.xero_invoice_id) ||
-                Boolean(visit.xero_invoice_number) ||
                 job?.quoted_invoice_status === "converted"
-              const sent = invoiceStatus === "sent" || Boolean(visit.invoice_sent_at)
-              const paid = invoiceStatus === "paid" || Boolean(visit.invoice_paid_at)
-              const hasError = invoiceStatus === "error"
+              const authorised = normalizedInvoiceStatus === "authorised"
+              const sent =
+                normalizedInvoiceStatus === "sent" ||
+                normalizedInvoiceStatus === "invoiced" ||
+                Boolean(visit.invoice_sent_at)
+              const paid =
+                normalizedInvoiceStatus === "paid" || Boolean(visit.invoice_paid_at)
+              const hasError = normalizedInvoiceStatus === "error"
               const invoiceAmount = formatCurrency(visit.invoice_amount)
+              const actualXeroAmount =
+                visit.invoice_amount !== null && visit.invoice_amount !== undefined
+                  ? Number(visit.invoice_amount)
+                  : null
+              const hasActualXeroAmount =
+                actualXeroAmount !== null && Number.isFinite(actualXeroAmount)
+              const hasXeroInvoice = Boolean(visit.xero_invoice_id)
+              const syncedFromXero =
+                hasXeroInvoice && hasActualXeroAmount
               const missingProperty = !property?.id
               const missingInvoiceMethod = !job?.invoice_method
               const missingHours = !visit.hours_worked || Number(visit.hours_worked) <= 0
@@ -431,6 +584,12 @@ export default async function AdminInvoicesPage() {
                   Number(greenwasteTotal || 0) +
                   extraChargeTotal
                 : null
+              const xeroAmountDiffers =
+                hasActualXeroAmount &&
+                invoiceTotalPreview !== null &&
+                Math.abs(Number(actualXeroAmount) - invoiceTotalPreview) > 0.01
+              const invoiceErrorMessage =
+                visit.invoice_error || visit.invoice_error_message || null
 
               return (
                 <article key={visit.id} className="rounded-lg border p-4">
@@ -446,7 +605,7 @@ export default async function AdminInvoicesPage() {
                         <span>Visit: {formatDate(visit.visit_date || job?.scheduled_date)}</span>
                         <span>Job type: {job?.job_type || job?.invoice_method || "maintenance"}</span>
                         <span>Invoice method: {job?.invoice_method || "Missing"}</span>
-                        <span>Status: {invoiceStatus}</span>
+                        <span>Status: {normalizedInvoiceStatus}</span>
                         <span>Ready: {ready ? "Yes" : "No"}</span>
                       </div>
                     </div>
@@ -466,6 +625,11 @@ export default async function AdminInvoicesPage() {
                         label="Draft Created"
                         active={draftCreated}
                         tone={invoiceStatusClasses("draft")}
+                      />
+                      <StageChip
+                        label="Authorised"
+                        active={authorised}
+                        tone={invoiceStatusClasses("authorised")}
                       />
                       <StageChip
                         label="Sent"
@@ -507,11 +671,27 @@ export default async function AdminInvoicesPage() {
                     {hasExtraCharges && (
                       <WarningBadge tone="blue">Extra charges recorded</WarningBadge>
                     )}
-                    {invoiceStatus === "error" && (
+                    {hasError && (
                       <WarningBadge tone="red">Invoice error</WarningBadge>
                     )}
-                    {invoiceStatus === "processing" && (
+                    {processing && (
                       <WarningBadge>Invoice processing</WarningBadge>
+                    )}
+                    {authorised && (
+                      <WarningBadge>Authorised in Xero</WarningBadge>
+                    )}
+                    {(normalizedInvoiceStatus === "sent" ||
+                      normalizedInvoiceStatus === "invoiced") && (
+                      <WarningBadge tone="green">✓ Sent to Xero</WarningBadge>
+                    )}
+                    {normalizedInvoiceStatus === "paid" && (
+                      <WarningBadge tone="blue">✓ Paid</WarningBadge>
+                    )}
+                    {syncedFromXero && (
+                      <WarningBadge tone="green">Synced from Xero</WarningBadge>
+                    )}
+                    {xeroAmountDiffers && (
+                      <WarningBadge tone="amber">Xero amount differs from app preview</WarningBadge>
                     )}
                     {!ready && (
                       <WarningBadge tone="gray">Not ready for invoice</WarningBadge>
@@ -542,12 +722,12 @@ export default async function AdminInvoicesPage() {
                     )}
                     {visit.xero_invoice_number && (
                       <span className="rounded-full bg-blue-100 px-2 py-1 text-blue-800">
-                        Invoice {visit.xero_invoice_number}
+                        Xero invoice {visit.xero_invoice_number}
                       </span>
                     )}
                     {invoiceAmount && (
                       <span className="rounded-full bg-green-100 px-2 py-1 text-green-800">
-                        {invoiceAmount}
+                        Actual Xero Invoice {invoiceAmount}
                       </span>
                     )}
                     {hasExtraCharges && (
@@ -557,9 +737,87 @@ export default async function AdminInvoicesPage() {
                     )}
                   </div>
 
-                  {hasError && visit.invoice_error && (
+                  {hasXeroInvoice && (
+                    <div className="mt-4 rounded-xl border border-green-300 bg-green-50 p-4 text-green-950 shadow-sm">
+                      <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <div className="text-xs font-semibold uppercase text-green-700">
+                            Actual Xero Invoice
+                          </div>
+                          <div className="mt-1 text-3xl font-bold">
+                            {hasActualXeroAmount
+                              ? formatCurrency(actualXeroAmount)
+                              : "Amount not synced"}
+                          </div>
+                        </div>
+
+                        {syncedFromXero && (
+                          <span className="rounded-full border border-green-300 bg-white px-2 py-0.5 text-xs font-medium text-green-800">
+                            Synced from Xero
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                        <div>
+                          <div className="text-xs uppercase text-green-700">
+                            Status
+                          </div>
+                          <div className="font-medium">
+                            {normalizedInvoiceStatus}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-xs uppercase text-green-700">
+                            Xero invoice number
+                          </div>
+                          <div className="font-medium">
+                            {visit.xero_invoice_number || "Not synced"}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-xs uppercase text-green-700">
+                            Amount
+                          </div>
+                          <div className="font-medium">
+                            {hasActualXeroAmount
+                              ? formatCurrency(actualXeroAmount)
+                              : "Not synced"}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-xs uppercase text-green-700">
+                            Sent / paid
+                          </div>
+                          <div className="font-medium">
+                            {visit.invoice_sent_at
+                              ? `Sent ${formatDate(visit.invoice_sent_at)}`
+                              : "Not sent"}
+                            {visit.invoice_paid_at
+                              ? ` · Paid ${formatDate(visit.invoice_paid_at)}`
+                              : ""}
+                          </div>
+                        </div>
+                      </div>
+
+                      {xeroAmountDiffers && (
+                        <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs font-medium text-amber-900">
+                          Xero amount differs from app preview
+                        </div>
+                      )}
+
+                      {authorised && (
+                        <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-2 text-xs font-medium text-amber-900">
+                          Authorised in Xero — check/send from Xero if not already emailed.
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {hasError && invoiceErrorMessage && (
                     <div className="mt-3 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-                      {visit.invoice_error}
+                      <div className="mb-1 font-medium">Xero invoice error</div>
+                      {invoiceErrorMessage}
                     </div>
                   )}
 
@@ -570,12 +828,42 @@ export default async function AdminInvoicesPage() {
                     </div>
                   )}
 
-                  {invoiceNote && (
-                    <div className="mt-3 rounded-md border bg-gray-50 p-3 text-sm text-gray-700">
-                      <div className="mb-1 font-medium">Invoice note</div>
-                      {invoiceNote}
+                  <form
+                    action={updateInvoiceNote}
+                    className={`mt-3 rounded-md border p-3 text-sm ${
+                      invoiceNote
+                        ? "border-blue-200 bg-blue-50 text-blue-950"
+                        : "bg-gray-50 text-gray-700"
+                    }`}
+                  >
+                    <input type="hidden" name="visitId" value={visit.id} />
+                    <label
+                      htmlFor={`invoice-note-${visit.id}`}
+                      className="mb-1 block font-medium"
+                    >
+                      Invoice note
+                    </label>
+                    {invoiceNote && (
+                      <div className="mb-2 whitespace-pre-wrap rounded-md bg-white/70 p-2">
+                        {invoiceNote}
+                      </div>
+                    )}
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <textarea
+                        id={`invoice-note-${visit.id}`}
+                        name="invoiceNote"
+                        className="min-h-[72px] flex-1 rounded-md border bg-white p-2 text-sm text-gray-900"
+                        defaultValue={visit.invoice_note || ""}
+                        placeholder="Add invoice note shown before charges..."
+                      />
+                      <button
+                        type="submit"
+                        className="h-10 rounded-md bg-blue-600 px-3 text-sm font-medium text-white"
+                      >
+                        Save Note
+                      </button>
                     </div>
-                  )}
+                  </form>
 
                   {visit.work_notes && (
                     <div className="mt-3 line-clamp-3 rounded-md bg-gray-50 p-3 text-sm text-gray-700">
@@ -583,12 +871,19 @@ export default async function AdminInvoicesPage() {
                     </div>
                   )}
 
-                  <div className="mt-4 rounded-lg border bg-gray-50 p-4">
+                  <div
+                    className={`mt-4 rounded-lg border p-4 ${
+                      hasXeroInvoice ? "bg-gray-50/70" : "bg-gray-50"
+                    }`}
+                  >
                     <div className="grid gap-4 lg:grid-cols-[1fr_280px]">
                       <div>
                         <h4 className="font-semibold text-gray-900">
-                          Billable Breakdown
+                          App Preview Billable Breakdown
                         </h4>
+                        <p className="mt-1 text-xs text-gray-500">
+                          Calculated from visit hours, rates, greenwaste and app-recorded extras.
+                        </p>
 
                         <div className="mt-3 overflow-x-auto rounded-md border bg-white">
                           <table className="w-full border-collapse text-left text-sm">
@@ -737,9 +1032,13 @@ export default async function AdminInvoicesPage() {
                         </div>
                       </div>
 
-                      <div className="rounded-lg border bg-white p-4">
+                      <div
+                        className={`rounded-lg border bg-white p-4 ${
+                          hasXeroInvoice ? "text-gray-600" : ""
+                        }`}
+                      >
                         <h4 className="font-semibold text-gray-900">
-                          Invoice Total Preview
+                          App Preview
                         </h4>
 
                         {canCalculateTotalPreview ? (
@@ -747,6 +1046,14 @@ export default async function AdminInvoicesPage() {
                             <div className="text-3xl font-bold text-gray-900">
                               {formatCurrency(invoiceTotalPreview)}
                             </div>
+                            {!hasXeroInvoice && hasActualXeroAmount && (
+                              <div className="mt-1 text-xs text-gray-500">
+                                Actual Xero Invoice:{" "}
+                                <span className="font-semibold text-gray-700">
+                                  {formatCurrency(actualXeroAmount)}
+                                </span>
+                              </div>
+                            )}
                             <div className="mt-2 space-y-1 text-sm text-gray-600">
                               <div className="flex justify-between gap-3">
                                 <span>Labour</span>
@@ -779,32 +1086,21 @@ export default async function AdminInvoicesPage() {
                           </div>
                         )}
 
-                        {visit.invoice_amount !== null &&
-                          visit.invoice_amount !== undefined && (
-                            <div className="mt-3 rounded-md bg-green-50 p-2 text-xs text-green-800">
-                              Stored invoice amount:{" "}
-                              {formatCurrency(visit.invoice_amount)}
-                            </div>
-                          )}
+                        {xeroAmountDiffers && (
+                          <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-2 text-xs font-medium text-amber-900">
+                            Xero amount differs from app preview
+                          </div>
+                        )}
                       </div>
 
                       {(visit.work_notes ||
-                        invoiceNote ||
                         job?.quoted_scope ||
                         job?.quoted_materials) && (
                         <div className="rounded-md bg-white p-3 lg:col-span-2">
                           <div className="mb-2 font-medium text-gray-900">
-                            Work / Invoice Notes
+                            Work / Job Notes
                           </div>
                           <div className="space-y-3 whitespace-pre-wrap text-sm text-gray-700">
-                            {invoiceNote && (
-                              <div>
-                                <div className="text-xs font-medium uppercase text-gray-500">
-                                  Invoice note
-                                </div>
-                                {invoiceNote}
-                              </div>
-                            )}
                             {visit.work_notes && (
                               <div>
                                 <div className="text-xs font-medium uppercase text-gray-500">
@@ -876,7 +1172,7 @@ export default async function AdminInvoicesPage() {
                         </button>
                       </form>
 
-                      {(invoiceStatus === "error" || invoiceStatus === "processing") && (
+                      {(hasError || processing) && (
                         <form action={resetInvoiceStatusToReady}>
                           <input type="hidden" name="visitId" value={visit.id} />
                           <button
@@ -895,80 +1191,7 @@ export default async function AdminInvoicesPage() {
           </div>
         ) : (
           <div className="rounded-lg border border-dashed p-4 text-sm text-gray-500">
-            No jobs are currently marked ready for invoice.
-          </div>
-        )}
-      </section>
-
-      <section className="mb-8 rounded-xl border bg-white p-4 shadow-sm">
-        <h2 className="text-lg font-semibold">Excluded</h2>
-        <p className="mb-4 text-sm text-gray-500">
-          Visits intentionally excluded from invoice creation.
-        </p>
-
-        {excludedError ? (
-          <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-            Error loading excluded visits: {excludedError.message}
-          </div>
-        ) : excludedVisits && excludedVisits.length > 0 ? (
-          <div className="space-y-3">
-            {(excludedVisits as InvoiceVisit[]).map((visit) => {
-              const job = firstOrValue(visit.scheduled_jobs)
-              const property =
-                firstOrValue(job?.properties) || firstOrValue(visit.properties)
-              const address = getPropertyAddress(property)
-
-              return (
-                <article key={visit.id} className="rounded-lg border p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <h3 className="font-semibold text-gray-900">
-                        {getPropertyLabel(property)}
-                      </h3>
-                      {address && (
-                        <p className="mt-1 text-sm text-gray-500">{address}</p>
-                      )}
-                      <div className="mt-2 text-xs text-gray-600">
-                        Visit: {formatDate(visit.visit_date || job?.scheduled_date)}
-                      </div>
-                    </div>
-
-                    <StageChip
-                      label="Excluded"
-                      active
-                      tone={invoiceStatusClasses("excluded")}
-                    />
-                  </div>
-
-                  {property?.invoice_handling_note && (
-                    <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-                      <div className="mb-1 font-medium">Invoice handling note</div>
-                      {property.invoice_handling_note}
-                    </div>
-                  )}
-
-                  {visit.invoice_note && (
-                    <div className="mt-3 rounded-md border bg-gray-50 p-3 text-sm text-gray-700">
-                      <div className="mb-1 font-medium">Invoice note</div>
-                      {visit.invoice_note}
-                    </div>
-                  )}
-
-                  {job?.id && (
-                    <Link
-                      href={`/jobs/${job.id}`}
-                      className="mt-4 inline-flex rounded-md border px-3 py-2 text-sm font-medium hover:bg-gray-50"
-                    >
-                      Open Job
-                    </Link>
-                  )}
-                </article>
-              )
-            })}
-          </div>
-        ) : (
-          <div className="rounded-lg border border-dashed p-4 text-sm text-gray-500">
-            No excluded visits.
+            No invoices found for this tab.
           </div>
         )}
       </section>
@@ -976,9 +1199,9 @@ export default async function AdminInvoicesPage() {
       <section className="rounded-xl border bg-gray-50 p-4 text-sm text-gray-600">
         <h2 className="mb-2 font-semibold text-gray-900">Tracking Notes</h2>
         <p>
-          TODO: Add explicit invoice draft, sent, paid, and Xero invoice ID fields
-          when invoice creation is wired. Current tracking is limited to
-          Supabase visit invoice fields and scheduled job quote metadata.
+          Xero invoice number, amount, sent date and paid date are synced back
+          onto visits by Make.com. This page displays that synced Xero data
+          beside app previews from visit hours, rates and extra charges.
         </p>
       </section>
     </div>
