@@ -60,6 +60,25 @@ export interface Visit {
   updated_at?: string
 }
 
+export interface JobPhoto {
+  id: string
+  scheduled_job_id: string
+  property_id?: string | null
+  visit_id?: string | null
+  uploaded_by?: string | null
+  storage_path: string
+  public_url?: string | null
+  caption?: string | null
+  photo_type:
+    | "client_instruction"
+    | "before"
+    | "after"
+    | "issue"
+    | "completion"
+    | "other"
+  created_at?: string
+}
+
 export interface CompleteVisitFormData {
   hours_worked: number
   greenwaste_bags: number

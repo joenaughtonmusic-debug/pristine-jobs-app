@@ -4,6 +4,7 @@ import { useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { NewPropertyModal } from "@/components/new-property-modal"
+import { sendLeadNotificationToJoe } from "@/lib/lead-notifications"
 
 type Property = {
   id: string
@@ -83,10 +84,14 @@ type Enquiry = {
   notes: string | null
   status: string
   created_at: string
+  joe_new_lead_notified_at?: string | null
+  joe_accepted_lead_notified_at?: string | null
 }
 
 type QuoteRequest = {
   id: string
+  channel?: string | null
+  source_category?: string | null
   subject: string | null
   body: string | null
   priority: string | null
@@ -589,6 +594,7 @@ const [savingBlock, setSavingBlock] = useState(false)
 
   setSaving(true)
   setError(null)
+  let leadNotificationWarning: string | null = null
 
   let propertyId = selectedProperty.id
 
@@ -671,19 +677,80 @@ const [savingBlock, setSavingBlock] = useState(false)
   */
 
   if (selectedEnquiry) {
-    await supabase
+    const { error: enquiryUpdateError } = await supabase
       .from("admin_enquiries")
       .update({
         status: "scheduled",
       })
       .eq("id", selectedEnquiry.id)
+
+    if (enquiryUpdateError) {
+      setError(enquiryUpdateError.message)
+      setSaving(false)
+      return
+    }
+
+    if (!selectedEnquiry.joe_accepted_lead_notified_at) {
+      try {
+        const notifiedAt = await sendLeadNotificationToJoe({
+          supabase,
+          enquiry: selectedEnquiry,
+          action: "accepted",
+        })
+
+        const { error: notificationUpdateError } = await supabase
+          .from("admin_enquiries")
+          .update({ joe_accepted_lead_notified_at: notifiedAt })
+          .eq("id", selectedEnquiry.id)
+          .is("joe_accepted_lead_notified_at", null)
+
+        if (notificationUpdateError) {
+          leadNotificationWarning = `Lead was accepted, but notification tracking failed: ${notificationUpdateError.message}`
+        }
+      } catch (notificationError) {
+        leadNotificationWarning =
+          notificationError instanceof Error
+            ? `Lead was accepted, but Joe was not emailed: ${notificationError.message}`
+            : "Lead was accepted, but Joe was not emailed."
+      }
+    }
   }
 
   if (selectedQuoteRequest) {
-    const metadata = {
-      ...parseQuoteRequestMetadata(selectedQuoteRequest),
+    const quoteRequestMetadata = parseQuoteRequestMetadata(selectedQuoteRequest)
+    const metadata: Record<string, any> = {
+      ...quoteRequestMetadata,
       estimate_action_completed: true,
       estimate_action_completed_at: new Date().toISOString(),
+    }
+
+    if (!quoteRequestMetadata.joe_accepted_lead_notified_at) {
+      try {
+        const notifiedAt = await sendLeadNotificationToJoe({
+          supabase,
+          enquiry: {
+            id: selectedQuoteRequest.id,
+            name: getQuoteRequestSender(selectedQuoteRequest),
+            suburb: null,
+            address: null,
+            job_type: "quote_request",
+            notes: getQuoteRequestNotes(selectedQuoteRequest),
+            source:
+              selectedQuoteRequest.source_category ||
+              selectedQuoteRequest.channel ||
+              "email",
+            link_path: `/admin/communications/${selectedQuoteRequest.id}`,
+          },
+          action: "accepted",
+        })
+
+        metadata.joe_accepted_lead_notified_at = notifiedAt
+      } catch (notificationError) {
+        leadNotificationWarning =
+          notificationError instanceof Error
+            ? `Lead was accepted, but Joe was not emailed: ${notificationError.message}`
+            : "Lead was accepted, but Joe was not emailed."
+      }
     }
 
     await supabase
@@ -697,6 +764,9 @@ const [savingBlock, setSavingBlock] = useState(false)
   }
 
   resetModal()
+  if (leadNotificationWarning) {
+    alert(leadNotificationWarning)
+  }
   router.refresh()
 }
 

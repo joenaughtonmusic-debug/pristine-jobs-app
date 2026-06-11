@@ -1,6 +1,11 @@
 import Link from "next/link"
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
+import {
+  ensureWorkflowAdminActions,
+  getActionDueDate,
+} from "@/lib/admin-actions"
+import { getCostCaptureFlags } from "@/lib/cost-capture"
 
 export const dynamic = "force-dynamic"
 
@@ -46,8 +51,16 @@ type InvoiceVisit = {
   invoice_amount?: number | null
   invoice_error?: string | null
   invoice_error_message?: string | null
+  materials_review_note?: string | null
+  cost_capture_reviewed_at?: string | null
   scheduled_jobs?: ScheduledJobSummary | ScheduledJobSummary[] | null
   properties?: PropertySummary | PropertySummary[] | null
+}
+
+type VisitLabourEntry = {
+  id: string
+  visit_id: string | null
+  hours_worked?: number | string | null
 }
 
 type VisitExtraCharge = {
@@ -60,6 +73,7 @@ type VisitExtraCharge = {
   unit_price?: number | string | null
   notes?: string | null
   invoice_status?: string | null
+  billable_status?: string | null
 }
 
 function firstOrValue<T>(value: T | T[] | null | undefined) {
@@ -118,7 +132,7 @@ async function markVisitNotReady(formData: FormData) {
     .from("visits")
     .update({
       ready_for_invoice: false,
-      invoice_status: "review",
+      invoice_status: "not_ready",
     })
     .eq("id", visitId)
 
@@ -279,6 +293,7 @@ function isInvoiceRelevantVisit(visit: InvoiceVisit) {
   const status = normalizeInvoiceStatus(visit.invoice_status)
   const invoiceStatuses = new Set([
     "ready",
+    "not_ready",
     "review",
     "processing",
     "draft_created",
@@ -305,7 +320,12 @@ function visitMatchesInvoiceTab(visit: InvoiceVisit, tab: InvoiceTab) {
   if (tab === "all") return true
 
   if (tab === "needs_review") {
-    return status === "ready" || status === "review" || status === "processing"
+    return (
+      status === "ready" ||
+      status === "not_ready" ||
+      status === "review" ||
+      status === "processing"
+    )
   }
 
   if (tab === "drafts") {
@@ -377,6 +397,9 @@ export default async function AdminInvoicesPage({
     invoice_paid_at,
     invoice_amount,
     invoice_error,
+    invoice_error_message,
+    materials_review_note,
+    cost_capture_reviewed_at,
     scheduled_jobs (
       id,
       scheduled_date,
@@ -410,12 +433,29 @@ export default async function AdminInvoicesPage({
     )
   `
 
-  const { data: visits, error } = await supabase
+  const visitSelectBase = visitSelect.replace("    materials_review_note,\n", "")
+  let visitsResult: {
+    data: unknown[] | null
+    error: { message: string } | null
+  } = await supabase
     .from("visits")
     .select(visitSelect)
     .order("visit_date", { ascending: false })
     .limit(500)
 
+  if (
+    visitsResult.error &&
+    visitsResult.error.message.includes("materials_review_note")
+  ) {
+    visitsResult = await supabase
+      .from("visits")
+      .select(visitSelectBase)
+      .order("visit_date", { ascending: false })
+      .limit(500)
+  }
+
+  const visits = visitsResult.data
+  const error = visitsResult.error
   const invoiceQueueVisits = ((visits || []) as InvoiceVisit[])
     .filter(isInvoiceRelevantVisit)
     .filter(shouldShowInActiveInvoiceQueue)
@@ -424,6 +464,14 @@ export default async function AdminInvoicesPage({
   )
 
   const activeVisitIds = invoiceQueueVisits.map((visit) => visit.id)
+  const { data: visitLabourEntries, error: visitLabourError } =
+    activeVisitIds.length > 0
+      ? await supabase
+          .from("visit_labour_entries")
+          .select("id, visit_id, hours_worked")
+          .in("visit_id", activeVisitIds)
+      : { data: [], error: null }
+
   const { data: extraCharges, error: extraChargesError } =
     activeVisitIds.length > 0
       ? await supabase
@@ -438,7 +486,8 @@ export default async function AdminInvoicesPage({
               quantity,
               unit_price,
               notes,
-              invoice_status
+              invoice_status,
+              billable_status
             `
           )
           .in("visit_id", activeVisitIds)
@@ -453,6 +502,135 @@ export default async function AdminInvoicesPage({
     grouped[charge.visit_id] = [...(grouped[charge.visit_id] || []), charge]
     return grouped
   }, {})
+
+  const labourEntriesByVisit = ((visitLabourEntries || []) as VisitLabourEntry[]).reduce<
+    Record<string, VisitLabourEntry[]>
+  >((grouped, entry) => {
+    if (!entry.visit_id) return grouped
+
+    grouped[entry.visit_id] = [...(grouped[entry.visit_id] || []), entry]
+    return grouped
+  }, {})
+
+  await ensureWorkflowAdminActions(
+    supabase,
+    invoiceQueueVisits.flatMap((visit) => {
+      const job = firstOrValue(visit.scheduled_jobs)
+      const property =
+        firstOrValue(job?.properties) || firstOrValue(visit.properties)
+      const normalizedInvoiceStatus = normalizeInvoiceStatus(visit.invoice_status)
+      const visitExtraCharges = extraChargesByVisit[visit.id] || []
+      const visitLabourEntries = labourEntriesByVisit[visit.id] || []
+      const materialReviewRequired =
+        Boolean(visit.materials_review_note?.trim()) ||
+        visitExtraCharges.some((charge) => charge.billable_status === "needs_review")
+      const hoursWorked = Number(visit.hours_worked || 0)
+      const visitLabourHours = visitLabourEntries.reduce(
+        (total, entry) => total + Number(entry.hours_worked || 0),
+        0
+      )
+      const greenwasteBags = Number(visit.greenwaste_bags || 0)
+      const hourlyRate = Number(property?.hourly_rate || 0)
+      const greenwasteRate = Number(property?.greenwaste_rate || 0)
+      const missingProperty = !property?.id
+      const missingInvoiceMethod = !job?.invoice_method
+      const missingLabourRate = hoursWorked > 0 && hourlyRate <= 0
+      const missingGreenwasteRate = greenwasteBags > 0 && greenwasteRate <= 0
+      const costCaptureFlags = getCostCaptureFlags({
+        readyForInvoice: visit.ready_for_invoice,
+        visitHours: hoursWorked,
+        labourCount: visitLabourEntries.length,
+        labourHours: visitLabourHours,
+        materialReviewRequired,
+        materialReviewed: Boolean(visit.cost_capture_reviewed_at),
+        hasWorkNotes: Boolean(visit.work_notes?.trim()),
+        invoiceStatus: normalizedInvoiceStatus,
+        hasXeroInvoice: Boolean(visit.xero_invoice_id || visit.xero_invoice_number),
+      })
+      const miscCharges = visitExtraCharges.filter(
+        (charge) =>
+          charge.item_code === "MISC-REVIEW" ||
+          charge.invoice_status === "review"
+      )
+      const canCalculateTotalPreview =
+        !missingLabourRate && !missingGreenwasteRate
+      const invoiceTotalPreview = canCalculateTotalPreview
+        ? hoursWorked * hourlyRate +
+          greenwasteBags * greenwasteRate +
+          visitExtraCharges.reduce((total, charge) => {
+            return total + getChargeLineTotal(charge)
+          }, 0)
+        : null
+      const actualXeroAmount =
+        visit.invoice_amount !== null && visit.invoice_amount !== undefined
+          ? Number(visit.invoice_amount)
+          : null
+      const xeroAmountDiffers =
+        actualXeroAmount !== null &&
+        Number.isFinite(actualXeroAmount) &&
+        invoiceTotalPreview !== null &&
+        Math.abs(actualXeroAmount - invoiceTotalPreview) > 0.01
+      const hasException =
+        normalizedInvoiceStatus === "error" ||
+        missingProperty ||
+        missingInvoiceMethod ||
+        missingLabourRate ||
+        missingGreenwasteRate ||
+        costCaptureFlags.missingLabour ||
+        costCaptureFlags.labourMismatch ||
+        costCaptureFlags.missingMaterialReview ||
+        costCaptureFlags.missingWorkNotes ||
+        miscCharges.length > 0 ||
+        xeroAmountDiffers
+
+      if (!hasException) return []
+
+      const propertyLabel = getPropertyLabel(property)
+      const priority = normalizedInvoiceStatus === "error" ? "urgent" : "high"
+      const targetTab =
+        normalizedInvoiceStatus === "error" ? "errors" : "needs_review"
+
+      return [
+        {
+          title: `Invoice exception: ${propertyLabel}`,
+          actionType: "invoice_exception",
+          priority,
+          owner: "VA",
+          dueDate: getActionDueDate(priority === "urgent" ? 0 : 1),
+          propertyId: property?.id || null,
+          scheduledJobId: visit.scheduled_job_id || job?.id || null,
+          sourceRecordType: "visit",
+          sourceRecordId: visit.id,
+          sourceUrl: `/admin/invoices?tab=${targetTab}`,
+          notes: [
+            `Visit: ${formatDate(visit.visit_date || job?.scheduled_date)}`,
+            `Invoice status: ${normalizedInvoiceStatus}`,
+            visit.invoice_error || visit.invoice_error_message
+              ? `Error: ${visit.invoice_error || visit.invoice_error_message}`
+              : null,
+            missingProperty ? "Missing linked property." : null,
+            missingInvoiceMethod ? "Missing invoice method." : null,
+            missingLabourRate ? "Missing hourly labour rate." : null,
+            missingGreenwasteRate ? "Missing greenwaste rate." : null,
+            costCaptureFlags.missingLabour ? "Missing visit labour entries." : null,
+            costCaptureFlags.labourMismatch
+              ? "Visit labour entries do not match visit total hours."
+              : null,
+            costCaptureFlags.missingMaterialReview ? "Missing material review." : null,
+            costCaptureFlags.missingWorkNotes ? "Missing work notes." : null,
+            miscCharges.length > 0
+              ? `${miscCharges.length} misc/review extra charge item(s).`
+              : null,
+            xeroAmountDiffers
+              ? "Actual Xero invoice amount differs from app preview."
+              : null,
+          ]
+            .filter(Boolean)
+            .join("\n"),
+        },
+      ]
+    })
+  )
 
   return (
     <div className="mx-auto max-w-7xl p-4 pb-10">
@@ -511,9 +689,10 @@ export default async function AdminInvoicesPage({
           <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
             Error loading invoice jobs: {error.message}
           </div>
-        ) : extraChargesError ? (
+        ) : extraChargesError || visitLabourError ? (
           <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-            Error loading visit extra charges: {extraChargesError.message}
+            Error loading cost capture data:{" "}
+            {extraChargesError?.message || visitLabourError?.message}
           </div>
         ) : activeInvoiceVisits.length > 0 ? (
           <div className="space-y-3">
@@ -525,6 +704,12 @@ export default async function AdminInvoicesPage({
               const invoiceStatus = visit.invoice_status || "ready"
               const normalizedInvoiceStatus = normalizeInvoiceStatus(invoiceStatus)
               const visitExtraCharges = extraChargesByVisit[visit.id] || []
+              const visitLabourEntries = labourEntriesByVisit[visit.id] || []
+              const materialReviewRequired =
+                Boolean(visit.materials_review_note?.trim()) ||
+                visitExtraCharges.some(
+                  (charge) => charge.billable_status === "needs_review"
+                )
               const hasExtraCharges = visitExtraCharges.length > 0
               const invoiceNote = visit.invoice_note?.trim()
               const invoiceHandlingNote = property?.invoice_handling_note?.trim()
@@ -555,6 +740,21 @@ export default async function AdminInvoicesPage({
               const missingProperty = !property?.id
               const missingInvoiceMethod = !job?.invoice_method
               const missingHours = !visit.hours_worked || Number(visit.hours_worked) <= 0
+              const visitLabourHours = visitLabourEntries.reduce(
+                (total, entry) => total + Number(entry.hours_worked || 0),
+                0
+              )
+              const costCaptureFlags = getCostCaptureFlags({
+                readyForInvoice: visit.ready_for_invoice,
+                visitHours: Number(visit.hours_worked || 0),
+                labourCount: visitLabourEntries.length,
+                labourHours: visitLabourHours,
+                materialReviewRequired,
+                materialReviewed: Boolean(visit.cost_capture_reviewed_at),
+                hasWorkNotes: Boolean(visit.work_notes?.trim()),
+                invoiceStatus: normalizedInvoiceStatus,
+                hasXeroInvoice: Boolean(visit.xero_invoice_id || visit.xero_invoice_number),
+              })
               const hasGreenwaste = Number(visit.greenwaste_bags || 0) > 0
               const hoursWorked = Number(visit.hours_worked || 0)
               const greenwasteBags = Number(visit.greenwaste_bags || 0)
@@ -658,6 +858,18 @@ export default async function AdminInvoicesPage({
                     )}
                     {missingHours && (
                       <WarningBadge tone="red">Missing or zero hours</WarningBadge>
+                    )}
+                    {costCaptureFlags.missingLabour && (
+                      <WarningBadge tone="red">Missing labour entries</WarningBadge>
+                    )}
+                    {costCaptureFlags.labourMismatch && (
+                      <WarningBadge tone="red">Labour mismatch</WarningBadge>
+                    )}
+                    {costCaptureFlags.missingMaterialReview && (
+                      <WarningBadge tone="amber">Missing material review</WarningBadge>
+                    )}
+                    {costCaptureFlags.missingWorkNotes && (
+                      <WarningBadge tone="amber">No work notes</WarningBadge>
                     )}
                     {missingLabourRate && (
                       <WarningBadge tone="red">Missing labour rate</WarningBadge>
@@ -825,6 +1037,17 @@ export default async function AdminInvoicesPage({
                     <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
                       <div className="mb-1 font-medium">Invoice handling note</div>
                       {invoiceHandlingNote}
+                    </div>
+                  )}
+
+                  {visit.materials_review_note && (
+                    <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                      <div className="mb-1 font-medium">
+                        Staff extra materials / admin note
+                      </div>
+                      <div className="whitespace-pre-wrap">
+                        {visit.materials_review_note}
+                      </div>
                     </div>
                   )}
 

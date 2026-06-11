@@ -4,6 +4,7 @@ import { useState } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
+import { sendLeadNotificationToJoe } from "@/lib/lead-notifications"
 
 type Enquiry = {
   id: string
@@ -17,6 +18,8 @@ type Enquiry = {
   notes: string | null
   status: string
   created_at: string
+  joe_new_lead_notified_at?: string | null
+  joe_accepted_lead_notified_at?: string | null
   communication_count?: number
 }
 
@@ -39,6 +42,7 @@ export function AdminEnquiriesClient({
   const [budgetRange, setBudgetRange] = useState("")
   const [notes, setNotes] = useState("")
   const [saving, setSaving] = useState(false)
+  const [notificationMessage, setNotificationMessage] = useState<string | null>(null)
 
   const handleCreateEnquiry = async () => {
     if (!name.trim()) {
@@ -47,8 +51,9 @@ export function AdminEnquiriesClient({
     }
 
     setSaving(true)
+    setNotificationMessage(null)
 
-    const { error } = await supabase
+    const { data: createdEnquiry, error } = await supabase
       .from("admin_enquiries")
       .insert({
         name: name.trim(),
@@ -61,14 +66,46 @@ export function AdminEnquiriesClient({
         notes: notes.trim() || null,
         status: "new",
       })
-
-    setSaving(false)
+      .select("*")
+      .single()
 
     if (error) {
+      setSaving(false)
       alert(error.message)
       return
     }
 
+    if (createdEnquiry && !createdEnquiry.joe_new_lead_notified_at) {
+      try {
+        const notifiedAt = await sendLeadNotificationToJoe({
+          supabase,
+          enquiry: createdEnquiry,
+          action: "created",
+        })
+
+        const { error: notificationUpdateError } = await supabase
+          .from("admin_enquiries")
+          .update({ joe_new_lead_notified_at: notifiedAt })
+          .eq("id", createdEnquiry.id)
+          .is("joe_new_lead_notified_at", null)
+
+        if (notificationUpdateError) {
+          setNotificationMessage(
+            `Lead saved, but notification tracking failed: ${notificationUpdateError.message}`
+          )
+        } else {
+          setNotificationMessage("Joe was emailed about this new lead.")
+        }
+      } catch (notificationError) {
+        setNotificationMessage(
+          notificationError instanceof Error
+            ? `Lead saved, but Joe was not emailed: ${notificationError.message}`
+            : "Lead saved, but Joe was not emailed."
+        )
+      }
+    }
+
+    setSaving(false)
     setName("")
     setEmail("")
     setPhone("")
@@ -377,6 +414,10 @@ export function AdminEnquiriesClient({
         >
           {saving ? "Saving..." : "Create Enquiry"}
         </button>
+
+        {notificationMessage && (
+          <p className="mt-3 text-sm text-gray-600">{notificationMessage}</p>
+        )}
       </section>
 
       <section className="rounded-xl border bg-white p-5 shadow-sm">

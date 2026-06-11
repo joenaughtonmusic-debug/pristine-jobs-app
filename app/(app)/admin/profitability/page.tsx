@@ -31,9 +31,21 @@ type ProfitabilitySummaryRow = {
 
 type PropertyServiceRow = {
   id: string
+  address_line_1: string | null
+  suburb: string | null
   service_type: string | null
   service_frequency: string | null
   service_interval_weeks: number | string | null
+}
+
+type UnlinkedLandscapingLabourRow = {
+  id: string
+  job_name: string | null
+  job_code: string | null
+  staff_name: string | null
+  work_date: string
+  hours_worked: number | string | null
+  notes: string | null
 }
 
 function money(value: number | string | null) {
@@ -46,6 +58,10 @@ function money(value: number | string | null) {
 
 function hours(value: number | string | null) {
   return Number(value || 0).toFixed(2)
+}
+
+function landscapingLabourLabel(entry: UnlinkedLandscapingLabourRow) {
+  return entry.job_name || entry.job_code || "Landscaping job"
 }
 
 export default async function AdminProfitabilityPage() {
@@ -61,6 +77,14 @@ export default async function AdminProfitabilityPage() {
     .select("*")
     .limit(1)
     .maybeSingle()
+
+  const { data: unlinkedLandscapingLabour } = await supabase
+    .from("job_labour_entries")
+    .select("id, job_name, job_code, staff_name, work_date, hours_worked, notes")
+    .eq("job_type", "landscaping")
+    .is("property_id", null)
+    .order("work_date", { ascending: false })
+    .limit(200)
 
   if (error) {
     return (
@@ -78,7 +102,9 @@ export default async function AdminProfitabilityPage() {
     propertyIds.length > 0
       ? await supabase
           .from("properties")
-          .select("id, service_type, service_frequency, service_interval_weeks")
+          .select(
+            "id, address_line_1, suburb, service_type, service_frequency, service_interval_weeks"
+          )
           .in("id", propertyIds)
       : { data: [] }
   const propertyServiceById = new Map(
@@ -187,6 +213,12 @@ export default async function AdminProfitabilityPage() {
                 row.service_frequency ||
                 propertyService?.service_frequency ||
                 null
+              const propertyAddress = [
+                propertyService?.address_line_1 || row.address_line_1,
+                propertyService?.suburb,
+              ]
+                .filter(Boolean)
+                .join(", ")
 
               return (
                 <tr key={row.property_id} className="hover:bg-gray-50">
@@ -194,7 +226,7 @@ export default async function AdminProfitabilityPage() {
                     {row.property_code || "No code"}
                   </td>
                   <td className="border-b px-4 py-3">
-                    {row.address_line_1 || "No address"}
+                    {propertyAddress || "No address"}
                   </td>
                   <td className="border-b px-4 py-3">
                     <div className="font-medium capitalize">
@@ -228,6 +260,58 @@ export default async function AdminProfitabilityPage() {
           </tbody>
         </table>
       </div>
+
+      <section className="mt-6 rounded-lg border bg-white p-4">
+        <h2 className="text-lg font-semibold">Unlinked Landscaping Labour</h2>
+        <p className="mt-1 text-sm text-gray-500">
+          Legacy landscaping entries without a linked property. These remain visible
+          for review and are not included in property profitability totals.
+        </p>
+
+        {unlinkedLandscapingLabour && unlinkedLandscapingLabour.length > 0 ? (
+          <div className="mt-4 overflow-x-auto">
+            <table className="w-full border-collapse text-sm">
+              <thead className="bg-gray-50 text-left">
+                <tr>
+                  <th className="border-b px-3 py-2">Landscaping Job</th>
+                  <th className="border-b px-3 py-2">Staff</th>
+                  <th className="border-b px-3 py-2">Date</th>
+                  <th className="border-b px-3 py-2 text-right">Hours</th>
+                  <th className="border-b px-3 py-2">Notes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(unlinkedLandscapingLabour as UnlinkedLandscapingLabourRow[]).map(
+                  (entry) => (
+                    <tr key={entry.id}>
+                      <td className="border-b px-3 py-2 font-medium">
+                        {landscapingLabourLabel(entry)}
+                        {entry.job_name && entry.job_code && (
+                          <div className="text-xs text-gray-500">{entry.job_code}</div>
+                        )}
+                      </td>
+                      <td className="border-b px-3 py-2">
+                        {entry.staff_name || "Unknown staff"}
+                      </td>
+                      <td className="border-b px-3 py-2">{entry.work_date}</td>
+                      <td className="border-b px-3 py-2 text-right">
+                        {hours(entry.hours_worked)}
+                      </td>
+                      <td className="border-b px-3 py-2">
+                        {entry.notes || "-"}
+                      </td>
+                    </tr>
+                  )
+                )}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="mt-4 rounded-md border border-dashed p-3 text-sm text-gray-500">
+            No unlinked landscaping labour entries.
+          </div>
+        )}
+      </section>
     </div>
   )
 }

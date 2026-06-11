@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useRef, useState, type ChangeEvent } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { createClient } from "@/lib/supabase/client"
@@ -22,9 +22,11 @@ import {
   Send,
   FileText,
   Package,
+  Camera,
+  Trash2,
 } from "lucide-react"
 
-import type { ScheduledJob, Visit } from "@/lib/types"
+import type { JobPhoto, ScheduledJob, Visit } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import {
   formatServiceFrequency,
@@ -49,6 +51,11 @@ function hasServiceValue(value?: string | null) {
   return Boolean(value && value.trim())
 }
 
+function formatPropertyAddress(property: ScheduledJob["properties"]) {
+  const parts = [property?.address_line_1, property?.suburb].filter(Boolean)
+  return parts.join(", ")
+}
+
 function getJobTypeLabel(job: ScheduledJob) {
   const serviceType = job.properties?.service_type
   const serviceFrequency = job.properties?.service_frequency
@@ -70,6 +77,7 @@ interface JobDetailProps {
   completedVisit: Visit | null
   latestNextVisitNote: string | null
   labourEntries: LabourEntry[]
+  jobPhotos: JobPhoto[]
   isAdmin?: boolean
 }
 
@@ -79,6 +87,7 @@ export function JobDetail({
   completedVisit,
   latestNextVisitNote,
   labourEntries,
+  jobPhotos,
   isAdmin = false,
 }: JobDetailProps) {
   const router = useRouter()
@@ -99,6 +108,17 @@ const [visitNextNotes, setVisitNextNotes] = useState(
 )
 const [savingVisit, setSavingVisit] = useState(false)
 const [visitError, setVisitError] = useState<string | null>(null)
+const [photos, setPhotos] = useState(jobPhotos)
+const [selectedPhoto, setSelectedPhoto] = useState<JobPhoto | null>(null)
+const [photoCaption, setPhotoCaption] = useState("")
+const [photoType, setPhotoType] = useState<JobPhoto["photo_type"]>(
+  "client_instruction"
+)
+const [selectedPhotoFiles, setSelectedPhotoFiles] = useState<File[]>([])
+const [uploadingPhotos, setUploadingPhotos] = useState(false)
+const [photoMessage, setPhotoMessage] = useState<string | null>(null)
+const [photoError, setPhotoError] = useState<string | null>(null)
+const photoInputRef = useRef<HTMLInputElement | null>(null)
 
   const [internalNote, setInternalNote] = useState("")
   const [savingInternalNote, setSavingInternalNote] = useState(false)
@@ -108,6 +128,7 @@ const [visitError, setVisitError] = useState<string | null>(null)
     useState<string | null>(null)
 
   const property = job.properties
+  const propertyAddress = formatPropertyAddress(property)
   const hasServiceDetails =
     hasServiceValue(property?.service_type) ||
     hasServiceValue(property?.service_frequency)
@@ -250,7 +271,7 @@ const [visitError, setVisitError] = useState<string | null>(null)
     const { error } = await supabase.from("internal_job_notes").insert({
       scheduled_job_id: job.id,
       property_id: job.property_id,
-      property_address: property?.address_line_1 || null,
+      property_address: propertyAddress || null,
       note: trimmedNote,
       submitted_by_staff_id: staffMember?.id || null,
       submitted_by_staff_name: staffMember?.name || null,
@@ -266,6 +287,126 @@ const [visitError, setVisitError] = useState<string | null>(null)
     setInternalNote("")
     setInternalNoteMessage("Internal note submitted.")
     setSavingInternalNote(false)
+  }
+
+  const refreshPhotos = async () => {
+    const supabase = createClient()
+    const { data } = await supabase
+      .from("job_photos")
+      .select("*")
+      .eq("scheduled_job_id", job.id)
+      .order("created_at", { ascending: false })
+
+    setPhotos((data as JobPhoto[]) || [])
+  }
+
+  const handlePhotoFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? [])
+    console.log("selected files", files.length)
+    setSelectedPhotoFiles(files)
+    setPhotoError(null)
+    setPhotoMessage(null)
+  }
+
+  const handleUploadPhotos = async () => {
+    if (selectedPhotoFiles.length === 0) {
+      setPhotoError("Please choose one or more photos.")
+      return
+    }
+
+    setUploadingPhotos(true)
+    setPhotoError(null)
+    setPhotoMessage(null)
+
+    const supabase = createClient()
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+    const timestamp = Date.now()
+
+    for (const [index, file] of selectedPhotoFiles.entries()) {
+      const safeName = file.name
+        .toLowerCase()
+        .replace(/[^a-z0-9._-]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+      const objectPath = `${job.id}/${timestamp}-${index}-${safeName || "job-photo"}`
+      const storagePath = `job-photos/${objectPath}`
+
+      const { error: uploadError } = await supabase.storage
+        .from("job-photos")
+        .upload(objectPath, file, {
+          cacheControl: "3600",
+          upsert: false,
+        })
+
+      if (uploadError) {
+        setPhotoError(uploadError.message)
+        setUploadingPhotos(false)
+        return
+      }
+
+      const { data: publicUrlData } = supabase.storage
+        .from("job-photos")
+        .getPublicUrl(objectPath)
+
+      const { error: insertError } = await supabase.from("job_photos").insert({
+        scheduled_job_id: job.id,
+        property_id: job.property_id,
+        visit_id: completedVisit?.id || null,
+        uploaded_by: user?.id || null,
+        storage_path: storagePath,
+        public_url: publicUrlData.publicUrl || null,
+        caption: photoCaption.trim() || null,
+        photo_type: photoType,
+      })
+
+      if (insertError) {
+        await supabase.storage.from("job-photos").remove([objectPath])
+        setPhotoError(insertError.message)
+        setUploadingPhotos(false)
+        return
+      }
+    }
+
+    setSelectedPhotoFiles([])
+    if (photoInputRef.current) {
+      photoInputRef.current.value = ""
+    }
+    setPhotoCaption("")
+    setPhotoMessage("Photo uploaded.")
+    await refreshPhotos()
+    setUploadingPhotos(false)
+    router.refresh()
+  }
+
+  const handleDeletePhoto = async (photo: JobPhoto) => {
+    const supabase = createClient()
+    setPhotoError(null)
+    setPhotoMessage(null)
+    const objectPath = photo.storage_path.replace(/^job-photos\//, "")
+
+    const { error: storageError } = await supabase.storage
+      .from("job-photos")
+      .remove([objectPath])
+
+    if (storageError) {
+      setPhotoError(storageError.message)
+      return
+    }
+
+    const { error: deleteError } = await supabase
+      .from("job_photos")
+      .delete()
+      .eq("id", photo.id)
+
+    if (deleteError) {
+      setPhotoError(deleteError.message)
+      return
+    }
+
+    setPhotos((current) => current.filter((item) => item.id !== photo.id))
+    setPhotoMessage("Photo deleted.")
+    router.refresh()
   }
 
   return (
@@ -476,8 +617,8 @@ const [visitError, setVisitError] = useState<string | null>(null)
               <div>
                 <p className="font-medium text-foreground">Address</p>
 
-                <p className="text-muted-foreground">
-                  {property?.address_line_1 || "No address"}
+                <p className="whitespace-normal break-words text-muted-foreground">
+                  {propertyAddress || "No address"}
                 </p>
               </div>
             </div>
@@ -546,6 +687,146 @@ const [visitError, setVisitError] = useState<string | null>(null)
             </CardContent>
           </Card>
         )}
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Camera className="h-4 w-4" />
+              Job Photos / Client Photos
+            </CardTitle>
+          </CardHeader>
+
+          <CardContent className="space-y-4 p-4 pt-0">
+            {isAdmin && (
+              <div className="rounded-lg border bg-muted/30 p-3">
+                <div className="grid gap-3">
+                  <input
+                    id={`job-photo-upload-${job.id}`}
+                    ref={photoInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="block w-full rounded-md border bg-background p-2 text-sm"
+                    onChange={handlePhotoFileChange}
+                  />
+
+                  <p
+                    className={cn(
+                      "text-xs",
+                      selectedPhotoFiles.length === 0
+                        ? "text-muted-foreground"
+                        : "font-medium text-green-700"
+                    )}
+                    aria-live="polite"
+                  >
+                    {selectedPhotoFiles.length === 0
+                      ? "No photos selected"
+                      : `${selectedPhotoFiles.length} photo${
+                          selectedPhotoFiles.length === 1 ? "" : "s"
+                        } selected`}
+                  </p>
+
+                  <select
+                    className="h-11 rounded-md border bg-background px-3 text-sm"
+                    value={photoType}
+                    onChange={(event) =>
+                      setPhotoType(event.target.value as JobPhoto["photo_type"])
+                    }
+                  >
+                    <option value="client_instruction">Client instruction</option>
+                    <option value="before">Before</option>
+                    <option value="after">After</option>
+                    <option value="issue">Issue</option>
+                    <option value="completion">Completion</option>
+                    <option value="other">Other</option>
+                  </select>
+
+                  <Textarea
+                    value={photoCaption}
+                    onChange={(event) => setPhotoCaption(event.target.value)}
+                    rows={2}
+                    placeholder="Caption or instruction for staff..."
+                  />
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-11"
+                    onClick={handleUploadPhotos}
+                    disabled={
+                      selectedPhotoFiles.length === 0 ||
+                      uploadingPhotos === true
+                    }
+                  >
+                    {uploadingPhotos ? <Spinner className="mr-2" /> : null}
+                    {uploadingPhotos ? "Uploading..." : "Upload photos"}
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {photoError && (
+              <p className="rounded-md bg-red-50 p-2 text-sm text-red-600">
+                {photoError}
+              </p>
+            )}
+
+            {photoMessage && (
+              <p className="rounded-md bg-green-50 p-2 text-sm text-green-700">
+                {photoMessage}
+              </p>
+            )}
+
+            {photos.length > 0 ? (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {photos.map((photo) => (
+                  <div key={photo.id} className="rounded-lg border bg-white p-2">
+                    <button
+                      type="button"
+                      className="block w-full overflow-hidden rounded-md border bg-muted"
+                      onClick={() => setSelectedPhoto(photo)}
+                    >
+                      <img
+                        src={photo.public_url || ""}
+                        alt={photo.caption || "Job photo"}
+                        className="aspect-square w-full object-cover"
+                      />
+                    </button>
+
+                    <div className="mt-2 space-y-1">
+                      <Badge variant="outline" className="text-[11px] capitalize">
+                        {photo.photo_type.replaceAll("_", " ")}
+                      </Badge>
+
+                      {photo.caption && (
+                        <p className="line-clamp-2 text-xs text-muted-foreground">
+                          {photo.caption}
+                        </p>
+                      )}
+
+                      {isAdmin && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="mt-1 h-8 w-full text-xs text-red-700"
+                          onClick={() => handleDeletePhoto(photo)}
+                        >
+                          <Trash2 className="mr-1 h-3 w-3" />
+                          Delete
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-md border border-dashed bg-muted/30 p-3 text-sm text-muted-foreground">
+                No photos uploaded for this job yet.
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {property?.property_notes_url && (
           <Card>
@@ -844,6 +1125,45 @@ const [visitError, setVisitError] = useState<string | null>(null)
                 </Button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {selectedPhoto && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+          onClick={() => setSelectedPhoto(null)}
+        >
+          <div
+            className="max-h-[90vh] w-full max-w-3xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <img
+              src={selectedPhoto.public_url || ""}
+              alt={selectedPhoto.caption || "Job photo"}
+              className="max-h-[75vh] w-full rounded-lg object-contain"
+            />
+
+            {(selectedPhoto.caption || selectedPhoto.photo_type) && (
+              <div className="mt-3 rounded-lg bg-white p-3 text-sm">
+                <div className="font-medium capitalize">
+                  {selectedPhoto.photo_type.replaceAll("_", " ")}
+                </div>
+                {selectedPhoto.caption && (
+                  <p className="mt-1 whitespace-pre-wrap text-muted-foreground">
+                    {selectedPhoto.caption}
+                  </p>
+                )}
+              </div>
+            )}
+
+            <Button
+              type="button"
+              className="mt-3 w-full"
+              onClick={() => setSelectedPhoto(null)}
+            >
+              Close
+            </Button>
           </div>
         </div>
       )}

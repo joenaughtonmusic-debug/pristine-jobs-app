@@ -38,28 +38,12 @@ export function CompleteVisitDialog({
   const [greenwasteBags, setGreenwasteBags] = useState("0")
   const [workNotes, setWorkNotes] = useState("")
   const [nextVisitNotes, setNextVisitNotes] = useState("")
-  const [readyForInvoice, setReadyForInvoice] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [primaryStaffId, setPrimaryStaffId] = useState(assignedStaffId || "")
-
-const [extraChargeItems, setExtraChargeItems] = useState<
-  {
-    id: string
-    item_code: string
-    staff_label: string
-    invoice_description: string
-    unit_price: number
-  }[]
->([])
-
-const [selectedExtras, setSelectedExtras] = useState<
-  {
-    extra_charge_item_id: string
-    quantity: string
-  }[]
->([])
-
-const [miscProductNote, setMiscProductNote] = useState("")
+  const [extraMaterialsState, setExtraMaterialsState] = useState<
+    "none" | "needs_admin_review"
+  >("none")
+  const [extraMaterialsNote, setExtraMaterialsNote] = useState("")
 
   const [helpers, setHelpers] = useState<
     { staff_member_id: string; staff_name: string; hours: string }[]
@@ -68,10 +52,6 @@ const [miscProductNote, setMiscProductNote] = useState("")
   const [staffOptions, setStaffOptions] = useState<
     { id: string; name: string }[]
   >([])
-
-const [assignedJobStaff, setAssignedJobStaff] = useState<
-  { staff_member_id: string; staff_name: string }[]
->([])
 
   const timeOptions = (() => {
     const times: string[] = []
@@ -126,8 +106,6 @@ if (assignedError) {
       staff_name: row.staff_members?.name || "",
     })) || []
 
-  setAssignedJobStaff(assigned)
-
   const helperRows = assigned
     .filter((row) => row.staff_member_id !== assignedStaffId)
     .map((row) => ({
@@ -137,23 +115,6 @@ if (assignedError) {
     }))
 
   setHelpers(helperRows)
-}
-      const { data: extraItems, error: extraError } = await supabase
-  .from("extra_charge_items")
-  .select(`
-    id,
-    item_code,
-    staff_label,
-    invoice_description,
-    unit_price
-  `)
-  .eq("is_active", true)
-  .order("staff_label", { ascending: true })
-
-if (extraError) {
-  console.error("Error loading extra items:", extraError)
-} else {
-  setExtraChargeItems(extraItems || [])
 }
     }
 
@@ -195,6 +156,33 @@ if (extraError) {
 
   const primaryHours = parseFloat(hoursWorked) || 0
   const totalHours = primaryHours + helperHoursTotal
+  const validHelperRows = helpers
+    .map((helper) => ({
+      ...helper,
+      parsedHours: parseFloat(helper.hours),
+    }))
+    .filter(
+      (helper) =>
+        helper.staff_member_id &&
+        helper.staff_name &&
+        !isNaN(helper.parsedHours) &&
+        helper.parsedHours > 0
+    )
+  const labourEntryTotal = primaryHours + validHelperRows.reduce(
+    (total, helper) => total + helper.parsedHours,
+    0
+  )
+  const materialReviewComplete = extraMaterialsState === "none"
+  const readyForInvoice = materialReviewComplete
+  const costCaptureWarnings = [
+    !workNotes.trim() ? "Work notes are required for back-costing context." : null,
+    Math.abs(totalHours - labourEntryTotal) > 0.01
+      ? "Staff labour entry hours do not match total visit hours."
+      : null,
+    !materialReviewComplete
+      ? "Materials/extras need admin review."
+      : null,
+  ].filter(Boolean)
 
   const todayString = () => {
     const d = new Date()
@@ -225,6 +213,12 @@ if (extraError) {
       return
     }
 
+    if (!workNotes.trim()) {
+      setError("Please add work notes before completing the visit.")
+      setLoading(false)
+      return
+    }
+
     const visitDate = todayString()
 
 const { data: existingVisit } = await supabase
@@ -240,22 +234,58 @@ if (existingVisit) {
   return
 }
 
-    const { data: createdVisit, error: visitError } = await supabase
+    const materialsReviewNote =
+      extraMaterialsState === "needs_admin_review"
+        ? extraMaterialsNote.trim() || "Extras/materials used - needs admin review"
+        : extraMaterialsNote.trim() || null
+    const visitPayload = {
+      scheduled_job_id: jobId,
+      property_id: propertyId,
+      visit_date: visitDate,
+      hours_worked: labourEntryTotal,
+      greenwaste_bags: parseInt(greenwasteBags) || 0,
+      work_notes: workNotes.trim() || null,
+      next_visit_notes: nextVisitNotes.trim() || null,
+      completion_status: "completed",
+      ready_for_invoice: readyForInvoice,
+      invoice_status: readyForInvoice ? "ready" : "not_ready",
+      cost_capture_reviewed_at: materialReviewComplete
+        ? new Date().toISOString()
+        : null,
+      materials_review_note: materialsReviewNote,
+    }
+
+    let { data: createdVisit, error: visitError } = await supabase
       .from("visits")
-      .insert({
-        scheduled_job_id: jobId,
-        property_id: propertyId,
-        visit_date: visitDate,
-        hours_worked: totalHours,
-        greenwaste_bags: parseInt(greenwasteBags) || 0,
-        work_notes: workNotes.trim() || null,
-        next_visit_notes: nextVisitNotes.trim() || null,
-        completion_status: "completed",
-        ready_for_invoice: true,
-invoice_status: "ready",
-      })
+      .insert(visitPayload)
       .select("id")
       .single()
+
+    if (visitError && visitError.message.includes("materials_review_note")) {
+      const fallbackWorkNotes = [
+        workNotes.trim(),
+        materialsReviewNote
+          ? `Extra materials / admin note: ${materialsReviewNote}`
+          : null,
+      ]
+        .filter(Boolean)
+        .join("\n\n")
+
+      const { materials_review_note: _materialsReviewNote, ...fallbackPayload } =
+        visitPayload
+
+      const retry = await supabase
+        .from("visits")
+        .insert({
+          ...fallbackPayload,
+          work_notes: fallbackWorkNotes || null,
+        })
+        .select("id")
+        .single()
+
+      createdVisit = retry.data
+      visitError = retry.error
+    }
 
     if (visitError) {
       setError(visitError.message)
@@ -286,28 +316,60 @@ invoice_status: "ready",
         return
       }
 
+      const visitLabourRows = [
+        {
+          visit_id: createdVisit.id,
+          scheduled_job_id: jobId,
+          property_id: propertyId,
+          staff_member_id: primaryStaff.id,
+          staff_name: primaryStaff.name,
+          hours_worked: primaryHours,
+          labour_type: "primary",
+          notes: workNotes.trim() || null,
+        },
+        ...validHelperRows.map((helper) => ({
+          visit_id: createdVisit.id,
+          scheduled_job_id: jobId,
+          property_id: propertyId,
+          staff_member_id: helper.staff_member_id,
+          staff_name: helper.staff_name,
+          hours_worked: helper.parsedHours,
+          labour_type: "helper",
+          notes: workNotes.trim() || null,
+        })),
+      ]
+
+      const { error: visitLabourError } = await supabase
+        .from("visit_labour_entries")
+        .insert(visitLabourRows)
+
+      if (visitLabourError) {
+        setError(visitLabourError.message)
+        setLoading(false)
+        return
+      }
+
+      const derivedVisitHours = visitLabourRows.reduce(
+        (total, row) => total + Number(row.hours_worked || 0),
+        0
+      )
+
+      const { error: hoursSyncError } = await supabase
+        .from("visits")
+        .update({ hours_worked: derivedVisitHours })
+        .eq("id", createdVisit.id)
+
+      if (hoursSyncError) {
+        setError(hoursSyncError.message)
+        setLoading(false)
+        return
+      }
+
       for (const helper of helpers) {
   const helperHours = parseFloat(helper.hours)
 
   if (!helper.staff_member_id || isNaN(helperHours) || helperHours <= 0) {
     continue
-  }
-
-  const { error: helperError } = await supabase
-    .from("visit_labour_entries")
-    .insert({
-      visit_id: createdVisit.id,
-      scheduled_job_id: jobId,
-      property_id: propertyId,
-      staff_member_id: helper.staff_member_id,
-      staff_name: helper.staff_name,
-      hours_worked: helperHours,
-    })
-
-  if (helperError) {
-    setError(helperError.message)
-    setLoading(false)
-    return
   }
 
   const { error: helperLabourError } = await supabase
@@ -333,63 +395,6 @@ invoice_status: "ready",
   }
 }
 
-for (const extra of selectedExtras) {
-  if (!extra.extra_charge_item_id) continue
-
-  const selectedItem = extraChargeItems.find(
-    (item) => item.id === extra.extra_charge_item_id
-  )
-
-  if (!selectedItem) continue
-
-  const quantity = parseFloat(extra.quantity)
-
-  if (isNaN(quantity) || quantity <= 0) continue
-
-  const { error: extraChargeError } = await supabase
-    .from("visit_extra_charges")
-    .insert({
-      visit_id: createdVisit.id,
-      scheduled_job_id: jobId,
-      property_id: propertyId,
-      extra_charge_item_id: selectedItem.id,
-      item_code: selectedItem.item_code,
-      staff_label: selectedItem.staff_label,
-      invoice_description: selectedItem.invoice_description,
-      quantity,
-      unit_price: selectedItem.unit_price,
-      invoice_status: "ready",
-    })
-
-  if (extraChargeError) {
-    setError(extraChargeError.message)
-    setLoading(false)
-    return
-  }
-}
-
-if (miscProductNote.trim()) {
-  const { error: miscError } = await supabase
-    .from("visit_extra_charges")
-    .insert({
-      visit_id: createdVisit.id,
-      scheduled_job_id: jobId,
-      property_id: propertyId,
-      item_code: "MISC-REVIEW",
-      staff_label: "Misc Product Review",
-      invoice_description: "Misc Product Review",
-      quantity: 1,
-      unit_price: 0,
-      notes: miscProductNote.trim(),
-      invoice_status: "review",
-    })
-
-  if (miscError) {
-    setError(miscError.message)
-    setLoading(false)
-    return
-  }
-      }
     }
 
     const { error: jobError } = await supabase
@@ -469,6 +474,26 @@ if (miscProductNote.trim()) {
 />
 
             <Field>
+              <FieldLabel>Primary worker</FieldLabel>
+              <select
+                className="h-12 w-full rounded-md border bg-background px-3 text-sm"
+                value={primaryStaffId}
+                onChange={(event) => setPrimaryStaffId(event.target.value)}
+                required
+              >
+                <option value="">Select staff member</option>
+                {staffOptions.map((staff) => (
+                  <option key={staff.id} value={staff.id}>
+                    {staff.name}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Primary worker hours are the hours above. Add other staff below.
+              </p>
+            </Field>
+
+            <Field>
               <FieldLabel htmlFor="greenwaste">Greenwaste Bags</FieldLabel>
               <Input
                 id="greenwaste"
@@ -487,6 +512,7 @@ if (miscProductNote.trim()) {
                 value={workNotes}
                 onChange={(e) => setWorkNotes(e.target.value)}
                 rows={3}
+                required
               />
             </Field>
 
@@ -568,82 +594,68 @@ if (miscProductNote.trim()) {
               </Button>
             </div>
 
-<div className="mt-4">
-  <p className="mb-2 font-medium">Extra Charges (e.g. weedkiller)</p>
-
-  {selectedExtras.map((extra, index) => (
-    <div
-      key={index}
-      className="mb-2 grid grid-cols-[1fr_90px] gap-2"
-    >
-      <select
-        className="h-12 w-full rounded-md border bg-background px-2 text-sm"
-        value={extra.extra_charge_item_id}
-        onChange={(e) => {
-          const updated = [...selectedExtras]
-          updated[index].extra_charge_item_id = e.target.value
-          setSelectedExtras(updated)
-        }}
-      >
-        <option value="">Select item</option>
-
-        {extraChargeItems.map((item) => (
-          <option key={item.id} value={item.id}>
-            {item.staff_label}
-          </option>
-        ))}
-      </select>
-
-      <Input
-        type="number"
-        min="1"
-        step="1"
-        value={extra.quantity}
-        onChange={(e) => {
-          const updated = [...selectedExtras]
-          updated[index].quantity = e.target.value
-          setSelectedExtras(updated)
-        }}
-        className="h-12"
-      />
-    </div>
-  ))}
-
-  <Button
-    type="button"
-    variant="outline"
-    onClick={() =>
-      setSelectedExtras([
-        ...selectedExtras,
-        {
-          extra_charge_item_id: "",
-          quantity: "1",
-        },
-      ])
-    }
-  >
-    + Add Extra Charge
-  </Button>
-</div>
-
-<Field>
-  <FieldLabel htmlFor="miscProductNote">
-    Misc Product Note
-  </FieldLabel>
-
-  <Textarea
-    id="miscProductNote"
-    value={miscProductNote}
-    onChange={(e) => setMiscProductNote(e.target.value)}
-    rows={2}
-    placeholder="Example: Had to buy 5 timber stakes"
-  />
-</Field>
-
             <div className="rounded-md bg-muted p-3 text-sm">
-              <p className="font-medium">Total billable hours</p>
+              <p className="font-medium">Total visit hours</p>
               <p className="text-muted-foreground">{totalHours} hours</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Staff labour entries: {labourEntryTotal.toFixed(2)} hours
+              </p>
             </div>
+
+            <Field>
+              <FieldLabel>Extra materials / admin note</FieldLabel>
+              <div className="grid gap-2">
+                <label className="flex items-start gap-2 rounded-md border p-3 text-sm">
+                  <input
+                    type="radio"
+                    className="mt-1"
+                    name="extraMaterialsState"
+                    checked={extraMaterialsState === "none"}
+                    onChange={() => setExtraMaterialsState("none")}
+                  />
+                  <span>
+                    No extras/materials used
+                    <span className="block text-xs text-muted-foreground">
+                      Green waste bags are recorded separately above.
+                    </span>
+                  </span>
+                </label>
+
+                <label className="flex items-start gap-2 rounded-md border p-3 text-sm">
+                  <input
+                    type="radio"
+                    className="mt-1"
+                    name="extraMaterialsState"
+                    checked={extraMaterialsState === "needs_admin_review"}
+                    onChange={() => setExtraMaterialsState("needs_admin_review")}
+                  />
+                  <span>
+                    Extras/materials used - needs admin review
+                    <span className="block text-xs text-muted-foreground">
+                      Add a short note below. Admin will cost or invoice it later.
+                    </span>
+                  </span>
+                </label>
+              </div>
+              <Textarea
+                className="mt-3"
+                value={extraMaterialsNote}
+                onChange={(event) => setExtraMaterialsNote(event.target.value)}
+                rows={2}
+                placeholder="Example: used 6 stakes and ties, half bag fertiliser, extra spray, etc."
+              />
+            </Field>
+
+            {costCaptureWarnings.length > 0 && (
+              <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                <p className="font-medium">Admin review warnings</p>
+                <ul className="mt-2 list-disc space-y-1 pl-5">
+                  {costCaptureWarnings.map((warning) => (
+                    <li key={warning}>{warning}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
 
           </FieldGroup>
 

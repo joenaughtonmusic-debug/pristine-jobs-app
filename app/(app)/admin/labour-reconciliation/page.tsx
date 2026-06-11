@@ -1,5 +1,10 @@
 import Link from "next/link"
 import { createClient } from "@/lib/supabase/server"
+import {
+  ensureWorkflowAdminActions,
+  getActionDueDate,
+  type WorkflowAdminActionInput,
+} from "@/lib/admin-actions"
 
 export const dynamic = "force-dynamic"
 
@@ -28,6 +33,7 @@ type LabourEntryRow = {
   job_type: string | null
   job_name: string | null
   job_code: string | null
+  work_type?: string | null
   scheduled_job_id: string | null
   property_id: string | null
   staff_member_id: string
@@ -35,11 +41,20 @@ type LabourEntryRow = {
   work_date: string
   hours_worked: number | string | null
   billable: boolean | null
+  billable_status?: string | null
   notes: string | null
+  properties?: {
+    address_line_1?: string | null
+    suburb?: string | null
+  } | {
+    address_line_1?: string | null
+    suburb?: string | null
+  }[] | null
 }
 
 type ReconciliationStatus =
   | "ok"
+  | "non_worked"
   | "missing_daily_hours"
   | "overallocated"
   | "underallocated"
@@ -103,6 +118,7 @@ function formatDifference(value: number | null) {
 }
 
 function statusLabel(status: ReconciliationStatus) {
+  if (status === "non_worked") return "No job allocation required"
   if (status === "missing_daily_hours") return "Missing daily hours"
   if (status === "overallocated") return "Overallocated"
   if (status === "underallocated") return "Underallocated"
@@ -112,11 +128,79 @@ function statusLabel(status: ReconciliationStatus) {
 
 function statusClasses(status: ReconciliationStatus) {
   if (status === "ok") return "border-green-200 bg-green-50 text-green-800"
+  if (status === "non_worked") return "border-blue-200 bg-blue-50 text-blue-800"
   if (status === "no_job_labour") return "border-gray-200 bg-gray-50 text-gray-700"
   return "border-amber-200 bg-amber-50 text-amber-800"
 }
 
-function getStatus(dailyHours: number | null, jobHours: number): ReconciliationStatus {
+function formatDayStatus(status?: string | null) {
+  if (!status) return "Worked"
+
+  return status
+    .split("_")
+    .map((part, index) =>
+      index === 0 ? part.charAt(0).toUpperCase() + part.slice(1) : part
+    )
+    .join(" ")
+}
+
+function isNonWorkedStatus(status?: string | null) {
+  return Boolean(status && status !== "worked")
+}
+
+function firstOrValue<T>(value: T | T[] | null | undefined) {
+  return Array.isArray(value) ? value[0] : value
+}
+
+function formatWorkType(value?: string | null) {
+  if (!value) return "Misc work"
+
+  return value
+    .split("_")
+    .map((part, index) =>
+      index === 0 ? part.charAt(0).toUpperCase() + part.slice(1) : part
+    )
+    .join(" ")
+}
+
+function formatBillableStatus(value?: string | null, billable?: boolean | null) {
+  if (value === "needs_review") return "Needs Review"
+  if (value === "billable") return "Billable"
+  if (value === "non_billable") return "Non-billable"
+  return billable ? "Billable" : "Non-billable"
+}
+
+function getLabourEntryLabel(entry: LabourEntryRow) {
+  const property = firstOrValue(entry.properties)
+  const propertyAddress = [property?.address_line_1, property?.suburb]
+    .filter(Boolean)
+    .join(", ")
+
+  if (entry.job_type === "misc") {
+    return [
+      "Unscheduled / Misc Work",
+      formatWorkType(entry.work_type || entry.job_code),
+      propertyAddress || entry.job_name,
+    ]
+      .filter(Boolean)
+      .join(" - ")
+  }
+
+  return (
+    propertyAddress ||
+    entry.job_name ||
+    entry.job_code ||
+    (entry.job_type === "landscaping" ? "Landscaping job" : entry.job_type) ||
+    "Job labour"
+  )
+}
+
+function getStatus(
+  dayStatus: string | null | undefined,
+  dailyHours: number | null,
+  jobHours: number
+): ReconciliationStatus {
+  if (isNonWorkedStatus(dayStatus)) return "non_worked"
   if (dailyHours === null && jobHours > 0) return "missing_daily_hours"
   if (dailyHours !== null && jobHours > dailyHours) return "overallocated"
   if (dailyHours !== null && jobHours === 0) return "no_job_labour"
@@ -170,7 +254,7 @@ function buildReconciliationRows(
         dailyHours,
         jobHours,
         difference,
-        status: getStatus(dailyHours, jobHours),
+        status: getStatus(timesheet?.day_status, dailyHours, jobHours),
         timesheet,
         entries,
       }
@@ -206,7 +290,13 @@ export default async function AdminLabourReconciliationPage({
 
   const { data: labourEntries, error: labourEntriesError } = await supabase
     .from("job_labour_entries")
-    .select("*")
+    .select(`
+      *,
+      properties (
+        address_line_1,
+        suburb
+      )
+    `)
     .gte("work_date", startDate)
     .lte("work_date", endDate)
     .order("work_date", { ascending: true })
@@ -216,7 +306,87 @@ export default async function AdminLabourReconciliationPage({
     (labourEntries || []) as LabourEntryRow[]
   )
 
-  const warningCount = rows.filter((row) => row.status !== "ok").length
+  await ensureWorkflowAdminActions(
+    supabase,
+    [
+      ...rows
+        .filter((row) => row.status !== "ok" && row.status !== "non_worked")
+        .map((row): WorkflowAdminActionInput => ({
+        title: `Labour reconciliation: ${row.staffName} ${formatDate(row.workDate)}`,
+        actionType: "labour_exception",
+        priority:
+          row.status === "missing_daily_hours" || row.status === "overallocated"
+            ? "high"
+            : "normal",
+        owner: "VA",
+        dueDate: getActionDueDate(0),
+        sourceRecordType: "labour_reconciliation",
+        sourceRecordId: row.key,
+        sourceUrl: `/admin/labour-reconciliation?start=${startDate}&end=${endDate}`,
+        notes: [
+          `Staff: ${row.staffName}`,
+          `Date: ${formatDate(row.workDate)}`,
+          `Status: ${statusLabel(row.status)}`,
+          `Day status: ${formatDayStatus(row.timesheet?.day_status)}`,
+          `Daily hours: ${formatHours(row.dailyHours)}`,
+          `Job hours: ${formatHours(row.jobHours)}`,
+          `Difference: ${formatDifference(row.difference)}`,
+          row.timesheet?.status_notes
+            ? `Timesheet note: ${row.timesheet.status_notes}`
+            : null,
+        ]
+          .filter(Boolean)
+          .join("\n"),
+        })),
+      ...((labourEntries || []) as LabourEntryRow[])
+        .filter((entry) => {
+          const status =
+            entry.billable_status || (entry.billable ? "billable" : "non_billable")
+
+          return (
+            entry.job_type === "misc" &&
+            !entry.scheduled_job_id &&
+            (status === "needs_review" || status === "billable")
+          )
+        })
+        .map((entry): WorkflowAdminActionInput => {
+          const status =
+            entry.billable_status || (entry.billable ? "billable" : "non_billable")
+          const title =
+            status === "needs_review"
+              ? "Review misc work for invoicing"
+              : "Link extra work to property/job"
+
+          return {
+            title: `${title}: ${entry.staff_name}`,
+            actionType: "misc_work_review",
+            priority: status === "needs_review" ? "high" : "normal",
+            owner: "VA",
+            dueDate: getActionDueDate(0),
+            propertyId: entry.property_id || null,
+            sourceRecordType: "job_labour_entry",
+            sourceRecordId: entry.id,
+            sourceUrl: `/admin/labour-reconciliation?start=${entry.work_date}&end=${entry.work_date}`,
+            notes: [
+              `Staff: ${entry.staff_name}`,
+              `Date: ${formatDate(entry.work_date)}`,
+              `Work: ${formatWorkType(entry.work_type || entry.job_code)}`,
+              `Hours: ${formatHours(Number(entry.hours_worked || 0))}`,
+              `Billable status: ${formatBillableStatus(status, entry.billable)}`,
+              entry.property_id ? "Linked property exists." : "No linked property.",
+              entry.job_name ? `Label: ${entry.job_name}` : null,
+              entry.notes ? `Notes: ${entry.notes}` : null,
+            ]
+              .filter(Boolean)
+              .join("\n"),
+          }
+        }),
+    ]
+  )
+
+  const warningCount = rows.filter(
+    (row) => row.status !== "ok" && row.status !== "non_worked"
+  ).length
   const totalDailyHours = rows.reduce((total, row) => {
     return total + Number(row.dailyHours || 0)
   }, 0)
@@ -300,6 +470,7 @@ export default async function AdminLabourReconciliationPage({
               <tr>
                 <th className="border-b px-4 py-3">Staff</th>
                 <th className="border-b px-4 py-3">Date</th>
+                <th className="border-b px-4 py-3">Day Status</th>
                 <th className="border-b px-4 py-3 text-right">Daily Hours</th>
                 <th className="border-b px-4 py-3 text-right">Job Hours</th>
                 <th className="border-b px-4 py-3 text-right">Difference</th>
@@ -316,6 +487,28 @@ export default async function AdminLabourReconciliationPage({
                   </td>
                   <td className="border-b px-4 py-3 text-gray-600">
                     {formatDate(row.workDate)}
+                  </td>
+                  <td className="border-b px-4 py-3">
+                    {row.timesheet ? (
+                      <div className="space-y-1">
+                        <span
+                          className={`inline-flex rounded-full border px-2 py-1 text-xs font-medium ${
+                            isNonWorkedStatus(row.timesheet.day_status)
+                              ? "border-blue-200 bg-blue-50 text-blue-800"
+                              : "border-green-200 bg-green-50 text-green-800"
+                          }`}
+                        >
+                          {formatDayStatus(row.timesheet.day_status)}
+                        </span>
+                        {row.timesheet.status_notes && (
+                          <div className="max-w-48 text-xs text-gray-500">
+                            {row.timesheet.status_notes}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-gray-400">No daily timesheet</span>
+                    )}
                   </td>
                   <td className="border-b px-4 py-3 text-right">
                     {formatHours(row.dailyHours)}
@@ -357,10 +550,7 @@ export default async function AdminLabourReconciliationPage({
                             >
                               <div className="flex flex-wrap items-center justify-between gap-2">
                                 <div className="font-medium text-gray-900">
-                                  {entry.job_name ||
-                                    entry.job_code ||
-                                    entry.job_type ||
-                                    "Job labour"}
+                                  {getLabourEntryLabel(entry)}
                                 </div>
                                 <div>{formatHours(Number(entry.hours_worked || 0))}</div>
                               </div>
@@ -374,8 +564,21 @@ export default async function AdminLabourReconciliationPage({
                                     Open job
                                   </Link>
                                 )}
-                                <span>{entry.billable ? "Billable" : "Non-billable"}</span>
+                                <span>
+                                  {formatBillableStatus(
+                                    entry.billable_status,
+                                    entry.billable
+                                  )}
+                                </span>
                                 {entry.job_type && <span>{entry.job_type}</span>}
+                                {entry.job_type === "misc" && (
+                                  <span className="font-medium text-amber-700">
+                                    Unscheduled / Misc Work
+                                  </span>
+                                )}
+                                {entry.work_type && (
+                                  <span>{formatWorkType(entry.work_type)}</span>
+                                )}
                               </div>
 
                               {entry.notes && (

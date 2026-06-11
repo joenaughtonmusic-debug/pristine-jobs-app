@@ -17,6 +17,20 @@ type LandscapingJob = {
   client_name: string | null
   address_line_1: string | null
   suburb: string | null
+  property_id?: string | null
+  scheduled_jobs?: {
+    id: string
+    property_id: string
+    scheduled_date: string
+  }[]
+}
+
+type PropertyOption = {
+  id: string
+  property_code?: string | null
+  client_name?: string | null
+  address_line_1?: string | null
+  suburb?: string | null
 }
 
 type LabourEntry = {
@@ -24,12 +38,23 @@ type LabourEntry = {
   job_type: string
   job_name: string | null
   job_code: string | null
+  work_type?: string | null
+  scheduled_job_id?: string | null
+  property_id?: string | null
   staff_member_id: string
   staff_name: string
   work_date: string
   hours_worked: number
   billable: boolean
+  billable_status?: "billable" | "non_billable" | "needs_review" | null
   notes: string | null
+  properties?: {
+    address_line_1?: string | null
+    suburb?: string | null
+  } | {
+    address_line_1?: string | null
+    suburb?: string | null
+  }[] | null
 }
 
 type Timesheet = {
@@ -37,13 +62,18 @@ type Timesheet = {
   staff_member_id: string
   staff_name: string
   work_date: string
+  hours_entered?: number | null
+  start_time?: string | null
+  finish_time?: string | null
   total_hours: number
   day_status: string | null
   status_notes: string | null
+  notes?: string | null
 }
 
 type Props = {
   staffMember: StaffMember
+  properties: PropertyOption[]
   landscapingJobs: LandscapingJob[]
   labourEntries: LabourEntry[]
   timesheets: Timesheet[]
@@ -111,8 +141,93 @@ function formatDayLabel(dateString: string) {
   })
 }
 
+function formatLandscapingJobLabel(job: LandscapingJob) {
+  const location = [job.address_line_1, job.suburb].filter(Boolean).join(", ")
+  return [job.job_code, job.job_name, location].filter(Boolean).join(" — ")
+}
+
+const miscWorkTypeOptions = [
+  { value: "tip_run", label: "Tip run" },
+  { value: "extra_property_work", label: "Extra property work" },
+  { value: "travel", label: "Travel" },
+  { value: "pickup_delivery", label: "Pickup / delivery" },
+  { value: "admin", label: "Admin" },
+  { value: "yard_equipment", label: "Yard / equipment" },
+  { value: "estimator_work", label: "Estimator work" },
+  { value: "other", label: "Other" },
+] as const
+
+function formatPropertyOption(property: PropertyOption) {
+  return [
+    property.property_code,
+    property.client_name,
+    [property.address_line_1, property.suburb].filter(Boolean).join(", "),
+  ]
+    .filter(Boolean)
+    .join(" — ")
+}
+
+function getWorkTypeLabel(value?: string | null) {
+  return (
+    miscWorkTypeOptions.find((option) => option.value === value)?.label ||
+    value?.replaceAll("_", " ") ||
+    "Misc work"
+  )
+}
+
+function getBillableStatusLabel(value?: string | null, billable?: boolean | null) {
+  if (value === "needs_review") return "Needs review"
+  if (value === "non_billable") return "Non-billable"
+  if (value === "billable") return "Billable"
+  return billable ? "Billable" : "Non-billable"
+}
+
+function firstOrValue<T>(value: T | T[] | null | undefined) {
+  return Array.isArray(value) ? value[0] : value
+}
+
+function formatLabourEntryLabel(entry: LabourEntry) {
+  const property = firstOrValue(entry.properties)
+  const propertyAddress = [property?.address_line_1, property?.suburb]
+    .filter(Boolean)
+    .join(", ")
+
+  if (entry.job_type === "misc") {
+    return [
+      "Unscheduled / Misc Work",
+      getWorkTypeLabel(entry.work_type || entry.job_code),
+      propertyAddress || entry.job_name,
+    ]
+      .filter(Boolean)
+      .join(" — ")
+  }
+
+  return (
+    propertyAddress ||
+    entry.job_name ||
+    entry.job_code ||
+    (entry.job_type === "landscaping" ? "Landscaping job" : entry.job_type)
+  )
+}
+
+function formatDayStatus(status?: string | null) {
+  if (!status) return "Worked"
+
+  return status
+    .split("_")
+    .map((part, index) =>
+      index === 0 ? part.charAt(0).toUpperCase() + part.slice(1) : part
+    )
+    .join(" ")
+}
+
+function formatTime(value?: string | null) {
+  return value ? value.slice(0, 5) : null
+}
+
 export function LabourEntryClient({
   staffMember,
+  properties,
   landscapingJobs,
   labourEntries,
   timesheets,
@@ -129,9 +244,16 @@ export function LabourEntryClient({
   const [hoursByDay, setHoursByDay] = useState<Record<string, string>>({})
   const [notesByDay, setNotesByDay] = useState<Record<string, string>>({})
   const [billableByDay, setBillableByDay] = useState<Record<string, boolean>>({})
+  const [miscWorkTypeByDay, setMiscWorkTypeByDay] = useState<Record<string, string>>({})
+  const [miscPropertyIdByDay, setMiscPropertyIdByDay] = useState<Record<string, string>>({})
+  const [miscFreeTextByDay, setMiscFreeTextByDay] = useState<Record<string, string>>({})
+  const [miscHoursByDay, setMiscHoursByDay] = useState<Record<string, string>>({})
+  const [miscBillableStatusByDay, setMiscBillableStatusByDay] = useState<Record<string, string>>({})
+  const [miscNotesByDay, setMiscNotesByDay] = useState<Record<string, string>>({})
 
   const [totalHoursByDay, setTotalHoursByDay] = useState<Record<string, string>>({})
   const [deductLunchFromTotalByDay, setDeductLunchFromTotalByDay] = useState<Record<string, boolean>>({})
+  const [timesheetStatusByDay, setTimesheetStatusByDay] = useState<Record<string, string>>({})
   const [timesheetNotesByDay, setTimesheetNotesByDay] = useState<Record<string, string>>({})
   const [editingTimesheetByDay, setEditingTimesheetByDay] = useState<Record<string, boolean>>({})
   const [manualWorkDayByDay, setManualWorkDayByDay] = useState<Record<string, boolean>>({})
@@ -147,6 +269,9 @@ const [editEntryNotes, setEditEntryNotes] = useState("")
     timesheets?.reduce((total, timesheet) => {
       return total + Number(timesheet.total_hours || 0)
     }, 0) || 0
+  const weeklyJobHours = labourEntries.reduce((total, entry) => {
+    return total + Number(entry.hours_worked || 0)
+  }, 0)
 
   const getCalculatedHours = (day: string) => {
     const parsed = parseFloat(hoursByDay[day] || "")
@@ -213,12 +338,19 @@ const [editEntryNotes, setEditEntryNotes] = useState("")
 
     const billable = billableByDay[day] ?? true
     const notes = notesByDay[day]?.trim() || null
+    const scheduledJobsForDay =
+      selectedJob.scheduled_jobs?.filter(
+        (scheduledJob) => scheduledJob.scheduled_date === day
+      ) || []
+    const scheduledJobId =
+      scheduledJobsForDay.length === 1 ? scheduledJobsForDay[0].id : null
 
     const { error: labourError } = await supabase
       .from("job_labour_entries")
       .insert({
         job_type: "landscaping",
-        property_id: null,
+        scheduled_job_id: scheduledJobId,
+        property_id: selectedJob.property_id || null,
         job_name: selectedJob.job_name,
         job_code: selectedJob.job_code,
         staff_member_id: staffMember.id,
@@ -242,17 +374,96 @@ const [editEntryNotes, setEditEntryNotes] = useState("")
     router.refresh()
   }
 
+  const handleSaveMiscWork = async (day: string) => {
+    setSavingDay(day)
+    setMessageByDay((prev) => ({ ...prev, [day]: "" }))
+    setErrorByDay((prev) => ({ ...prev, [day]: "" }))
+
+    const workType = miscWorkTypeByDay[day] || "other"
+    const propertyId = miscPropertyIdByDay[day] || null
+    const freeText = miscFreeTextByDay[day]?.trim() || null
+    const parsedHours = parseFloat(miscHoursByDay[day] || "")
+    const billableStatus = miscBillableStatusByDay[day] || "needs_review"
+    const notes = miscNotesByDay[day]?.trim() || null
+    const property = properties.find((item) => item.id === propertyId)
+
+    if (isNaN(parsedHours) || parsedHours <= 0) {
+      setErrorByDay((prev) => ({
+        ...prev,
+        [day]: "Please enter valid misc work hours.",
+      }))
+      setSavingDay(null)
+      return
+    }
+
+    if (!propertyId && !freeText) {
+      setErrorByDay((prev) => ({
+        ...prev,
+        [day]: "Add a property or a short customer/address label.",
+      }))
+      setSavingDay(null)
+      return
+    }
+
+    const { error } = await supabase.from("job_labour_entries").insert({
+      job_type: "misc",
+      work_type: workType,
+      scheduled_job_id: null,
+      property_id: propertyId,
+      job_name: freeText || (property ? formatPropertyOption(property) : getWorkTypeLabel(workType)),
+      job_code: workType,
+      staff_member_id: staffMember.id,
+      staff_name: staffMember.name,
+      work_date: day,
+      hours_worked: parsedHours,
+      billable: billableStatus === "billable",
+      billable_status: billableStatus,
+      notes,
+    })
+
+    if (error) {
+      setErrorByDay((prev) => ({ ...prev, [day]: error.message }))
+      setSavingDay(null)
+      return
+    }
+
+    setMessageByDay((prev) => ({ ...prev, [day]: "Misc work saved." }))
+    setMiscWorkTypeByDay((prev) => ({ ...prev, [day]: "" }))
+    setMiscPropertyIdByDay((prev) => ({ ...prev, [day]: "" }))
+    setMiscFreeTextByDay((prev) => ({ ...prev, [day]: "" }))
+    setMiscHoursByDay((prev) => ({ ...prev, [day]: "" }))
+    setMiscBillableStatusByDay((prev) => ({ ...prev, [day]: "" }))
+    setMiscNotesByDay((prev) => ({ ...prev, [day]: "" }))
+    setSavingDay(null)
+    router.refresh()
+  }
+
   const handleSaveTotalHours = async (day: string) => {
     setSavingDay(day)
     setMessageByDay((prev) => ({ ...prev, [day]: "" }))
     setErrorByDay((prev) => ({ ...prev, [day]: "" }))
 
-    const enteredTotalHours = parseFloat(totalHoursByDay[day] || "0")
-    const totalHours = deductLunchFromTotalByDay[day]
-      ? Math.max(enteredTotalHours - 0.5, 0)
-      : enteredTotalHours
+    const existingTimesheet = getTimesheetForDay(day)
+    const selectedDayStatus =
+      timesheetStatusByDay[day] || existingTimesheet?.day_status || "worked"
+    const isWorkedDay = selectedDayStatus === "worked"
+    const enteredHoursValue = totalHoursByDay[day]
+    const enteredTotalHours = enteredHoursValue
+      ? parseFloat(enteredHoursValue)
+      : Number(
+          existingTimesheet?.hours_entered ??
+            existingTimesheet?.total_hours ??
+            0
+        )
+    const totalHours =
+      isWorkedDay && deductLunchFromTotalByDay[day]
+        ? Math.max(enteredTotalHours - 0.5, 0)
+        : enteredTotalHours
 
-    if (isNaN(enteredTotalHours) || enteredTotalHours <= 0 || totalHours <= 0) {
+    if (
+      isWorkedDay &&
+      (isNaN(enteredTotalHours) || enteredTotalHours <= 0 || totalHours <= 0)
+    ) {
       setErrorByDay((prev) => ({
         ...prev,
         [day]: "Enter valid total hours for the day.",
@@ -261,7 +472,9 @@ const [editEntryNotes, setEditEntryNotes] = useState("")
       return
     }
 
-    const notes = timesheetNotesByDay[day]?.trim() || null
+    const notes = Object.prototype.hasOwnProperty.call(timesheetNotesByDay, day)
+      ? timesheetNotesByDay[day]?.trim() || null
+      : existingTimesheet?.status_notes || existingTimesheet?.notes || null
 
     const { error } = await supabase
       .from("staff_daily_timesheets")
@@ -270,9 +483,9 @@ const [editEntryNotes, setEditEntryNotes] = useState("")
           staff_member_id: staffMember.id,
           staff_name: staffMember.name,
           work_date: day,
-          hours_entered: totalHours,
+          hours_entered: enteredTotalHours,
           total_hours: totalHours,
-          day_status: "worked",
+          day_status: selectedDayStatus,
           status_notes: notes,
           updated_at: new Date().toISOString(),
         },
@@ -294,7 +507,8 @@ const [editEntryNotes, setEditEntryNotes] = useState("")
 
     setTotalHoursByDay((prev) => ({ ...prev, [day]: "" }))
     setDeductLunchFromTotalByDay((prev) => ({ ...prev, [day]: false }))
-    setTimesheetNotesByDay((prev) => ({ ...prev, [day]: "" }))
+    setTimesheetStatusByDay((prev) => ({ ...prev, [day]: selectedDayStatus }))
+    setTimesheetNotesByDay((prev) => ({ ...prev, [day]: notes || "" }))
     setEditingTimesheetByDay((prev) => ({ ...prev, [day]: false }))
     setSavingDay(null)
     router.refresh()
@@ -307,6 +521,11 @@ const [editEntryNotes, setEditEntryNotes] = useState("")
   setSavingDay(day)
   setMessageByDay((prev) => ({ ...prev, [day]: "" }))
   setErrorByDay((prev) => ({ ...prev, [day]: "" }))
+  const statusNote = Object.prototype.hasOwnProperty.call(timesheetNotesByDay, day)
+    ? timesheetNotesByDay[day]?.trim() || null
+    : dayStatus === "sick_leave"
+      ? "Sick leave"
+      : "Public holiday"
 
   const { error } = await supabase
     .from("staff_daily_timesheets")
@@ -318,8 +537,7 @@ const [editEntryNotes, setEditEntryNotes] = useState("")
         hours_entered: 7.5,
         total_hours: 7.5,
         day_status: dayStatus,
-        status_notes:
-          dayStatus === "sick_leave" ? "Sick leave" : "Public holiday",
+        status_notes: statusNote,
         updated_at: new Date().toISOString(),
       },
       {
@@ -342,6 +560,7 @@ const [editEntryNotes, setEditEntryNotes] = useState("")
   }))
 
   setEditingTimesheetByDay((prev) => ({ ...prev, [day]: false }))
+  setTimesheetStatusByDay((prev) => ({ ...prev, [day]: dayStatus }))
   setSavingDay(null)
   router.refresh()
 }
@@ -424,6 +643,9 @@ const handleDeleteEntry = async (entryId: string) => {
       <div className="mb-6 rounded-xl border bg-card p-4">
         <p className="text-sm text-muted-foreground">Week total</p>
         <p className="text-3xl font-bold">{weeklyTotalHours}h</p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Landscaping job hours: {weeklyJobHours}h
+        </p>
       </div>
 
       <div className="flex flex-col gap-6">
@@ -433,10 +655,22 @@ const handleDeleteEntry = async (entryId: string) => {
           const jobHours = getDayTotalFromEntries(day)
           const timesheet = getTimesheetForDay(day)
           const totalHours = Number(timesheet?.total_hours || 0)
+          const enteredHours =
+            timesheet?.hours_entered === null ||
+            timesheet?.hours_entered === undefined
+              ? null
+              : Number(timesheet.hours_entered)
           const otherHours = Math.max(totalHours - jobHours, 0)
-          const dayStatus = timesheet?.day_status
-          const isLeaveDay =
-            dayStatus === "sick_leave" || dayStatus === "public_holiday"
+          const dayStatus = timesheet?.day_status || (timesheet ? "worked" : null)
+          const editDayStatus =
+            timesheetStatusByDay[day] || dayStatus || "worked"
+          const isNonWorkedDay = Boolean(dayStatus && dayStatus !== "worked")
+          const dayStatusLabel = formatDayStatus(dayStatus)
+          const startTime = formatTime(timesheet?.start_time)
+          const finishTime = formatTime(timesheet?.finish_time)
+          const timesheetNote = timesheet?.status_notes || timesheet?.notes
+          const hasAllocationWarning =
+            dayStatus === "worked" && totalHours > jobHours
 
           const defaultExpectedWorkDay = isExpectedWorkDay(staffMember.name, day)
           const manuallyEnabledWorkDay =
@@ -454,7 +688,7 @@ const handleDeleteEntry = async (entryId: string) => {
               className={`rounded-xl border p-3 ${
                 isMissingHours
                   ? "border-red-300 bg-red-50"
-                  : isLeaveDay
+                  : isNonWorkedDay
                     ? "border-blue-200 bg-blue-50"
                     : "bg-card"
               }`}
@@ -465,13 +699,54 @@ const handleDeleteEntry = async (entryId: string) => {
                     {formatDayLabel(day)}
                   </h2>
 
-                  {totalHours > 0 ? (
-                    <p className="text-sm font-medium text-green-700">
-                      {jobHours}h jobs
-                      {otherHours > 0 ? ` + ${otherHours}h other` : ""}
-                      {" = "}
-                      {totalHours}h total
-                    </p>
+                  {timesheet ? (
+                    <div className="mt-1 space-y-1 text-sm">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span
+                          className={`rounded-full border px-2 py-0.5 text-xs font-medium ${
+                            isNonWorkedDay
+                              ? "border-blue-200 bg-blue-100 text-blue-800"
+                              : "border-green-200 bg-green-100 text-green-800"
+                          }`}
+                        >
+                          {dayStatusLabel}
+                        </span>
+                        <span className="text-muted-foreground">
+                          Hours: {totalHours.toFixed(2)}
+                        </span>
+                        {enteredHours !== null && enteredHours !== totalHours && (
+                          <span className="text-muted-foreground">
+                            Entered: {enteredHours.toFixed(2)}
+                          </span>
+                        )}
+                        {(startTime || finishTime) && (
+                          <span className="text-muted-foreground">
+                            {startTime || "--:--"} - {finishTime || "--:--"}
+                          </span>
+                        )}
+                      </div>
+
+                      {timesheetNote && (
+                        <p className="text-muted-foreground">
+                          Note: {timesheetNote}
+                        </p>
+                      )}
+
+                      {!isNonWorkedDay && totalHours > 0 && (
+                        <p className="font-medium text-green-700">
+                          {jobHours}h jobs
+                          {otherHours > 0 ? ` + ${otherHours}h other` : ""}
+                          {" = "}
+                          {totalHours}h total
+                        </p>
+                      )}
+
+                      {hasAllocationWarning && (
+                        <p className="font-medium text-amber-700">
+                          Daily hours entered, but job hours have not been allocated yet.
+                        </p>
+                      )}
+                    </div>
                   ) : (
                     <p
                       className={`text-sm ${
@@ -480,13 +755,9 @@ const handleDeleteEntry = async (entryId: string) => {
                           : "text-muted-foreground"
                       }`}
                     >
-                      {dayStatus === "sick_leave"
-                        ? "Sick leave"
-                        : dayStatus === "public_holiday"
-                          ? "Public holiday"
-                          : expectedWorkDay
-                            ? "Missing staff total hours"
-                            : "Not scheduled work day"}
+                      {expectedWorkDay
+                        ? "Missing staff total hours"
+                        : "Not scheduled work day"}
                     </p>
                   )}
 
@@ -524,7 +795,7 @@ const handleDeleteEntry = async (entryId: string) => {
     {editingEntryId === entry.id ? (
       <div className="space-y-2">
         <p className="font-medium">
-          {entry.job_code} — {entry.job_name}
+          {formatLabourEntryLabel(entry)}
         </p>
 
         <input
@@ -564,11 +835,11 @@ const handleDeleteEntry = async (entryId: string) => {
     ) : (
       <>
         <p className="font-medium">
-          {entry.job_code} — {entry.job_name}
+          {formatLabourEntryLabel(entry)}
         </p>
 
         <p className="text-muted-foreground">
-          {entry.hours_worked}h {entry.billable ? "billable" : "non-billable"}
+          {entry.hours_worked}h {getBillableStatusLabel(entry.billable_status, entry.billable)}
         </p>
 
         {entry.notes && (
@@ -619,7 +890,7 @@ const handleDeleteEntry = async (entryId: string) => {
                         <option value="">Select job</option>
                         {landscapingJobs.map((job) => (
                           <option key={job.id} value={job.id}>
-                            {job.job_code} — {job.job_name}
+                            {formatLandscapingJobLabel(job)}
                           </option>
                         ))}
                       </select>
@@ -697,6 +968,149 @@ const handleDeleteEntry = async (entryId: string) => {
                       {savingDay === day ? "Saving..." : "Save Job Labour"}
                     </button>
 
+                    <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                      <div className="mb-3">
+                        <p className="text-sm font-semibold text-amber-950">
+                          Unscheduled / Misc Work
+                        </p>
+                        <p className="text-xs text-amber-800">
+                          Use this for real work that was not on the schedule.
+                        </p>
+                      </div>
+
+                      <div className="grid gap-3">
+                        <label className="block">
+                          <span className="mb-1 block text-sm font-medium">
+                            Work type
+                          </span>
+                          <select
+                            className="h-10 w-full rounded-md border bg-white px-3 text-sm"
+                            value={miscWorkTypeByDay[day] || "other"}
+                            onChange={(event) =>
+                              setMiscWorkTypeByDay((prev) => ({
+                                ...prev,
+                                [day]: event.target.value,
+                              }))
+                            }
+                          >
+                            {miscWorkTypeOptions.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+
+                        <label className="block">
+                          <span className="mb-1 block text-sm font-medium">
+                            Property
+                          </span>
+                          <select
+                            className="h-10 w-full rounded-md border bg-white px-3 text-sm"
+                            value={miscPropertyIdByDay[day] || ""}
+                            onChange={(event) =>
+                              setMiscPropertyIdByDay((prev) => ({
+                                ...prev,
+                                [day]: event.target.value,
+                              }))
+                            }
+                          >
+                            <option value="">No linked property</option>
+                            {properties.map((property) => (
+                              <option key={property.id} value={property.id}>
+                                {formatPropertyOption(property)}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+
+                        <label className="block">
+                          <span className="mb-1 block text-sm font-medium">
+                            Customer / address label
+                          </span>
+                          <input
+                            className="h-10 w-full rounded-md border bg-white px-3 text-sm"
+                            placeholder="e.g. 424 Remuera Road / tip run"
+                            value={miscFreeTextByDay[day] || ""}
+                            onChange={(event) =>
+                              setMiscFreeTextByDay((prev) => ({
+                                ...prev,
+                                [day]: event.target.value,
+                              }))
+                            }
+                          />
+                        </label>
+
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <label className="block">
+                            <span className="mb-1 block text-sm font-medium">
+                              Hours worked
+                            </span>
+                            <input
+                              type="number"
+                              step="0.25"
+                              min="0.25"
+                              className="h-10 w-full rounded-md border bg-white px-3 text-sm"
+                              placeholder="e.g. 2.5"
+                              value={miscHoursByDay[day] || ""}
+                              onChange={(event) =>
+                                setMiscHoursByDay((prev) => ({
+                                  ...prev,
+                                  [day]: event.target.value,
+                                }))
+                              }
+                            />
+                          </label>
+
+                          <label className="block">
+                            <span className="mb-1 block text-sm font-medium">
+                              Billable status
+                            </span>
+                            <select
+                              className="h-10 w-full rounded-md border bg-white px-3 text-sm"
+                              value={miscBillableStatusByDay[day] || "needs_review"}
+                              onChange={(event) =>
+                                setMiscBillableStatusByDay((prev) => ({
+                                  ...prev,
+                                  [day]: event.target.value,
+                                }))
+                              }
+                            >
+                              <option value="needs_review">Needs review</option>
+                              <option value="billable">Billable</option>
+                              <option value="non_billable">Non-billable</option>
+                            </select>
+                          </label>
+                        </div>
+
+                        <label className="block">
+                          <span className="mb-1 block text-sm font-medium">
+                            Notes
+                          </span>
+                          <textarea
+                            className="min-h-20 w-full rounded-md border bg-white px-3 py-2 text-sm"
+                            placeholder="What was done, why, or what admin should check..."
+                            value={miscNotesByDay[day] || ""}
+                            onChange={(event) =>
+                              setMiscNotesByDay((prev) => ({
+                                ...prev,
+                                [day]: event.target.value,
+                              }))
+                            }
+                          />
+                        </label>
+
+                        <button
+                          type="button"
+                          onClick={() => handleSaveMiscWork(day)}
+                          disabled={savingDay === day}
+                          className="h-10 w-full rounded-md bg-amber-600 text-sm font-medium text-white"
+                        >
+                          {savingDay === day ? "Saving..." : "Save Misc Work"}
+                        </button>
+                      </div>
+                    </div>
+
                     <div className="mt-4 rounded-lg border bg-gray-50 p-3">
                       <div className="mb-2 flex items-center justify-between">
                         <p className="text-sm font-medium">
@@ -721,13 +1135,9 @@ const handleDeleteEntry = async (entryId: string) => {
 
                       {!isEditingTimesheet ? (
                         <div className="rounded-md bg-white p-3 text-sm">
-                          {dayStatus === "sick_leave" ? (
+                          {isNonWorkedDay ? (
                             <p className="font-medium text-blue-700">
-                              Sick leave · {totalHours}h
-                            </p>
-                          ) : dayStatus === "public_holiday" ? (
-                            <p className="font-medium text-blue-700">
-                              Public holiday · {totalHours}h
+                              {dayStatusLabel} · {totalHours}h
                             </p>
                           ) : (
                             <p className="font-medium text-green-700">
@@ -744,15 +1154,52 @@ const handleDeleteEntry = async (entryId: string) => {
                       ) : (
                         <>
                           <p className="mb-2 text-xs text-muted-foreground">
-                            Enter total hours worked for payroll/timesheet. Tick
-                            lunch deduction here if the entered day total
-                            includes lunch.
+                            Select the day status, then save the daily timesheet.
+                            Existing leave/public holiday statuses remain selected
+                            until changed.
                           </p>
+
+                          <label className="mb-2 block">
+                            <span className="mb-1 block text-xs font-medium text-muted-foreground">
+                              Day status
+                            </span>
+                            <select
+                              className="h-10 w-full rounded-md border bg-white px-3 text-sm"
+                              value={editDayStatus}
+                              onChange={(event) =>
+                                setTimesheetStatusByDay((prev) => ({
+                                  ...prev,
+                                  [day]: event.target.value,
+                                }))
+                              }
+                            >
+                              <option value="worked">Worked</option>
+                              <option value="public_holiday">Public holiday</option>
+                              <option value="sick_leave">Sick leave</option>
+                              <option value="sick_day">Sick day</option>
+                              <option value="annual_leave">Annual leave</option>
+                              <option value="unpaid_leave">Unpaid leave</option>
+                              <option value="day_off">Day off</option>
+                              {![
+                                "worked",
+                                "public_holiday",
+                                "sick_leave",
+                                "sick_day",
+                                "annual_leave",
+                                "unpaid_leave",
+                                "day_off",
+                              ].includes(editDayStatus) && (
+                                <option value={editDayStatus}>
+                                  {formatDayStatus(editDayStatus)}
+                                </option>
+                              )}
+                            </select>
+                          </label>
 
                           <input
                             type="number"
                             step="0.25"
-                            min="0.25"
+                            min={editDayStatus === "worked" ? "0.25" : "0"}
                             placeholder={
                               totalHours > 0 ? String(totalHours) : "e.g. 8"
                             }
@@ -770,6 +1217,7 @@ const handleDeleteEntry = async (entryId: string) => {
                             <input
                               type="checkbox"
                               checked={deductLunchFromTotalByDay[day] || false}
+                              disabled={editDayStatus !== "worked"}
                               onChange={(e) =>
                                 setDeductLunchFromTotalByDay((prev) => ({
                                   ...prev,

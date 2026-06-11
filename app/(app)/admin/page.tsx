@@ -7,11 +7,14 @@ import {
 
 export const dynamic = "force-dynamic"
 
-type DashboardCard = {
+type PipelineCard = {
+  stage: string
   title: string
   count: number
   href: string
-  description: string
+  purpose: string
+  nextAction: string
+  opens: string
   urgent?: boolean
 }
 
@@ -30,6 +33,7 @@ type TimesheetRow = {
   staff_member_id: string
   work_date: string
   total_hours: number | string | null
+  day_status?: string | null
 }
 
 type LabourEntryRow = {
@@ -105,6 +109,9 @@ function countLabourExceptions(
       0
     )
 
+    const dayStatus = timesheet?.day_status || (timesheet ? "worked" : null)
+
+    if (dayStatus && dayStatus !== "worked") return false
     if (dailyHours === null && jobHours > 0) return true
     if (dailyHours !== null && jobHours > dailyHours) return true
     if (dailyHours !== null && jobHours === 0) return true
@@ -114,7 +121,7 @@ function countLabourExceptions(
   }).length
 }
 
-function DashboardCard({ card }: { card: DashboardCard }) {
+function PipelineCard({ card }: { card: PipelineCard }) {
   const active = card.count > 0
   const classes =
     active && card.urgent
@@ -134,10 +141,14 @@ function DashboardCard({ card }: { card: DashboardCard }) {
       href={card.href}
       className={`block rounded-xl border p-5 shadow-sm transition ${classes}`}
     >
+      <div className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+        {card.stage}
+      </div>
+
       <div className="flex items-start justify-between gap-4">
-        <div>
-          <h2 className="font-semibold text-gray-900">{card.title}</h2>
-          <p className="mt-2 text-sm text-gray-600">{card.description}</p>
+        <div className="mt-2">
+          <h2 className="text-lg font-semibold text-gray-900">{card.title}</h2>
+          <p className="mt-2 text-sm text-gray-600">{card.purpose}</p>
         </div>
         {active && card.urgent && (
           <span className="rounded-full bg-amber-200 px-2 py-1 text-xs font-medium text-amber-900">
@@ -146,8 +157,23 @@ function DashboardCard({ card }: { card: DashboardCard }) {
         )}
       </div>
 
-      <div className={`mt-5 text-4xl font-bold ${countClasses}`}>
-        {card.count}
+      <div className="mt-5 flex items-end justify-between gap-4">
+        <div>
+          <div className={`text-4xl font-bold ${countClasses}`}>
+            {card.count}
+          </div>
+          <div className="mt-1 text-xs text-gray-500">Current attention items</div>
+        </div>
+      </div>
+
+      <div className="mt-5 space-y-2 border-t pt-4 text-sm">
+        <p className="text-gray-700">
+          <span className="font-medium text-gray-900">Next action:</span>{" "}
+          {card.nextAction}
+        </p>
+        <p className="text-gray-500">
+          Opens: <span className="font-medium text-gray-700">{card.opens}</span>
+        </p>
       </div>
     </Link>
   )
@@ -235,7 +261,7 @@ export default async function AdminDashboardPage() {
       .limit(500),
     supabase
       .from("staff_daily_timesheets")
-      .select("staff_member_id, work_date, total_hours")
+      .select("staff_member_id, work_date, total_hours, day_status")
       .gte("work_date", startDate)
       .lte("work_date", endDate)
       .limit(1000),
@@ -282,75 +308,80 @@ export default async function AdminDashboardPage() {
       classifyCommunication(communication) === "aggregator_lead"
   ).length
 
-  const cards: DashboardCard[] = [
+  const pipelineCards: PipelineCard[] = [
     {
-      title: "New Organic Leads",
-      count: newOrganicLeads,
-      href: "/admin/communications?tab=organic",
-      description: "Direct website/email quote requests needing review.",
-      urgent: true,
-    },
-    {
-      title: "Phone Enquiries",
-      count: phoneEnquiriesResult.data?.length || 0,
+      stage: "Lead Intake",
+      title: "Capture and qualify new leads",
+      count: newOrganicLeads + (phoneEnquiriesResult.data?.length || 0) + aggregatorLeads,
       href: "/admin/enquiries",
-      description: "Active phone/manual enquiries waiting for review.",
+      purpose:
+        "Review organic messages, phone enquiries, and aggregator leads before they enter the quoting pipeline.",
+      nextAction:
+        "Classify the request, create or update the enquiry, and decide whether it needs an estimate.",
+      opens: "Enquiries",
       urgent: true,
     },
     {
-      title: "Aggregator Leads",
-      count: aggregatorLeads,
-      href: "/admin/communications?tab=aggregator",
-      description: "Bark, Builderscrack, and similar leads kept separate.",
-      urgent: false,
-    },
-    {
-      title: "Estimates Awaiting Scheduling",
-      count: estimatesAwaitingScheduling,
+      stage: "Quote / Estimate",
+      title: "Book estimates and prepare quotes",
+      count:
+        estimatesAwaitingScheduling +
+        (quotesReadyToSendResult.data?.length || 0) +
+        (acceptedAwaitingConversionResult.data?.length || 0),
       href: "/admin/estimates-calendar",
-      description: "Enquiries and approved quote requests ready to book.",
+      purpose:
+        "Move qualified enquiries into the estimates calendar and keep proposal drafts moving.",
+      nextAction:
+        "Schedule the estimate, send or finish the quote, then convert accepted quotes into properties.",
+      opens: "Estimates Calendar",
       urgent: true,
     },
     {
-      title: "Quotes Ready To Send",
-      count: quotesReadyToSendResult.data?.length || 0,
-      href: "/admin/quotes",
-      description: "Draft/proposal links ready for VA send review.",
-      urgent: true,
-    },
-    {
-      title: "Accepted Quotes Requiring Conversion",
-      count: acceptedAwaitingConversionResult.data?.length || 0,
-      href: "/admin/quotes#quote-ops-conversion",
-      description: "Accepted estimate quotes not yet converted to property.",
-      urgent: true,
-    },
-    {
-      title: "Converted Properties Awaiting Scheduling",
+      stage: "Scheduling",
+      title: "Convert accepted work into scheduled jobs",
       count: convertedAwaitingScheduleResult.data?.length || 0,
-      href: "/admin/quotes#quote-ops-schedule",
-      description: "Accepted properties needing their first scheduled job.",
+      href: "/admin/schedule",
+      purpose:
+        "Get converted properties and accepted work onto the staff schedule.",
+      nextAction:
+        "Check property setup, assign staff, and place the first job on the schedule.",
+      opens: "Admin Schedule",
       urgent: true,
     },
     {
-      title: "Visits Ready For Invoice",
+      stage: "Job Completion",
+      title: "Run the live work schedule",
+      count: customerCommunications,
+      href: "/admin/schedule",
+      purpose:
+        "Coordinate scheduled work, client contact, staff assignments, and job notes from one place.",
+      nextAction:
+        "Check the week, resolve customer messages, and keep jobs ready for completion.",
+      opens: "Admin Schedule",
+      urgent: true,
+    },
+    {
+      stage: "Invoicing",
+      title: "Review completed billable work",
       count: visitsReadyForInvoice,
       href: "/admin/invoices",
-      description: "Completed charge-up/quoted visits in invoice review.",
+      purpose:
+        "Confirm completed visits, Xero sync status, quoted amounts, and charge-up previews.",
+      nextAction:
+        "Review invoice cards, compare app preview with Xero actuals, and resolve errors.",
+      opens: "Invoices",
       urgent: true,
     },
     {
-      title: "Labour Exceptions",
+      stage: "Team Exceptions",
+      title: "Keep team labour and overflow work clean",
       count: labourExceptions,
       href: `/admin/labour-reconciliation?start=${startDate}&end=${endDate}`,
-      description: "This week's daily hours vs job labour mismatches.",
-      urgent: true,
-    },
-    {
-      title: "Customer Communications Requiring Action",
-      count: customerCommunications,
-      href: "/admin/communications?tab=customer",
-      description: "Scheduling, invoice, feedback, and customer replies.",
+      purpose:
+        "Catch daily timesheet mismatches, unallocated job labour, and staff workflow exceptions.",
+      nextAction:
+        "Reconcile the week, then use the team board for overflow or quick jobs.",
+      opens: "Labour Reconciliation",
       urgent: true,
     },
   ]
@@ -371,9 +402,9 @@ export default async function AdminDashboardPage() {
   return (
     <div className="mx-auto max-w-7xl p-4 pb-10">
       <header className="mb-6">
-        <h1 className="text-2xl font-bold">Dashboard</h1>
+        <h1 className="text-2xl font-bold">Pristine Jobs Operating Dashboard</h1>
         <p className="text-sm text-gray-500">
-          Operational control centre for today&apos;s Pristine Jobs attention items.
+          One view of the work pipeline from lead intake through invoicing and team exceptions.
         </p>
       </header>
 
@@ -384,9 +415,9 @@ export default async function AdminDashboardPage() {
         </div>
       )}
 
-      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        {cards.map((card) => (
-          <DashboardCard key={card.title} card={card} />
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {pipelineCards.map((card) => (
+          <PipelineCard key={card.stage} card={card} />
         ))}
       </section>
     </div>

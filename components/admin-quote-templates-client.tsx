@@ -70,6 +70,9 @@ const categories = [
 
 const frequencyOptions = [
   { value: "", label: "No frequency" },
+  { value: "weekly", label: "Weekly" },
+  { value: "fortnightly", label: "Fortnightly" },
+  { value: "3_weekly", label: "3 Weekly" },
   { value: "monthly", label: "Monthly" },
   { value: "6_weekly", label: "6 Weekly" },
   { value: "2_monthly", label: "2 Monthly" },
@@ -77,6 +80,72 @@ const frequencyOptions = [
   { value: "4_monthly", label: "4 Monthly" },
   { value: "6_monthly", label: "6 Monthly" },
 ]
+
+const gardenFrequencyOptions = [
+  { value: "weekly", label: "Weekly" },
+  { value: "fortnightly", label: "Fortnightly" },
+  { value: "monthly", label: "Monthly" },
+  { value: "2_monthly", label: "2 Monthly" },
+  { value: "3_monthly", label: "3 Monthly" },
+]
+
+const lawnFrequencyOptions = [
+  { value: "weekly", label: "Weekly" },
+  { value: "fortnightly", label: "Fortnightly" },
+  { value: "3_weekly", label: "3 Weekly" },
+  { value: "monthly", label: "Monthly" },
+]
+
+const intensityOptions = [
+  { value: "light", label: "Light" },
+  { value: "medium", label: "Medium" },
+  { value: "heavy", label: "Heavy" },
+]
+
+function formatOptionLabel(
+  options: { value: string; label: string }[],
+  value: string
+) {
+  return options.find((option) => option.value === value)?.label || value
+}
+
+function calculateMonthlyEquivalent(perVisitPrice: number, frequency: string) {
+  if (frequency === "weekly") return (perVisitPrice * 52) / 12
+  if (frequency === "fortnightly") return (perVisitPrice * 26) / 12
+  if (frequency === "3_weekly") return (perVisitPrice * 52) / 12 / 3
+  if (frequency === "monthly") return perVisitPrice
+  if (frequency === "6_weekly") return (perVisitPrice * 52) / 12 / 6
+  if (frequency === "2_monthly") return perVisitPrice / 2
+  if (frequency === "3_monthly") return perVisitPrice / 3
+  if (frequency === "4_monthly") return perVisitPrice / 4
+  if (frequency === "6_monthly") return perVisitPrice / 6
+  return null
+}
+
+function formatCurrency(value: number) {
+  return new Intl.NumberFormat("en-NZ", {
+    style: "currency",
+    currency: "NZD",
+  }).format(value)
+}
+
+function getTemplatePerVisitPrice(template: QuoteTemplate | null) {
+  if (
+    !template ||
+    template.labour_hours === null ||
+    template.labour_rate === null
+  ) {
+    return null
+  }
+
+  return (
+    Number(template.labour_hours || 0) * Number(template.labour_rate || 0) +
+    Number(template.greenwaste_bags || 0) * Number(template.greenwaste_rate || 0) +
+    Number(template.sprays_price || 0) +
+    Number(template.fertiliser_price || 0) +
+    Number(template.stump_paste_price || 0)
+  )
+}
 
 function templateToForm(template: QuoteTemplate): TemplateForm {
   return {
@@ -111,6 +180,13 @@ export function AdminQuoteTemplatesClient({
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [previewCustomer, setPreviewCustomer] = useState("")
+  const [includeGarden, setIncludeGarden] = useState(true)
+  const [includeLawn, setIncludeLawn] = useState(false)
+  const [gardenFrequency, setGardenFrequency] = useState("monthly")
+  const [gardenIntensity, setGardenIntensity] = useState("medium")
+  const [lawnFrequency, setLawnFrequency] = useState("fortnightly")
+  const [lawnSeasonalIncrease, setLawnSeasonalIncrease] = useState(true)
 
   const orderedTemplates = useMemo(() => {
     return [...templates]
@@ -135,6 +211,38 @@ export function AdminQuoteTemplatesClient({
   const selectedTemplate =
     orderedTemplates.find((template) => template.id === selectedTemplateId) ||
     null
+  const selectedTemplatePerVisitPrice = getTemplatePerVisitPrice(selectedTemplate)
+  const gardenMonthlyEquivalent =
+    selectedTemplatePerVisitPrice === null
+      ? null
+      : calculateMonthlyEquivalent(selectedTemplatePerVisitPrice, gardenFrequency)
+  const gardenNeedsReview =
+    includeGarden &&
+    (!selectedTemplate ||
+      selectedTemplatePerVisitPrice === null ||
+      gardenMonthlyEquivalent === null)
+  const lawnNeedsReview = includeLawn
+  const packageNeedsReview =
+    (includeGarden && gardenNeedsReview) || (includeLawn && lawnNeedsReview)
+  const combinedPreviewLines = [
+    includeGarden
+      ? `Garden maintenance - ${formatOptionLabel(
+          gardenFrequencyOptions,
+          gardenFrequency
+        ).toLowerCase()} ${formatOptionLabel(
+          intensityOptions,
+          gardenIntensity
+        ).toLowerCase()} service`
+      : null,
+    includeLawn
+      ? `Lawn maintenance - ${formatOptionLabel(
+          lawnFrequencyOptions,
+          lawnFrequency
+        ).toLowerCase()} service${
+          lawnSeasonalIncrease ? " with increased spring/summer frequency" : ""
+        }`
+      : null,
+  ].filter(Boolean)
 
   useEffect(() => {
     if (selectedTemplateId || orderedTemplates.length === 0) return
@@ -216,7 +324,7 @@ export function AdminQuoteTemplatesClient({
   return (
     <div className="mx-auto max-w-7xl p-4 pb-10">
       <header className="mb-6">
-        <h1 className="text-2xl font-bold">Quote Templates</h1>
+        <h1 className="text-2xl font-bold">Template Settings</h1>
         <p className="text-sm text-gray-500">
           Edit the saved maintenance quote templates used by the Quote Builder.
         </p>
@@ -228,9 +336,259 @@ export function AdminQuoteTemplatesClient({
         </div>
       )}
 
+      <section className="mb-6 rounded-xl border bg-white p-4 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold">New Maintenance Quote</h2>
+            <p className="mt-1 text-sm text-gray-500">
+              Build a customer-facing package from separate service components.
+              Garden maintenance and lawn maintenance stay separate internally
+              for scheduling and pricing review.
+            </p>
+          </div>
+
+          {packageNeedsReview && (
+            <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-900">
+              Needs review
+            </span>
+          )}
+        </div>
+
+        <div className="mt-5 grid gap-4 lg:grid-cols-[1fr_1fr]">
+          <div className="space-y-4">
+            <div className="rounded-lg border bg-gray-50 p-4">
+              <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                1. Select customer/property
+              </div>
+              <input
+                className="h-10 w-full rounded-md border bg-white px-3 text-sm"
+                value={previewCustomer}
+                onChange={(event) => setPreviewCustomer(event.target.value)}
+                placeholder="Preview customer or property name"
+              />
+              <p className="mt-2 text-xs text-gray-500">
+                Final customer/property selection still happens in the Quote
+                Builder. This preview is for package structure only.
+              </p>
+            </div>
+
+            <div className="rounded-lg border bg-gray-50 p-4">
+              <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                2. Add service component
+              </div>
+
+              <div className="space-y-3">
+                <label className="flex items-start gap-3 rounded-md border bg-white p-3 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={includeGarden}
+                    onChange={(event) => setIncludeGarden(event.target.checked)}
+                    className="mt-1"
+                  />
+                  <span>
+                    <span className="block font-medium text-gray-900">
+                      Garden Maintenance
+                    </span>
+                    <span className="text-gray-500">
+                      Uses the selected saved maintenance template as the garden
+                      component basis.
+                    </span>
+                  </span>
+                </label>
+
+                {includeGarden && (
+                  <div className="grid gap-3 rounded-md border bg-white p-3 sm:grid-cols-2">
+                    <label className="block">
+                      <span className="mb-1 block text-sm font-medium">
+                        Frequency
+                      </span>
+                      <select
+                        className="h-10 w-full rounded-md border px-3 text-sm"
+                        value={gardenFrequency}
+                        onChange={(event) => setGardenFrequency(event.target.value)}
+                      >
+                        {gardenFrequencyOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="block">
+                      <span className="mb-1 block text-sm font-medium">
+                        Intensity
+                      </span>
+                      <select
+                        className="h-10 w-full rounded-md border px-3 text-sm"
+                        value={gardenIntensity}
+                        onChange={(event) => setGardenIntensity(event.target.value)}
+                      >
+                        {intensityOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                )}
+
+                <label className="flex items-start gap-3 rounded-md border bg-white p-3 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={includeLawn}
+                    onChange={(event) => setIncludeLawn(event.target.checked)}
+                    className="mt-1"
+                  />
+                  <span>
+                    <span className="block font-medium text-gray-900">
+                      Lawn Maintenance
+                    </span>
+                    <span className="text-gray-500">
+                      Separate component for future lawn scheduling and pricing
+                      logic.
+                    </span>
+                  </span>
+                </label>
+
+                {includeLawn && (
+                  <div className="grid gap-3 rounded-md border bg-white p-3 sm:grid-cols-2">
+                    <label className="block">
+                      <span className="mb-1 block text-sm font-medium">
+                        Frequency
+                      </span>
+                      <select
+                        className="h-10 w-full rounded-md border px-3 text-sm"
+                        value={lawnFrequency}
+                        onChange={(event) => setLawnFrequency(event.target.value)}
+                      >
+                        {lawnFrequencyOptions.map((option) => (
+                          <option key={option.value} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="flex items-center gap-3 rounded-md border px-3 text-sm font-medium">
+                      <input
+                        type="checkbox"
+                        checked={lawnSeasonalIncrease}
+                        onChange={(event) =>
+                          setLawnSeasonalIncrease(event.target.checked)
+                        }
+                      />
+                      Increase during spring/summer
+                    </label>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div className="rounded-lg border p-4">
+              <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                3. Combined customer-facing preview
+              </div>
+              <h3 className="font-semibold text-gray-900">
+                {previewCustomer.trim() || "Maintenance package"}
+              </h3>
+              <div className="mt-3 space-y-2 text-sm text-gray-700">
+                {combinedPreviewLines.length > 0 ? (
+                  combinedPreviewLines.map((line) => <p key={line}>{line}</p>)
+                ) : (
+                  <p>No service components selected.</p>
+                )}
+              </div>
+
+              <div className="mt-4 rounded-md bg-gray-50 p-3 text-sm">
+                <div className="font-medium text-gray-900">
+                  Customer package amount
+                </div>
+                {includeGarden && gardenMonthlyEquivalent !== null && !includeLawn ? (
+                  <p className="mt-1 text-gray-700">
+                    {formatCurrency(gardenMonthlyEquivalent)} per month
+                  </p>
+                ) : (
+                  <p className="mt-1 text-amber-800">Needs review</p>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-lg border bg-gray-50 p-4">
+              <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                4. Internal component breakdown
+              </div>
+
+              <div className="space-y-3 text-sm">
+                {includeGarden && (
+                  <div className="rounded-md border bg-white p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="font-medium text-gray-900">
+                          Garden Maintenance
+                        </div>
+                        <div className="mt-1 text-gray-500">
+                          {formatOptionLabel(gardenFrequencyOptions, gardenFrequency)} ·{" "}
+                          {formatOptionLabel(intensityOptions, gardenIntensity)}
+                        </div>
+                        <div className="mt-1 text-gray-500">
+                          Template: {selectedTemplate?.name || "No template selected"}
+                        </div>
+                      </div>
+                      <span
+                        className={`rounded-full px-2 py-1 text-xs font-medium ${
+                          gardenNeedsReview
+                            ? "bg-amber-100 text-amber-900"
+                            : "bg-green-100 text-green-800"
+                        }`}
+                      >
+                        {gardenNeedsReview ? "Needs review" : "Ready"}
+                      </span>
+                    </div>
+                    {!gardenNeedsReview && selectedTemplatePerVisitPrice !== null && (
+                      <div className="mt-3 text-gray-600">
+                        Internal per-visit basis:{" "}
+                        {formatCurrency(selectedTemplatePerVisitPrice)}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {includeLawn && (
+                  <div className="rounded-md border bg-white p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="font-medium text-gray-900">
+                          Lawn Maintenance
+                        </div>
+                        <div className="mt-1 text-gray-500">
+                          {formatOptionLabel(lawnFrequencyOptions, lawnFrequency)}
+                          {lawnSeasonalIncrease
+                            ? " · seasonal spring/summer increase"
+                            : ""}
+                        </div>
+                        <div className="mt-1 text-gray-500">
+                          Separate lawn template/pricing fields are not available yet.
+                        </div>
+                      </div>
+                      <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-medium text-amber-900">
+                        Needs review
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <div className="grid gap-6 lg:grid-cols-[360px_1fr]">
         <section className="rounded-xl border bg-white p-4 shadow-sm">
-          <h2 className="mb-3 text-lg font-semibold">Quote Templates</h2>
+          <h2 className="mb-3 text-lg font-semibold">Template Settings</h2>
 
           <div className="space-y-3">
             {orderedTemplates.length > 0 ? (

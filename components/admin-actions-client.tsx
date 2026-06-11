@@ -1,6 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 
@@ -24,6 +25,9 @@ type AdminAction = {
   due_date: string | null
   notes: string | null
   assigned_to: string | null
+  source_record_type: string | null
+  source_record_id: string | null
+  source_url: string | null
   created_at: string
   completed_at: string | null
   properties?: {
@@ -67,6 +71,8 @@ export function AdminActionsClient({ actions, properties }: Props) {
   const [priority, setPriority] = useState("normal")
   const [status, setStatus] = useState("open")
   const [propertyId, setPropertyId] = useState("")
+  const [assignedTo, setAssignedTo] = useState("VA")
+  const [dueDate, setDueDate] = useState("")
   const [notes, setNotes] = useState("")
   const [saving, setSaving] = useState(false)
 
@@ -107,8 +113,9 @@ export function AdminActionsClient({ actions, properties }: Props) {
       priority,
       status,
       property_id: propertyId || null,
+      due_date: dueDate || null,
       notes: notes.trim() || null,
-      assigned_to: "VA",
+      assigned_to: assignedTo,
     })
 
     setSaving(false)
@@ -123,6 +130,8 @@ export function AdminActionsClient({ actions, properties }: Props) {
     setPriority("normal")
     setStatus("open")
     setPropertyId("")
+    setAssignedTo("VA")
+    setDueDate("")
     setNotes("")
 
     router.refresh()
@@ -184,6 +193,10 @@ export function AdminActionsClient({ actions, properties }: Props) {
             Due: {formatDate(action.due_date)}
           </div>
 
+          <div className="mt-1 text-sm text-gray-500">
+            Owner: {action.assigned_to || "Unassigned"}
+          </div>
+
           {action.properties && (
             <div className="mt-1 text-sm text-gray-500">
               {action.properties.client_name} —{" "}
@@ -195,6 +208,31 @@ export function AdminActionsClient({ actions, properties }: Props) {
           {action.notes && (
             <div className="mt-3 whitespace-pre-wrap rounded-lg bg-gray-50 p-3 text-sm text-gray-600">
               {action.notes}
+            </div>
+          )}
+
+          {(action.source_url || action.source_record_type) && (
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-gray-500">
+              {action.source_record_type && (
+                <span className="rounded-full bg-gray-100 px-2 py-0.5 text-gray-700">
+                  Source: {action.source_record_type.replaceAll("_", " ")}
+                </span>
+              )}
+
+              {action.source_record_id && (
+                <span className="rounded-full bg-gray-100 px-2 py-0.5 text-gray-700">
+                  ID: {action.source_record_id}
+                </span>
+              )}
+
+              {action.source_url && (
+                <Link
+                  href={action.source_url}
+                  className="rounded-md border px-2 py-1 font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  Open source
+                </Link>
+              )}
             </div>
           )}
         </div>
@@ -258,7 +296,7 @@ export function AdminActionsClient({ actions, properties }: Props) {
   return (
     <div className="mx-auto max-w-5xl p-4 pb-10">
       <header className="mb-6">
-        <h1 className="text-2xl font-bold">VA Action List</h1>
+        <h1 className="text-2xl font-bold">Admin Actions</h1>
 
         <p className="text-sm text-gray-500">
           Daily admin tasks, client follow-ups, quote chasing and small jobs to organise.
@@ -321,6 +359,31 @@ export function AdminActionsClient({ actions, properties }: Props) {
               <option value="in_progress">In progress</option>
               <option value="waiting_on_client">Waiting on client</option>
             </select>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium">Owner</label>
+            <select
+              className="h-11 w-full rounded-md border px-3"
+              value={assignedTo}
+              onChange={(e) => setAssignedTo(e.target.value)}
+            >
+              <option value="VA">VA</option>
+              <option value="Joe">Joe</option>
+              <option value="Estimator">Estimator</option>
+              <option value="Team">Team</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="mb-1 block text-sm font-medium">Due date</label>
+            <input
+              type="date"
+              className="h-11 w-full rounded-md border px-3"
+              value={dueDate}
+              min={today}
+              onChange={(e) => setDueDate(e.target.value)}
+            />
           </div>
 
           <div className="md:col-span-2">

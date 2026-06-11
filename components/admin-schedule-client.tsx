@@ -256,6 +256,14 @@ function hasServiceValue(value?: string | null) {
   return Boolean(value && value.trim())
 }
 
+function formatPropertyAddress(property?: {
+  address_line_1?: string | null
+  suburb?: string | null
+} | null) {
+  const parts = [property?.address_line_1, property?.suburb].filter(Boolean)
+  return parts.join(", ")
+}
+
 function getScheduleJobTypeLabel(job: Job) {
   const serviceType = job.properties?.service_type
   const serviceFrequency = job.properties?.service_frequency
@@ -557,6 +565,7 @@ const [savingSchedulingNote, setSavingSchedulingNote] = useState(false)
 
     if (staffName === "Charles") return "border-green-300 bg-green-50"
     if (staffName === "Hugh") return "border-orange-300 bg-orange-50"
+    if (staffName === "Fletcher") return "border-red-300 bg-red-50"
     if (staffName === "Alex") return "border-purple-300 bg-purple-50"
     if (staffName === "Graham") return "border-blue-300 bg-blue-50"
     if (staffName === "Temp Worker") return "border-gray-300 bg-gray-50"
@@ -1171,6 +1180,7 @@ const handleSendClientEmail = async () => {
     const openInternalNotes = getOpenInternalNotes(job)
     const isNotesExpanded = expandedNoteJobIds.includes(job.id)
     const jobTypeLabel = getScheduleJobTypeLabel(job)
+    const propertyAddress = formatPropertyAddress(job.properties)
     const hasServiceDetails =
       hasServiceValue(job.properties?.service_type) ||
       hasServiceValue(job.properties?.service_frequency)
@@ -1185,8 +1195,12 @@ const handleSendClientEmail = async () => {
       <div className="min-w-0 flex-1">
         <div className="font-semibold">Job {displayNumber}</div>
 
-        <div className="truncate text-sm text-gray-500">
-          {job.properties?.address_line_1 || "No address"}
+        <div className="mt-0.5 break-words text-sm font-medium text-gray-900">
+          {job.properties?.client_name || "Unknown client"}
+        </div>
+
+        <div className="mt-0.5 whitespace-normal break-words text-sm leading-snug text-gray-500">
+          {propertyAddress || "No address"}
         </div>
 
         <div className="mt-1 text-sm font-medium">
@@ -1826,15 +1840,9 @@ const handleSendClientEmail = async () => {
                       {property.client_name}
                     </div>
 
-                    <div className="truncate text-sm text-gray-500">
-                      {property.address_line_1 || "No address"}
+                    <div className="whitespace-normal break-words text-sm text-gray-500">
+                      {formatPropertyAddress(property) || "No address"}
                     </div>
-
-                    {property.suburb && (
-                      <div className="text-xs text-gray-400">
-                        {property.suburb}
-                      </div>
-                    )}
                   </div>
 
                   <button
@@ -2238,8 +2246,8 @@ const handleSendClientEmail = async () => {
           {schedulingNoteJob.properties?.client_name || "Unknown client"}
         </div>
 
-        <div className="text-gray-500">
-          {schedulingNoteJob.properties?.address_line_1 || "No address"}
+        <div className="whitespace-normal break-words text-gray-500">
+          {formatPropertyAddress(schedulingNoteJob.properties) || "No address"}
         </div>
       </div>
 

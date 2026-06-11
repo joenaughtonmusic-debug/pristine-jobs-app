@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { ClipboardList, Clock3 } from "lucide-react"
+import { Briefcase, ClipboardList, Clock3 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const navItems = [
@@ -10,6 +10,11 @@ const navItems = [
     href: "/jobs",
     label: "Jobs",
     icon: ClipboardList,
+  },
+  {
+    href: "/team/job-board",
+    label: "Team Board",
+    icon: Briefcase,
   },
   {
     href: "/labour",
@@ -23,7 +28,7 @@ export function MobileNav() {
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 border-t bg-background">
-      <div className="grid grid-cols-2">
+      <div className="grid grid-cols-3">
         {navItems.map((item) => {
           const Icon = item.icon
           const isActive = pathname.startsWith(item.href)

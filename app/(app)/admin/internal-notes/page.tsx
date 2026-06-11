@@ -1,6 +1,10 @@
 import Link from "next/link"
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
+import {
+  ensureWorkflowAdminActions,
+  getActionDueDate,
+} from "@/lib/admin-actions"
 
 export const dynamic = "force-dynamic"
 
@@ -21,6 +25,7 @@ type PropertySummary = {
 type InternalJobNote = {
   id: string
   scheduled_job_id?: string | null
+  property_id?: string | null
   property_address?: string | null
   note: string | null
   submitted_by_staff_name?: string | null
@@ -93,6 +98,7 @@ export default async function AdminInternalNotesPage({
     .select(`
       id,
       scheduled_job_id,
+      property_id,
       property_address,
       note,
       submitted_by_staff_name,
@@ -119,6 +125,36 @@ export default async function AdminInternalNotesPage({
 
   const { data: notes, error } = await query
 
+  if (!error && notes) {
+    await ensureWorkflowAdminActions(
+      supabase,
+      (notes as InternalJobNote[])
+        .filter((note) => (note.status || "open") === "open")
+        .map((note) => ({
+          title: `Team note follow-up: ${getPropertyLabel(note)}`,
+          actionType: "team_note",
+          priority: "normal",
+          owner: "VA",
+          dueDate: getActionDueDate(1),
+          propertyId: note.property_id || null,
+          scheduledJobId: note.scheduled_job_id || null,
+          sourceRecordType: "internal_job_note",
+          sourceRecordId: note.id,
+          sourceUrl: note.scheduled_job_id
+            ? `/jobs/${note.scheduled_job_id}`
+            : "/admin/internal-notes",
+          notes: [
+            note.submitted_by_staff_name
+              ? `Submitted by: ${note.submitted_by_staff_name}`
+              : null,
+            note.note,
+          ]
+            .filter(Boolean)
+            .join("\n"),
+        }))
+    )
+  }
+
   const tabs = [
     { value: "open", label: "Open" },
     { value: "completed", label: "Completed" },
@@ -128,7 +164,7 @@ export default async function AdminInternalNotesPage({
   return (
     <div className="mx-auto max-w-5xl p-4 pb-10">
       <header className="mb-6">
-        <h1 className="text-2xl font-bold">Internal Job Notes</h1>
+        <h1 className="text-2xl font-bold">Team Notes</h1>
         <p className="text-sm text-gray-500">
           Follow up internal notes submitted from completed visits and jobs.
         </p>

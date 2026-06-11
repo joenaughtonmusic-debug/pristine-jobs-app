@@ -29,6 +29,11 @@ function getJobTypeLabel(job: ScheduledJob) {
   return null
 }
 
+function formatPropertyAddress(property: ScheduledJob["properties"]) {
+  const parts = [property?.address_line_1, property?.suburb].filter(Boolean)
+  return parts.join(", ")
+}
+
 function calculateEndTime(
   startTime: string | null | undefined,
   durationHours: number | null | undefined
@@ -68,6 +73,7 @@ export function JobsList({ jobs }: JobsListProps) {
           (job.invoice_method === "charge_up" || job.billing_mode === "charge_up")
         const isTimeFlexible = job.time_limit_type === "flexible"
         const jobTypeLabel = getJobTypeLabel(job)
+        const propertyAddress = formatPropertyAddress(job.properties)
 
         const crewSize =
   Math.max(
@@ -133,8 +139,8 @@ const endTime = calculateEndTime(
                   )}
                 </div>
 
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {job.properties?.address_line_1}
+                <p className="mt-1 whitespace-normal break-words text-sm text-muted-foreground">
+                  {propertyAddress || "No address"}
                 </p>
 
                 {(job.planned_start_time ||

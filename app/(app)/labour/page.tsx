@@ -59,9 +59,57 @@ export default async function LabourPage() {
     .eq("status", "active")
     .order("job_name", { ascending: true })
 
+  const { data: landscapingProperties } = await supabase
+    .from("properties")
+    .select("id, property_code, client_name, address_line_1, suburb")
+    .eq("is_active", true)
+    .order("client_name", { ascending: true })
+
+  const propertyIds = (landscapingProperties || []).map((property) => property.id)
+  const { data: scheduledLandscapingJobs } =
+    propertyIds.length > 0
+      ? await supabase
+          .from("scheduled_jobs")
+          .select("id, property_id, scheduled_date")
+          .in("property_id", propertyIds)
+          .eq("job_type", "landscaping")
+          .gte("scheduled_date", weekStart)
+          .lte("scheduled_date", weekEnd)
+      : { data: [] }
+
+  const linkedLandscapingJobs = (landscapingJobs || []).map((job) => {
+    const normaliseLocationPart = (value?: string | null) =>
+      value?.trim().toLowerCase() || ""
+    const matchingProperties = (landscapingProperties || []).filter(
+      (property) =>
+        normaliseLocationPart(property.address_line_1) ===
+          normaliseLocationPart(job.address_line_1) &&
+        normaliseLocationPart(property.suburb) ===
+          normaliseLocationPart(job.suburb)
+    )
+    const propertyId =
+      matchingProperties.length === 1 ? matchingProperties[0].id : null
+
+    return {
+      ...job,
+      property_id: propertyId,
+      scheduled_jobs: propertyId
+        ? (scheduledLandscapingJobs || []).filter(
+            (scheduledJob) => scheduledJob.property_id === propertyId
+          )
+        : [],
+    }
+  })
+
   const { data: labourEntries } = await supabase
     .from("job_labour_entries")
-    .select("*")
+    .select(`
+      *,
+      properties (
+        address_line_1,
+        suburb
+      )
+    `)
     .eq("staff_member_id", staffMember.id)
     .gte("work_date", weekStart)
     .lte("work_date", weekEnd)
@@ -77,7 +125,8 @@ export default async function LabourPage() {
   return (
   <LabourEntryClient
     staffMember={staffMember}
-    landscapingJobs={landscapingJobs || []}
+    properties={landscapingProperties || []}
+    landscapingJobs={linkedLandscapingJobs}
     labourEntries={labourEntries || []}
     timesheets={timesheets || []}
     weekStart={weekStart}

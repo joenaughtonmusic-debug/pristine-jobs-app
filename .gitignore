@@ -40,3 +40,6 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 make.com token/
+
+# Repomix output
+repomix-output.xml

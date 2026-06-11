@@ -1,4 +1,49 @@
-import Link from "next/link"
+import { AdminNavigation } from "@/components/admin-navigation"
+
+const navGroups = [
+  {
+    label: "Dashboard",
+    links: [{ href: "/admin", label: "Dashboard" }],
+  },
+  {
+    label: "Work Pipeline",
+    links: [
+      { href: "/admin/enquiries", label: "Enquiries" },
+      { href: "/admin/estimates-calendar", label: "Estimates" },
+      { href: "/admin/quotes", label: "Quotes" },
+      { href: "/admin/quoted-jobs", label: "Quoted Jobs" },
+      { href: "/admin/schedule", label: "Schedule" },
+      { href: "/admin/cost-capture", label: "Cost Capture" },
+      { href: "/admin/invoices", label: "Invoices" },
+      { href: "/admin/properties", label: "Properties" },
+    ],
+  },
+  {
+    label: "Communications",
+    links: [
+      { href: "/admin/communications", label: "Communications" },
+      { href: "/admin/internal-notes", label: "Team Notes" },
+      { href: "/admin/actions", label: "Admin Actions" },
+    ],
+  },
+  {
+    label: "Team",
+    links: [
+      { href: "/admin/team-hub", label: "Team Hub" },
+      { href: "/admin/job-board", label: "Team Job Board" },
+      { href: "/admin/labour-reconciliation", label: "Labour Reconciliation" },
+      { href: "/labour", label: "Staff Labour" },
+    ],
+  },
+  {
+    label: "Settings",
+    links: [
+      { href: "/admin/quote-templates", label: "Template Settings" },
+      { href: "/settings", label: "Settings" },
+      { href: "/admin/profitability", label: "Profitability" },
+    ],
+  },
+]
 
 export default function AdminLayout({
   children,
@@ -7,23 +52,7 @@ export default function AdminLayout({
 }) {
   return (
     <div>
-      <nav className="border-b bg-white">
-        <div className="mx-auto flex max-w-7xl gap-4 px-4 py-3 text-sm font-medium">
-          <Link href="/admin">Dashboard</Link>
-          <Link href="/admin/schedule">Schedule</Link>
-          <Link href="/admin/estimates-calendar">Estimates</Link>
-          <Link href="/admin/actions">VA Actions</Link>
-          <Link href="/admin/enquiries">Phone Enquiries</Link>
-          <Link href="/admin/quotes">Quotes</Link>
-          <Link href="/admin/quote-templates">Quote Templates</Link>
-          <Link href="/admin/quoted-jobs">Quoted Jobs</Link>
-          <Link href="/admin/invoices">Invoices</Link>
-          <Link href="/admin/labour-reconciliation">Labour</Link>
-          <Link href="/admin/internal-notes">Internal Notes</Link>
-          <Link href="/admin/communications">Communications</Link>
-          <Link href="/admin/properties">Properties</Link>
-        </div>
-      </nav>
+      <AdminNavigation navGroups={navGroups} />
 
       {children}
     </div>
