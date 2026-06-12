@@ -256,6 +256,13 @@ export async function GET() {
     .order("created_at", { ascending: true })
 
   if (jobsError) {
+    console.error("[public-working-today] scheduled_jobs query failed", {
+      code: jobsError.code,
+      message: jobsError.message,
+      details: jobsError.details,
+      hint: jobsError.hint,
+    })
+
     return responseJson(
       {
         date,
