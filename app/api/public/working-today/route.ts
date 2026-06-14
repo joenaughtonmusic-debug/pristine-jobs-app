@@ -202,6 +202,17 @@ function responseJson(body: unknown, status = 200, cacheControl = CACHE_CONTROL)
   })
 }
 
+function summarizeJobSuburbs(jobs: JobRow[]) {
+  return Array.from(
+    new Set(
+      jobs
+        .map((job) => firstOrValue(job.properties)?.suburb)
+        .filter(Boolean)
+        .map((suburb) => String(suburb).trim())
+    )
+  ).sort((a, b) => a.localeCompare(b))
+}
+
 export async function OPTIONS() {
   return new NextResponse(null, {
     status: 204,
@@ -277,12 +288,24 @@ export async function GET() {
     )
   }
 
+  console.info("[public-working-today] scheduled_jobs returned", {
+    date,
+    count: jobs?.length || 0,
+  })
+
   const jobRows = ((jobs || []) as JobRow[])
     .filter((job) => {
       const property = firstOrValue(job.properties)
       return Boolean(property?.suburb && job.hide_from_public_map !== true)
     })
     .sort((a, b) => getSortValue(a).localeCompare(getSortValue(b)))
+
+  console.info("[public-working-today] job suburbs found", {
+    date,
+    scheduledJobCount: jobs?.length || 0,
+    afterSuburbFilterCount: jobRows.length,
+    suburbs: summarizeJobSuburbs(jobRows),
+  })
 
   const staffIds = Array.from(
     new Set(
@@ -292,13 +315,13 @@ export async function GET() {
     )
   )
 
-  const { data: suburbLocations } =
+  const { data: suburbLocations, error: suburbLocationsError } =
     jobRows.length > 0
       ? await supabase
           .from("public_suburb_locations")
           .select("suburb, display_name, latitude, longitude")
           .eq("is_active", true)
-      : { data: [] }
+      : { data: [], error: null }
 
   const { data: fallbackStaff } =
     staffIds.length > 0
@@ -315,6 +338,36 @@ export async function GET() {
     ])
   )
 
+  if (suburbLocationsError) {
+    console.error("[public-working-today] suburb location query failed", {
+      code: suburbLocationsError.code,
+      message: suburbLocationsError.message,
+      details: suburbLocationsError.details,
+      hint: suburbLocationsError.hint,
+    })
+  }
+
+  const coordinateLookupResults = summarizeJobSuburbs(jobRows).map((suburb) => {
+    const location = locationsBySuburb.get(normalizeSuburb(suburb))
+
+    return {
+      suburb,
+      hasActiveLocation: Boolean(location),
+      hasUsableCoordinates: Boolean(
+        location &&
+          Number.isFinite(Number(location.latitude)) &&
+          Number.isFinite(Number(location.longitude))
+      ),
+      displayName: location?.display_name || location?.suburb || null,
+    }
+  })
+
+  console.info("[public-working-today] coordinate lookup results", {
+    date,
+    activeLocationCount: suburbLocations?.length || 0,
+    results: coordinateLookupResults,
+  })
+
   const fallbackStaffById = new Map(
     ((fallbackStaff || []) as StaffMemberRow[]).map((member) => [
       member.id,
@@ -324,13 +377,20 @@ export async function GET() {
 
   const usedStaff = new Set<string>()
   const selectedJobs: JobRow[] = []
+  const skippedJobs = {
+    missingLocation: 0,
+    duplicateStaff: 0,
+  }
 
   for (const job of jobRows) {
     const property = firstOrValue(job.properties)
     const suburbKey = normalizeSuburb(property?.suburb)
     const location = locationsBySuburb.get(suburbKey)
 
-    if (!location) continue
+    if (!location) {
+      skippedJobs.missingLocation += 1
+      continue
+    }
 
     const jobStaffIds = Array.from(
       new Set([
@@ -344,6 +404,7 @@ export async function GET() {
       jobStaffIds.length > 0 &&
       jobStaffIds.every((staffId) => usedStaff.has(staffId))
     ) {
+      skippedJobs.duplicateStaff += 1
       continue
     }
 
@@ -396,6 +457,19 @@ export async function GET() {
       summary: getSummary(jobType, suburb),
       cta: getCta(jobType),
     }
+  })
+
+  console.info("[public-working-today] marker count after grouping", {
+    date,
+    sourceJobCount: jobRows.length,
+    selectedJobCount: selectedJobs.length,
+    markerCount: markers.length,
+    skippedJobs,
+  })
+
+  console.info("[public-working-today] final response count", {
+    date,
+    count: markers.length,
   })
 
   return responseJson({
