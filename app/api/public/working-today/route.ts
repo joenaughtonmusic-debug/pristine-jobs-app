@@ -173,6 +173,23 @@ function getSortValue(job: JobRow) {
   ].join("|")
 }
 
+/**
+ * Collect all unique staff IDs associated with a job, merging assigned_staff_id
+ * and every entry in scheduled_job_staff into one deduplicated list.
+ */
+function getJobStaffIds(job: JobRow): string[] {
+  return Array.from(
+    new Set(
+      [
+        job.assigned_staff_id ?? "",
+        ...(job.scheduled_job_staff?.map(
+          (item) => item.staff_member_id ?? ""
+        ) ?? []),
+      ].filter(Boolean)
+    )
+  )
+}
+
 function offsetCoordinate(
   latitude: number,
   longitude: number,
@@ -225,8 +242,18 @@ export async function OPTIONS() {
   })
 }
 
-export async function GET() {
-  const date = getTodayInTimeZone()
+function parseDateParam(raw: string | null, today: string): string {
+  if (!raw) return today
+  // Accept YYYY-MM-DD only; fall back to today for malformed input
+  return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : today
+}
+
+export async function GET(request: Request) {
+  const today = getTodayInTimeZone()
+  const { searchParams } = new URL(request.url)
+  const date = parseDateParam(searchParams.get("date"), today)
+  const isPastDate = date < today
+
   const emptyState = {
     summary: "No public job updates are available today.",
     cta: CONTACT_CTA,
@@ -261,7 +288,12 @@ export async function GET() {
     .eq("scheduled_date", date)
     .eq("schedule_confirmation_status", "confirmed")
     .eq("hide_from_public_map", false)
-    .in("status", ["scheduled", "in_progress"])
+    .in(
+      "status",
+      isPastDate
+        ? ["scheduled", "in_progress", "completed"]
+        : ["scheduled", "in_progress"]
+    )
     .order("planned_start_time", { ascending: true, nullsFirst: false })
     .order("job_order", { ascending: true, nullsFirst: false })
     .order("created_at", { ascending: true })
@@ -375,8 +407,22 @@ export async function GET() {
     ])
   )
 
+  // Pre-compute which staff IDs have at least one solo job (exactly 1 staff
+  // member). Solo jobs take priority: those staff members will be reserved for
+  // their own marker and excluded from any shared-job markers they also appear
+  // on, regardless of which job sorts first.
+  const staffWithSoloJob = new Set<string>()
+  for (const job of jobRows) {
+    const ids = getJobStaffIds(job)
+    if (ids.length === 1) {
+      staffWithSoloJob.add(ids[0])
+    }
+  }
+
+  type SelectedJob = { job: JobRow; effectiveStaffIds: ReadonlySet<string> }
+
   const usedStaff = new Set<string>()
-  const selectedJobs: JobRow[] = []
+  const selectedJobs: SelectedJob[] = []
   const skippedJobs = {
     missingLocation: 0,
     duplicateStaff: 0,
@@ -392,28 +438,29 @@ export async function GET() {
       continue
     }
 
-    const jobStaffIds = Array.from(
-      new Set([
-        job.assigned_staff_id || "",
-        ...(job.scheduled_job_staff?.map((item) => item.staff_member_id || "") ||
-          []),
-      ].filter(Boolean))
+    const allStaffIds = getJobStaffIds(job)
+    const isSolo = allStaffIds.length === 1
+
+    // For shared jobs: exclude staff who are already placed OR who have their
+    // own solo job (they will be — or already were — covered by that marker).
+    // For solo jobs: only check usedStaff (no look-ahead restriction).
+    const eligibleStaffIds = allStaffIds.filter(
+      (id) => !usedStaff.has(id) && (isSolo || !staffWithSoloJob.has(id))
     )
 
-    if (
-      jobStaffIds.length > 0 &&
-      jobStaffIds.every((staffId) => usedStaff.has(staffId))
-    ) {
+    if (allStaffIds.length > 0 && eligibleStaffIds.length === 0) {
+      // All staff are already placed on their own or earlier markers.
       skippedJobs.duplicateStaff += 1
       continue
     }
 
-    selectedJobs.push(job)
-    jobStaffIds.forEach((staffId) => usedStaff.add(staffId))
+    const effectiveStaffIds = new Set(eligibleStaffIds)
+    selectedJobs.push({ job, effectiveStaffIds })
+    eligibleStaffIds.forEach((id) => usedStaff.add(id))
   }
 
   const suburbCounts = selectedJobs.reduce<Record<string, number>>(
-    (counts, job) => {
+    (counts, { job }) => {
       const suburbKey = normalizeSuburb(firstOrValue(job.properties)?.suburb)
       counts[suburbKey] = (counts[suburbKey] || 0) + 1
       return counts
@@ -423,41 +470,53 @@ export async function GET() {
 
   const suburbSeen: Record<string, number> = {}
 
-  const markers: PublicMarker[] = selectedJobs.map((job) => {
-    const property = firstOrValue(job.properties)
-    const suburbKey = normalizeSuburb(property?.suburb)
-    const location = locationsBySuburb.get(suburbKey) as SuburbLocationRow
-    const suburb = location.display_name || property?.suburb || location.suburb
-    const jobType = getJobTypeLabel(job, property || null)
-    const staffFromJoin =
-      job.scheduled_job_staff?.map((item) =>
-        getFirstName(firstOrValue(item.staff_members)?.name)
-      ) || []
-    const fallbackStaffName = getFirstName(
-      job.assigned_staff_id
-        ? fallbackStaffById.get(job.assigned_staff_id)
-        : null
-    )
-    const staff = uniqueNames([fallbackStaffName, ...staffFromJoin])
-    const suburbIndex = suburbSeen[suburbKey] || 0
-    suburbSeen[suburbKey] = suburbIndex + 1
-    const coordinates = offsetCoordinate(
-      Number(location.latitude),
-      Number(location.longitude),
-      suburbIndex,
-      suburbCounts[suburbKey] || 1
-    )
+  const markers: PublicMarker[] = selectedJobs.map(
+    ({ job, effectiveStaffIds }) => {
+      const property = firstOrValue(job.properties)
+      const suburbKey = normalizeSuburb(property?.suburb)
+      const location = locationsBySuburb.get(suburbKey) as SuburbLocationRow
+      const suburb = location.display_name || property?.suburb || location.suburb
+      const jobType = getJobTypeLabel(job, property || null)
 
-    return {
-      publicId: getPublicId(job.id, date),
-      suburb,
-      coordinates,
-      staff,
-      jobType,
-      summary: getSummary(jobType, suburb),
-      cta: getCta(jobType),
+      // Only include staff who belong to this marker's effective set so that
+      // staff members trimmed from shared jobs do not appear in the output.
+      const staffFromJoin =
+        job.scheduled_job_staff
+          ?.filter((item) =>
+            effectiveStaffIds.has(item.staff_member_id ?? "")
+          )
+          .map((item) => getFirstName(firstOrValue(item.staff_members)?.name)) ??
+        []
+
+      const fallbackStaffName =
+        job.assigned_staff_id &&
+        effectiveStaffIds.has(job.assigned_staff_id)
+          ? getFirstName(
+              fallbackStaffById.get(job.assigned_staff_id) ?? null
+            )
+          : null
+
+      const staff = uniqueNames([fallbackStaffName, ...staffFromJoin])
+      const suburbIndex = suburbSeen[suburbKey] || 0
+      suburbSeen[suburbKey] = suburbIndex + 1
+      const coordinates = offsetCoordinate(
+        Number(location.latitude),
+        Number(location.longitude),
+        suburbIndex,
+        suburbCounts[suburbKey] || 1
+      )
+
+      return {
+        publicId: getPublicId(job.id, date),
+        suburb,
+        coordinates,
+        staff,
+        jobType,
+        summary: getSummary(jobType, suburb),
+        cta: getCta(jobType),
+      }
     }
-  })
+  )
 
   console.info("[public-working-today] marker count after grouping", {
     date,
