@@ -252,7 +252,6 @@ export async function GET(request: Request) {
   const today = getTodayInTimeZone()
   const { searchParams } = new URL(request.url)
   const date = parseDateParam(searchParams.get("date"), today)
-  const isPastDate = date < today
 
   const emptyState = {
     summary: "No public job updates are available today.",
@@ -288,12 +287,7 @@ export async function GET(request: Request) {
     .eq("scheduled_date", date)
     .eq("schedule_confirmation_status", "confirmed")
     .eq("hide_from_public_map", false)
-    .in(
-      "status",
-      isPastDate
-        ? ["scheduled", "in_progress", "completed"]
-        : ["scheduled", "in_progress"]
-    )
+    .in("status", ["scheduled", "in_progress", "completed"])
     .order("planned_start_time", { ascending: true, nullsFirst: false })
     .order("job_order", { ascending: true, nullsFirst: false })
     .order("created_at", { ascending: true })
