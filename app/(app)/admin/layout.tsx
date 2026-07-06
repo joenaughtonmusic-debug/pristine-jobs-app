@@ -9,6 +9,7 @@ const navGroups = [
     label: "Work Pipeline",
     links: [
       { href: "/admin/enquiries", label: "Enquiries" },
+      { href: "/sales-pipeline", label: "Sales Pipeline" },
       { href: "/admin/estimates-calendar", label: "Estimates" },
       { href: "/admin/quotes", label: "Quotes" },
       { href: "/admin/quoted-jobs", label: "Quoted Jobs" },
