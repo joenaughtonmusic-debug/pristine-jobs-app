@@ -2,22 +2,18 @@
 
 import { useState } from "react"
 import Link from "next/link"
-
-type AdminNavLink = {
-  href: string
-  label: string
-}
-
-type AdminNavGroup = {
-  label: string
-  links: AdminNavLink[]
-}
+import type { AdminNavGroup, AdminNavLink } from "@/lib/admin-navigation-config"
 
 function getSectionId(label: string) {
   return label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
 }
 
-export function AdminNavigation({ navGroups }: { navGroups: AdminNavGroup[] }) {
+type Props = {
+  navGroups: AdminNavGroup[]
+  topLevelLinks?: AdminNavLink[]
+}
+
+export function AdminNavigation({ navGroups, topLevelLinks = [] }: Props) {
   const [openSection, setOpenSection] = useState<string | null>(null)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [dashboardGroup, ...dropdownGroups] = navGroups
@@ -42,6 +38,17 @@ export function AdminNavigation({ navGroups }: { navGroups: AdminNavGroup[] }) {
           >
             Dashboard
           </Link>
+
+          {topLevelLinks.map((link) => (
+            <Link
+              key={link.href}
+              href={link.href}
+              className="rounded-md px-3 py-2 font-medium text-gray-800 hover:bg-gray-100"
+              onClick={closeMenus}
+            >
+              {link.label}
+            </Link>
+          ))}
 
           {dropdownGroups.map((group) => {
             const sectionId = getSectionId(group.label)
@@ -101,28 +108,15 @@ export function AdminNavigation({ navGroups }: { navGroups: AdminNavGroup[] }) {
                 {navGroups.map((group) => {
                   const sectionId = getSectionId(group.label)
                   const isOpen = openSection === sectionId
+                  const isDashboard = group.label === "Dashboard"
 
                   return (
                     <section
                       key={group.label}
                       className="border-b py-2 first:pt-0 last:border-b-0 last:pb-0"
                     >
-                      <button
-                        type="button"
-                        className="flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 hover:bg-gray-50"
-                        aria-expanded={isOpen}
-                        aria-controls={`admin-mobile-nav-${sectionId}`}
-                        onClick={() => toggleSection(sectionId)}
-                      >
-                        {group.label}
-                        <span aria-hidden="true">{isOpen ? "−" : "+"}</span>
-                      </button>
-
-                      {isOpen && (
-                        <div
-                          id={`admin-mobile-nav-${sectionId}`}
-                          className="mt-1 grid gap-1"
-                        >
+                      {isDashboard ? (
+                        <div className="grid gap-1">
                           {group.links.map((link) => (
                             <Link
                               key={link.href}
@@ -133,7 +127,48 @@ export function AdminNavigation({ navGroups }: { navGroups: AdminNavGroup[] }) {
                               {link.label}
                             </Link>
                           ))}
+                          {topLevelLinks.map((link) => (
+                            <Link
+                              key={link.href}
+                              href={link.href}
+                              className="rounded-md px-3 py-2 font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-950"
+                              onClick={closeMenus}
+                            >
+                              {link.label}
+                            </Link>
+                          ))}
                         </div>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            className="flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 hover:bg-gray-50"
+                            aria-expanded={isOpen}
+                            aria-controls={`admin-mobile-nav-${sectionId}`}
+                            onClick={() => toggleSection(sectionId)}
+                          >
+                            {group.label}
+                            <span aria-hidden="true">{isOpen ? "−" : "+"}</span>
+                          </button>
+
+                          {isOpen && (
+                            <div
+                              id={`admin-mobile-nav-${sectionId}`}
+                              className="mt-1 grid gap-1"
+                            >
+                              {group.links.map((link) => (
+                                <Link
+                                  key={link.href}
+                                  href={link.href}
+                                  className="rounded-md px-3 py-2 font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-950"
+                                  onClick={closeMenus}
+                                >
+                                  {link.label}
+                                </Link>
+                              ))}
+                            </div>
+                          )}
+                        </>
                       )}
                     </section>
                   )

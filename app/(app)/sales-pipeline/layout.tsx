@@ -4,7 +4,7 @@ import {
   adminTopLevelLinks,
 } from "@/lib/admin-navigation-config"
 
-export default function AdminLayout({
+export default function SalesPipelineLayout({
   children,
 }: {
   children: React.ReactNode
