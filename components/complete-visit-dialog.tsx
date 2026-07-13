@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react"
 import { createClient } from "@/lib/supabase/client"
+import { readyInvoiceStatusForJob } from "@/lib/quoted-invoicing"
 import {
   Dialog,
   DialogContent,
@@ -238,6 +239,11 @@ if (existingVisit) {
       extraMaterialsState === "needs_admin_review"
         ? extraMaterialsNote.trim() || "Extras/materials used - needs admin review"
         : extraMaterialsNote.trim() || null
+
+    // Quoted jobs are invoiced once from the quote, never per visit — exclude
+    // a ready visit so it can't become its own per-visit invoice.
+    const readyInvoiceStatus = await readyInvoiceStatusForJob(supabase, jobId)
+
     const visitPayload = {
       scheduled_job_id: jobId,
       property_id: propertyId,
@@ -248,7 +254,7 @@ if (existingVisit) {
       next_visit_notes: nextVisitNotes.trim() || null,
       completion_status: "completed",
       ready_for_invoice: readyForInvoice,
-      invoice_status: readyForInvoice ? "ready" : "not_ready",
+      invoice_status: readyForInvoice ? readyInvoiceStatus : "not_ready",
       cost_capture_reviewed_at: materialReviewComplete
         ? new Date().toISOString()
         : null,

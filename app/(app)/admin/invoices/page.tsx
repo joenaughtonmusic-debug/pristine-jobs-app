@@ -6,6 +6,7 @@ import {
   getActionDueDate,
 } from "@/lib/admin-actions"
 import { getCostCaptureFlags } from "@/lib/cost-capture"
+import { readyInvoiceStatusForVisit } from "@/lib/quoted-invoicing"
 
 export const dynamic = "force-dynamic"
 
@@ -147,11 +148,14 @@ async function resetInvoiceStatusToReady(formData: FormData) {
 
   if (!visitId) return
 
+  // Quoted jobs are invoiced once from the quote, never per visit — exclude instead.
+  const invoiceStatus = await readyInvoiceStatusForVisit(supabase, visitId)
+
   await supabase
     .from("visits")
     .update({
       ready_for_invoice: true,
-      invoice_status: "ready",
+      invoice_status: invoiceStatus,
       invoice_error: null,
     })
     .eq("id", visitId)
