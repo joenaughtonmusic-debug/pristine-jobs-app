@@ -173,3 +173,58 @@ export function formatDateTime(value: string | null | undefined) {
     minute: "2-digit",
   })
 }
+
+// --- Phase 1 six-stage board model -----------------------------------------
+// The board (Phase1 spec §2) reshapes the underlying sales_leads.status values
+// into six visible stages. Formal status reconciliation (adding job-stage
+// statuses like "scheduled"/"completed" via migration) is a later slice; for
+// now we map the existing status enum onto these columns for a read-only view.
+
+export type BoardStageKey =
+  | "new_lead"
+  | "contacted"
+  | "visit_booked"
+  | "quote"
+  | "job_scheduled"
+  | "job_completed"
+
+export const BOARD_STAGES: Array<{ key: BoardStageKey; label: string }> = [
+  { key: "new_lead", label: "New lead" },
+  { key: "contacted", label: "Contacted" },
+  { key: "visit_booked", label: "Visit booked" },
+  { key: "quote", label: "Quote" },
+  { key: "job_scheduled", label: "Job scheduled" },
+  { key: "job_completed", label: "Job completed" },
+]
+
+// Index into BOARD_STAGES for a given lead status. Takes a string (not the
+// SalesLeadStatus union) so statuses added by a later migration — e.g.
+// "scheduled" / "completed" — don't break the board before the mapping is
+// formally reconciled.
+export function getBoardStageIndex(status: string): number {
+  switch (status) {
+    case "new":
+      return 0
+    case "contacted":
+      return 1
+    case "visit_booked":
+      return 2
+    case "estimate_done":
+    case "quote_sent":
+    case "follow_up_due":
+      return 3
+    case "won":
+    case "scheduled":
+      return 4
+    case "completed":
+      return 5
+    default:
+      return 0
+  }
+}
+
+// Lost leads drop off the active board (Phase1 spec §2). Won and the future
+// job-stage statuses stay, progressing into the job columns.
+export function isOnActiveBoard(lead: Pick<SalesLead, "status">): boolean {
+  return lead.status !== "lost"
+}
