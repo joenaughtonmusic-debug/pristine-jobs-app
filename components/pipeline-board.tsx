@@ -1,5 +1,10 @@
 import Link from "next/link"
+import { AddExistingCustomer } from "@/components/add-existing-customer"
 import { AddLeadForm } from "@/components/add-lead-form"
+import {
+  InvoicedJobsSection,
+  type InvoicedJob,
+} from "@/components/invoiced-jobs-section"
 import { PipelineRow } from "@/components/pipeline-row"
 import {
   BOARD_STAGES,
@@ -10,12 +15,13 @@ import {
 
 type Props = {
   leads: SalesLead[]
+  invoicedJobs?: InvoicedJob[]
 }
 
 // Board shell: server-rendered. One row per client across six stage columns.
 // Each row (PipelineRow) is an interactive client component owning its own
 // expand/collapse drawer; the board itself stays a server component.
-export function PipelineBoard({ leads = [] }: Props) {
+export function PipelineBoard({ leads = [], invoicedJobs = [] }: Props) {
   const boardLeads = leads.filter(isOnActiveBoard)
 
   return (
@@ -58,6 +64,10 @@ export function PipelineBoard({ leads = [] }: Props) {
           )}
         </div>
       </div>
+
+      <AddExistingCustomer />
+
+      <InvoicedJobsSection jobs={invoicedJobs} />
     </div>
   )
 }

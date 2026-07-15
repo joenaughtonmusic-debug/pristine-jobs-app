@@ -40,6 +40,10 @@ export type SalesLead = {
   next_follow_up_at: string | null
   site_visit_at: string | null
   quote_accepted_at: string | null
+  contact_followup_sent_at: string | null
+  followup_3day_sent_at: string | null
+  followup_7day_sent_at: string | null
+  followup_14day_sent_at: string | null
   quote_value: number | string | null
   lost_reason: string | null
   notes: SalesLeadActivity[] | unknown
@@ -371,4 +375,87 @@ export function getBoardStageIndex(status: string): number {
 // job-stage statuses stay, progressing into the job columns.
 export function isOnActiveBoard(lead: Pick<SalesLead, "status">): boolean {
   return lead.status !== "lost"
+}
+
+// --- Slice 4: follow-up badges ----------------------------------------------
+// Contacted stage: one 2-day follow-up (contact_followup_sent_at).
+// Quote stage: the 3/7/14-day ladder (followup_*_sent_at).
+
+const CONTACT_FOLLOW_UP_STATUS: SalesLeadStatus = "contacted"
+const QUOTE_FOLLOW_UP_STATUSES: SalesLeadStatus[] = [
+  "quote_sent",
+  "follow_up_due",
+]
+
+export type FollowUpBadge = {
+  kind: "due" | "sent"
+  label: string
+}
+
+// Whether the lead's stage still has an unsent follow-up rung available.
+export function hasFollowUpRemaining(
+  lead: Pick<
+    SalesLead,
+    | "status"
+    | "contact_followup_sent_at"
+    | "followup_3day_sent_at"
+    | "followup_7day_sent_at"
+    | "followup_14day_sent_at"
+  >
+): boolean {
+  if (lead.status === CONTACT_FOLLOW_UP_STATUS) {
+    return !lead.contact_followup_sent_at
+  }
+
+  if (QUOTE_FOLLOW_UP_STATUSES.includes(lead.status)) {
+    return (
+      !lead.followup_3day_sent_at ||
+      !lead.followup_7day_sent_at ||
+      !lead.followup_14day_sent_at
+    )
+  }
+
+  return false
+}
+
+// Badge for the compact card: "Follow-up due" when next_follow_up_at has
+// arrived and a rung is still available; "Follow-up sent" between sends.
+export function getFollowUpBadge(
+  lead: Pick<
+    SalesLead,
+    | "status"
+    | "next_follow_up_at"
+    | "contact_followup_sent_at"
+    | "followup_3day_sent_at"
+    | "followup_7day_sent_at"
+    | "followup_14day_sent_at"
+  >
+): FollowUpBadge | null {
+  const inContact = lead.status === CONTACT_FOLLOW_UP_STATUS
+  const inQuote = QUOTE_FOLLOW_UP_STATUSES.includes(lead.status)
+  if (!inContact && !inQuote) return null
+
+  const anySent = inContact
+    ? Boolean(lead.contact_followup_sent_at)
+    : Boolean(
+        lead.followup_3day_sent_at ||
+          lead.followup_7day_sent_at ||
+          lead.followup_14day_sent_at
+      )
+
+  if (
+    lead.next_follow_up_at &&
+    hasFollowUpRemaining(lead) &&
+    isFollowUpDueAt(lead.next_follow_up_at)
+  ) {
+    return { kind: "due", label: "Follow-up due" }
+  }
+
+  return anySent ? { kind: "sent", label: "Follow-up sent" } : null
+}
+
+function isFollowUpDueAt(value: string): boolean {
+  const endOfToday = new Date()
+  endOfToday.setHours(23, 59, 59, 999)
+  return new Date(value).getTime() <= endOfToday.getTime()
 }

@@ -22,8 +22,13 @@ import {
   markQuoteAcceptedAction,
   markQuoteSentAction,
   moveToQuoteAction,
+  sendFollowUpAction,
 } from "@/app/(app)/sales-pipeline/actions"
-import { getContactDraft } from "@/lib/sales-lead-templates"
+import {
+  getContactDraft,
+  getContactFollowUpDraft,
+  getFollowUpDraft,
+} from "@/lib/sales-lead-templates"
 import {
   BOARD_STAGES,
   BOARD_STAGE_COLORS,
@@ -31,6 +36,7 @@ import {
   formatDateTime,
   fromDatetimeLocalValue,
   getBoardStageIndex,
+  getFollowUpBadge,
   parseNotes,
   toDatetimeLocalValue,
   type SalesLead,
@@ -46,6 +52,7 @@ type ModalKind =
   | "confirm_visit"
   | "create_quote"
   | "schedule_job"
+  | "follow_up"
   | "mark_lost"
   | null
 
@@ -67,6 +74,7 @@ export function PipelineRow({ lead }: { lead: SalesLead }) {
   const stageIndex = getBoardStageIndex(lead.status)
   const activities = parseNotes(lead.notes)
   const accepted = Boolean(lead.quote_accepted_at)
+  const followUpBadge = getFollowUpBadge(lead)
   const stageColors = BOARD_STAGE_COLORS[BOARD_STAGES[stageIndex].key]
   // Red "needs action" dot: display-only for now — shown on the four stages
   // whose card carries a primary action (columns 1–4). Wiring it to real
@@ -79,6 +87,14 @@ export function PipelineRow({ lead }: { lead: SalesLead }) {
     if (kind === "contact") {
       setSubject(contactSubject(lead))
       setBody(getContactDraft(lead))
+    } else if (kind === "follow_up") {
+      if (lead.status === "contacted") {
+        setSubject("Following up on your enquiry — Pristine Gardens")
+        setBody(getContactFollowUpDraft(lead))
+      } else {
+        setSubject("Following up on your quote — Pristine Gardens")
+        setBody(getFollowUpDraft(lead))
+      }
     } else if (kind === "confirm_visit") {
       setVisitAt(toDatetimeLocalValue(lead.site_visit_at))
     } else if (kind === "mark_lost") {
@@ -254,7 +270,26 @@ export function PipelineRow({ lead }: { lead: SalesLead }) {
                   ) : null}
                 </button>
 
+                {followUpBadge ? (
+                  <span
+                    className={`mt-2 inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
+                      followUpBadge.kind === "due"
+                        ? "bg-orange-100 text-orange-800"
+                        : "bg-gray-100 text-gray-600"
+                    }`}
+                  >
+                    {followUpBadge.label}
+                  </span>
+                ) : null}
+
                 {renderStageActions()}
+
+                {followUpBadge?.kind === "due" ? (
+                  <ActionButton
+                    label="Send follow-up"
+                    onClick={() => openModal("follow_up")}
+                  />
+                ) : null}
 
                 {error && modal === null ? (
                   <p className="mt-2 text-xs text-red-600">{error}</p>
@@ -420,6 +455,53 @@ export function PipelineRow({ lead }: { lead: SalesLead }) {
                   }
                 >
                   {pending ? "Sending…" : "Send + mark contacted"}
+                </Button>
+              </div>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      ) : null}
+
+      {modal === "follow_up" ? (
+        <Dialog open onOpenChange={(open) => !open && closeModal()}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Follow up with {lead.name}</DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-gray-500">
+              Review and edit before sending. The email is queued and sent by
+              the existing Make scenario
+              {lead.email ? ` to ${lead.email}` : ""}.
+            </p>
+            <label className="grid gap-2 text-sm">
+              <span className="font-medium text-gray-900">Subject</span>
+              <Input
+                value={subject}
+                onChange={(event) => setSubject(event.target.value)}
+              />
+            </label>
+            <Textarea
+              className="min-h-[220px]"
+              value={body}
+              onChange={(event) => setBody(event.target.value)}
+            />
+            {error ? <p className="text-sm text-red-600">{error}</p> : null}
+            <DialogFooter className="gap-2 sm:justify-between">
+              <Button type="button" variant="outline" onClick={copyDraft}>
+                Copy draft
+              </Button>
+              <div className="flex gap-2">
+                <Button type="button" variant="outline" onClick={closeModal}>
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  disabled={pending}
+                  onClick={() =>
+                    run(() => sendFollowUpAction(lead.id, { subject, body }))
+                  }
+                >
+                  {pending ? "Sending…" : "Send follow-up"}
                 </Button>
               </div>
             </DialogFooter>

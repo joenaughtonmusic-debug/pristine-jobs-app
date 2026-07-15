@@ -91,28 +91,24 @@ export async function queueContactAndMarkContacted(
     return { error: "This lead has no email address — add one first." }
   }
 
-  const { error: queueError } = await supabase
-    .from("client_contact_messages")
-    .insert({
-      recipient_email: recipient,
-      subject,
-      body,
-      status: "ready_to_send",
-    })
+  const queueError = await queueClientEmail(supabase, recipient, subject, body)
+  if (queueError) return queueError
 
-  if (queueError) {
-    return { error: `Could not queue the email: ${queueError.message}` }
-  }
+  const nextFollowUpAt = addDaysFromNow(2)
 
   const updated = await updateLead(
     supabase,
     lead,
-    { status: "contacted" },
+    { status: "contacted", next_follow_up_at: nextFollowUpAt },
     createActivity(
       "communication",
       `Contact email queued to ${recipient}: "${subject}"\n\n${body}`
     ),
-    createActivity("status_change", "New lead → Contacted")
+    createActivity("status_change", "New lead → Contacted"),
+    createActivity(
+      "follow_up",
+      `Follow-up due ${formatDateTime(nextFollowUpAt)} if no reply.`
+    )
   )
 
   if ("error" in updated) {
@@ -120,6 +116,118 @@ export async function queueContactAndMarkContacted(
     // operator doesn't send a duplicate.
     return {
       error: `The email was queued and will still be sent, but the card could not be updated (${updated.error}). Refresh the page and do NOT send again.`,
+    }
+  }
+
+  return updated
+}
+
+async function queueClientEmail(
+  supabase: SupabaseClient,
+  recipient: string,
+  subject: string,
+  body: string
+): Promise<TransitionResult | null> {
+  const { error } = await supabase.from("client_contact_messages").insert({
+    recipient_email: recipient,
+    subject,
+    body,
+    status: "ready_to_send",
+  })
+
+  return error
+    ? { error: `Could not queue the email: ${error.message}` }
+    : null
+}
+
+// Send a follow-up for the lead's current stage (Slice 4). Contacted stage
+// has one 2-day follow-up; the Quote stage walks the 3/7/14-day ladder
+// (lead-level mirror of the quote_drafts fields — leads aren't linked to
+// quote drafts until Phase 2). Queues via client_contact_messages, stamps
+// the sent-at field, and schedules the next rung.
+export async function sendFollowUp(
+  supabase: SupabaseClient,
+  leadId: string,
+  input: { subject: string; body: string }
+): Promise<TransitionResult> {
+  const subject = input.subject.trim()
+  const body = input.body.trim()
+
+  if (!subject || !body) {
+    return { error: "Subject and message are both required." }
+  }
+
+  const found = await getLead(supabase, leadId)
+  if ("error" in found) return found
+  const { lead } = found
+
+  const recipient = lead.email?.trim()
+  if (!recipient) {
+    return { error: "This lead has no email address — add one first." }
+  }
+
+  let patch: Record<string, unknown>
+  let rungLabel: string
+
+  if (lead.status === "contacted") {
+    if (lead.contact_followup_sent_at) {
+      return { error: "The contact follow-up has already been sent." }
+    }
+    patch = {
+      contact_followup_sent_at: new Date().toISOString(),
+      next_follow_up_at: null,
+    }
+    rungLabel = "Contacted-stage follow-up"
+  } else if (lead.status === "quote_sent" || lead.status === "follow_up_due") {
+    if (!lead.followup_3day_sent_at) {
+      patch = {
+        followup_3day_sent_at: new Date().toISOString(),
+        next_follow_up_at: addDaysFromNow(4), // 3-day → 7-day rung
+      }
+      rungLabel = "Quote follow-up 1 of 3 (3-day)"
+    } else if (!lead.followup_7day_sent_at) {
+      patch = {
+        followup_7day_sent_at: new Date().toISOString(),
+        next_follow_up_at: addDaysFromNow(7), // 7-day → 14-day rung
+      }
+      rungLabel = "Quote follow-up 2 of 3 (7-day)"
+    } else if (!lead.followup_14day_sent_at) {
+      patch = {
+        followup_14day_sent_at: new Date().toISOString(),
+        next_follow_up_at: null,
+      }
+      rungLabel = "Quote follow-up 3 of 3 (14-day)"
+    } else {
+      return { error: "All quote follow-ups have already been sent." }
+    }
+  } else {
+    return { error: "This stage doesn't have follow-ups." }
+  }
+
+  const queueError = await queueClientEmail(supabase, recipient, subject, body)
+  if (queueError) return queueError
+
+  const activities = [
+    createActivity(
+      "follow_up",
+      `${rungLabel} queued to ${recipient}: "${subject}"\n\n${body}`
+    ),
+  ]
+
+  if (patch.next_follow_up_at) {
+    activities.push(
+      createActivity(
+        "follow_up",
+        `Next follow-up due ${formatDateTime(patch.next_follow_up_at as string)}.`
+      )
+    )
+  }
+
+  const updated = await updateLead(supabase, lead, patch, ...activities)
+
+  if ("error" in updated) {
+    return {
+      error: `The follow-up was queued and will still be sent, but the card could not be updated (${updated.error}). Refresh the page and do NOT send again.`,
     }
   }
 

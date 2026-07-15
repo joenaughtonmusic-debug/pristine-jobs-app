@@ -71,6 +71,25 @@ Kind regards,
 Pristine Gardens`
 }
 
+// Contacted-stage follow-up: chasing a reply about arranging the quote
+// visit (no quote exists yet — getFollowUpDraft below is for after one has
+// been sent).
+export function getContactFollowUpDraft(
+  lead: Pick<SalesLead, "name" | "service_needed" | "suburb">
+) {
+  const name = firstName(lead.name)
+  const service = serviceLabel(lead.service_needed)
+
+  return `Hi ${name},
+
+Just checking in on your enquiry about ${service.toLowerCase()}.
+
+Happy to pop round for a quick quote visit whenever suits — let us know which days or times work best for you.
+
+Kind regards,
+Pristine Gardens`
+}
+
 export function getFollowUpDraft(
   lead: Pick<SalesLead, "name" | "service_needed" | "suburb">
 ) {
