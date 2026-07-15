@@ -7,6 +7,8 @@ export type SalesLeadStatus =
   | "follow_up_due"
   | "won"
   | "lost"
+  | "scheduled"
+  | "completed"
 
 export type SalesLeadActivityType =
   | "note"
@@ -36,6 +38,8 @@ export type SalesLead = {
   status: SalesLeadStatus
   assigned_to: string | null
   next_follow_up_at: string | null
+  site_visit_at: string | null
+  quote_accepted_at: string | null
   quote_value: number | string | null
   lost_reason: string | null
   notes: SalesLeadActivity[] | unknown
@@ -50,29 +54,62 @@ export type PipelineStageKey =
   | "follow_up_due"
   | "won_lost"
 
+export type PrimaryActionKind =
+  | "contact"
+  | "book_visit"
+  | "estimate_done"
+  | "send_quote"
+  | "follow_up"
+  | "mark_won"
+  | "mark_lost"
+
+export type PrimaryActionTone =
+  | "neutral"
+  | "orange"
+  | "red"
+  | "green"
+  | "grey"
+
+export type PrimaryAction = {
+  label: string
+  kind: PrimaryActionKind
+  tone: PrimaryActionTone
+}
+
 export const PIPELINE_STAGES: Array<{ key: PipelineStageKey; label: string }> = [
   { key: "new", label: "New" },
-  { key: "contacted", label: "Contacted" },
-  { key: "visit_booked", label: "Visit Booked" },
+  { key: "contacted", label: "Contact" },
+  { key: "visit_booked", label: "Book Visit" },
   { key: "estimate_done", label: "Estimate Done" },
   { key: "quote_sent", label: "Quote Sent" },
   { key: "follow_up_due", label: "Follow Up" },
-  { key: "won_lost", label: "Won / Lost" },
+  { key: "won_lost", label: "Won/Lost" },
 ]
 
 export const STATUS_LABELS: Record<SalesLeadStatus, string> = {
   new: "New",
-  contacted: "Contacted",
-  visit_booked: "Visit Booked",
+  contacted: "Contact",
+  visit_booked: "Book Visit",
   estimate_done: "Estimate Done",
   quote_sent: "Quote Sent",
   follow_up_due: "Follow Up",
   won: "Won",
   lost: "Lost",
+  scheduled: "Job Scheduled",
+  completed: "Job Completed",
 }
 
+const FOLLOW_UP_STATUSES: SalesLeadStatus[] = ["quote_sent", "follow_up_due"]
+
 export function getLeadColumn(status: SalesLeadStatus): PipelineStageKey {
-  if (status === "won" || status === "lost") {
+  // The legacy 7-column view has no job-stage columns; anything past won
+  // lands in its final column.
+  if (
+    status === "won" ||
+    status === "lost" ||
+    status === "scheduled" ||
+    status === "completed"
+  ) {
     return "won_lost"
   }
 
@@ -82,7 +119,7 @@ export function getLeadColumn(status: SalesLeadStatus): PipelineStageKey {
 export function getNextAction(status: SalesLeadStatus): string {
   switch (status) {
     case "new":
-      return "Make first contact"
+      return "Contact lead"
     case "contacted":
       return "Book site visit"
     case "visit_booked":
@@ -90,11 +127,11 @@ export function getNextAction(status: SalesLeadStatus): string {
     case "estimate_done":
       return "Send quote"
     case "quote_sent":
-      return "Schedule follow-up"
+      return "Monitor follow-up"
     case "follow_up_due":
       return "Follow up now"
     case "won":
-      return "Convert to job"
+      return "Add to schedule"
     case "lost":
       return "Closed"
     default:
@@ -102,11 +139,81 @@ export function getNextAction(status: SalesLeadStatus): string {
   }
 }
 
-export function isOverdue(lead: Pick<SalesLead, "next_follow_up_at" | "status">) {
+export function isOverdue(
+  lead: Pick<SalesLead, "next_follow_up_at" | "status">
+) {
   if (!lead.next_follow_up_at) return false
   if (lead.status === "won" || lead.status === "lost") return false
 
   return new Date(lead.next_follow_up_at).getTime() < Date.now()
+}
+
+export function isFollowUpDue(
+  lead: Pick<SalesLead, "next_follow_up_at" | "status">
+) {
+  if (!lead.next_follow_up_at) return false
+  if (!FOLLOW_UP_STATUSES.includes(lead.status)) return false
+
+  const dueAt = new Date(lead.next_follow_up_at).getTime()
+  const endOfToday = new Date()
+  endOfToday.setHours(23, 59, 59, 999)
+
+  return dueAt <= endOfToday.getTime()
+}
+
+export function getFollowUpTone(
+  lead: Pick<SalesLead, "next_follow_up_at" | "status">
+): "orange" | "red" | null {
+  if (!isFollowUpDue(lead)) return null
+  return isOverdue(lead) ? "red" : "orange"
+}
+
+export function getPrimaryAction(lead: SalesLead): PrimaryAction | null {
+  switch (lead.status) {
+    case "new":
+      return { label: "Contact", kind: "contact", tone: "neutral" }
+    case "contacted":
+      return { label: "Book Visit", kind: "book_visit", tone: "neutral" }
+    case "visit_booked":
+      return {
+        label: "Mark Estimate Done",
+        kind: "estimate_done",
+        tone: "neutral",
+      }
+    case "estimate_done":
+      return { label: "Send Quote", kind: "send_quote", tone: "neutral" }
+    case "quote_sent": {
+      if (!isFollowUpDue(lead)) return null
+      const tone = getFollowUpTone(lead) || "orange"
+      return { label: "Follow Up", kind: "follow_up", tone }
+    }
+    case "follow_up_due": {
+      const tone = getFollowUpTone(lead) || "orange"
+      return { label: "Follow Up", kind: "follow_up", tone }
+    }
+    case "won":
+      return { label: "Add to Schedule", kind: "mark_won", tone: "green" }
+    case "lost":
+      return null
+    default:
+      return null
+  }
+}
+
+export function getCardTone(lead: SalesLead): PrimaryActionTone {
+  if (lead.status === "won") return "green"
+  if (lead.status === "lost") return "grey"
+
+  const followUpTone = getFollowUpTone(lead)
+  if (followUpTone) return followUpTone
+
+  return "neutral"
+}
+
+export function addDaysFromNow(days: number) {
+  const date = new Date()
+  date.setDate(date.getDate() + days)
+  return date.toISOString()
 }
 
 export function parseNotes(notes: SalesLead["notes"]): SalesLeadActivity[] {
@@ -165,13 +272,31 @@ export function formatActivityType(type: SalesLeadActivityType) {
 export function formatDateTime(value: string | null | undefined) {
   if (!value) return "—"
 
+  // Explicit timezone so server (UTC on Vercel) and browser render the same
+  // string — this runs during SSR of the board cards (hydration).
   return new Date(value).toLocaleString("en-NZ", {
     day: "numeric",
     month: "short",
     year: "numeric",
     hour: "numeric",
     minute: "2-digit",
+    timeZone: "Pacific/Auckland",
   })
+}
+
+export function toDatetimeLocalValue(value: string | null) {
+  if (!value) return ""
+
+  const date = new Date(value)
+  const offset = date.getTimezoneOffset()
+  const local = new Date(date.getTime() - offset * 60_000)
+
+  return local.toISOString().slice(0, 16)
+}
+
+export function fromDatetimeLocalValue(value: string) {
+  if (!value.trim()) return null
+  return new Date(value).toISOString()
 }
 
 // --- Phase 1 six-stage board model -----------------------------------------
