@@ -6,6 +6,7 @@ import {
   getCostCaptureIssueLabels,
   getCostCaptureStatus,
 } from "@/lib/cost-capture"
+import { isQuotedJob, readyInvoiceStatusForVisit } from "@/lib/quoted-invoicing"
 
 export const dynamic = "force-dynamic"
 const DEFAULT_COST_CAPTURE_START_DATE = "2026-06-10"
@@ -266,6 +267,15 @@ async function addVisitMaterialCost(formData: FormData) {
 
   if (!visitId || !description || quantity <= 0) return
 
+  // Quoted jobs are invoiced once from the quote, never per visit — exclude any
+  // extra charges too so they can't leak into a per-visit invoice.
+  const quoted = await isQuotedJob(supabase, scheduledJobId)
+  const invoiceStatus = quoted
+    ? "excluded"
+    : billableStatus === "needs_review"
+      ? "review"
+      : "ready"
+
   await supabase.from("visit_extra_charges").insert({
     visit_id: visitId,
     scheduled_job_id: scheduledJobId,
@@ -281,7 +291,7 @@ async function addVisitMaterialCost(formData: FormData) {
     total_cost: quantity * unitCost,
     total_sell_price: quantity * unitSellPrice,
     billable_status: billableStatus,
-    invoice_status: billableStatus === "needs_review" ? "review" : "ready",
+    invoice_status: invoiceStatus,
   })
 
   revalidatePath("/admin/cost-capture")
@@ -319,11 +329,14 @@ async function markReadyForInvoice(formData: FormData) {
 
   if (!visitId) return
 
+  // Quoted jobs are invoiced once from the quote, never per visit — exclude instead.
+  const invoiceStatus = await readyInvoiceStatusForVisit(supabase, visitId)
+
   await supabase
     .from("visits")
     .update({
       ready_for_invoice: true,
-      invoice_status: "ready",
+      invoice_status: invoiceStatus,
       cost_capture_override_reason: overrideReason || null,
     })
     .eq("id", visitId)

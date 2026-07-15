@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
-import { SalesPipelineClient } from "@/components/sales-pipeline-client"
+import { PipelineBoard } from "@/components/pipeline-board"
 import type { SalesLead } from "@/lib/sales-leads"
 
 export const dynamic = "force-dynamic"
@@ -25,5 +25,5 @@ export default async function SalesPipelinePage() {
     console.error("[sales-pipeline] failed to load leads", error)
   }
 
-  return <SalesPipelineClient leads={(leads || []) as SalesLead[]} />
+  return <PipelineBoard leads={(leads || []) as SalesLead[]} />
 }
