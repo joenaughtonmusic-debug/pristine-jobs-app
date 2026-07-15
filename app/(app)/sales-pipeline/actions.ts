@@ -13,6 +13,7 @@ import {
   markQuoteSent,
   moveToQuote,
   queueContactAndMarkContacted,
+  sendFollowUp,
   type TransitionResult,
 } from "@/lib/sales-lead-transitions"
 
@@ -121,6 +122,13 @@ export async function advanceStageAction(
   leadId: string
 ): Promise<TransitionResult> {
   return runTransition((supabase) => advanceStageWithoutAction(supabase, leadId))
+}
+
+export async function sendFollowUpAction(
+  leadId: string,
+  input: { subject: string; body: string }
+): Promise<TransitionResult> {
+  return runTransition((supabase) => sendFollowUp(supabase, leadId, input))
 }
 
 export async function markLostAction(
