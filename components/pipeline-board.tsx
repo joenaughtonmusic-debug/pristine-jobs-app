@@ -1,4 +1,5 @@
 import Link from "next/link"
+import { AddLeadForm } from "@/components/add-lead-form"
 import { PipelineRow } from "@/components/pipeline-row"
 import { BOARD_STAGES, isOnActiveBoard, type SalesLead } from "@/lib/sales-leads"
 
@@ -26,6 +27,8 @@ export function PipelineBoard({ leads = [] }: Props) {
           the stages already completed. Click a card to expand its details.
         </p>
       </header>
+
+      <AddLeadForm />
 
       <div className="overflow-x-auto rounded-lg border bg-white">
         <div className="min-w-[900px]">
