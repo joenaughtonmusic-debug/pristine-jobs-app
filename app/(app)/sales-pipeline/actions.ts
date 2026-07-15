@@ -137,3 +137,34 @@ export async function markLostAction(
 ): Promise<TransitionResult> {
   return runTransition((supabase) => markLost(supabase, leadId, reason))
 }
+
+// --- Slice 5: invoiced jobs section ----------------------------------------
+// Paid is app-only tracking on scheduled_jobs — it never touches Xero.
+
+export async function setInvoicePaidAction(
+  jobId: string,
+  paid: boolean
+): Promise<TransitionResult> {
+  return runTransition(async (supabase) => {
+    const { error } = await supabase
+      .from("scheduled_jobs")
+      .update({ invoice_paid_in_app_at: paid ? new Date().toISOString() : null })
+      .eq("id", jobId)
+      .not("xero_invoice_number", "is", null)
+
+    return error ? { error: error.message } : { ok: true }
+  })
+}
+
+// Archive every row currently ticked paid off the page.
+export async function clearPaidInvoicesAction(): Promise<TransitionResult> {
+  return runTransition(async (supabase) => {
+    const { error } = await supabase
+      .from("scheduled_jobs")
+      .update({ invoice_archived_at: new Date().toISOString() })
+      .not("invoice_paid_in_app_at", "is", null)
+      .is("invoice_archived_at", null)
+
+    return error ? { error: error.message } : { ok: true }
+  })
+}
