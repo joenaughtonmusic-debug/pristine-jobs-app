@@ -1,4 +1,5 @@
 import Link from "next/link"
+import { AddExistingCustomer } from "@/components/add-existing-customer"
 import { AddLeadForm } from "@/components/add-lead-form"
 import {
   InvoicedJobsSection,
@@ -63,6 +64,8 @@ export function PipelineBoard({ leads = [], invoicedJobs = [] }: Props) {
           )}
         </div>
       </div>
+
+      <AddExistingCustomer />
 
       <InvoicedJobsSection jobs={invoicedJobs} />
     </div>

@@ -3,7 +3,12 @@
 import { revalidatePath } from "next/cache"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { createClient } from "@/lib/supabase/server"
-import { buildManualLeadRow, type ManualLeadInput } from "@/lib/sales-lead-manual"
+import {
+  buildExistingCustomerLeadRow,
+  buildManualLeadRow,
+  type ExistingCustomerLeadInput,
+  type ManualLeadInput,
+} from "@/lib/sales-lead-manual"
 import {
   advanceStageWithoutAction,
   confirmVisit,
@@ -43,6 +48,54 @@ export async function createManualLead(
 
   if (error) {
     console.error("[sales-pipeline] manual lead insert failed", {
+      code: error.code,
+      message: error.message,
+    })
+    return { error: "Failed to save the lead. Please try again." }
+  }
+
+  revalidatePath("/sales-pipeline")
+  return { ok: true }
+}
+
+// Slice 6: existing customer → lead entering at Visit booked. The property
+// is fetched server-side so the row is built from trusted data.
+export async function createExistingCustomerLead(
+  propertyId: string,
+  input: ExistingCustomerLeadInput
+): Promise<{ ok: true } | { error: string }> {
+  const supabase = await createClient()
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    return { error: "You must be signed in to add a customer." }
+  }
+
+  const { data: property, error: propertyError } = await supabase
+    .from("properties")
+    .select(
+      "id, client_name, client_email, phone, suburb, address_line_1, property_code"
+    )
+    .eq("id", propertyId)
+    .single()
+
+  if (propertyError || !property) {
+    return { error: propertyError?.message || "Customer not found." }
+  }
+
+  const built = buildExistingCustomerLeadRow(property, input)
+
+  if ("error" in built) {
+    return { error: built.error }
+  }
+
+  const { error } = await supabase.from("sales_leads").insert(built.row)
+
+  if (error) {
+    console.error("[sales-pipeline] existing-customer lead insert failed", {
       code: error.code,
       message: error.message,
     })
