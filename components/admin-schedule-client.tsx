@@ -317,7 +317,7 @@ export function AdminScheduleClient({
   const [quotedScope, setQuotedScope] = useState("")
 const [quotedMaterials, setQuotedMaterials] = useState("")
 const [adminNote, setAdminNote] = useState("")
-const [invoiceMethod, setInvoiceMethod] = useState("charge_up")
+const [invoiceMethod, setInvoiceMethod] = useState("")
   const [xeroQuoteNumber, setXeroQuoteNumber] = useState("")
   const [saving, setSaving] = useState(false)
 const [error, setError] = useState<string | null>(null)
@@ -366,11 +366,22 @@ const [savingSchedulingNote, setSavingSchedulingNote] = useState(false)
     return labourHours / crewSize
   }
 
+  const INVOICE_METHOD_LABELS: Record<string, string> = {
+    charge_up: "Charge Up",
+    subscription: "Subscription",
+    quoted: "Quoted / Fixed Quote",
+    non_billable: "Non Billable",
+  }
+
+  // Prefill from the property's billing type. Unknown or missing billing
+  // types return "" so the operator must choose explicitly — the old silent
+  // charge_up fallback let fixed-price jobs get invoiced per visit.
   const getDefaultInvoiceMethod = (property: Property) => {
     if (property.billing_type === "subscription") return "subscription"
     if (property.billing_type === "non_billable") return "non_billable"
+    if (property.billing_type === "quoted") return "quoted"
 
-    return "charge_up"
+    return ""
   }
 
   const completeClientAdjustment = async (item: ClientAdjustment) => {
@@ -736,7 +747,7 @@ setInvoiceMethod(getDefaultInvoiceMethod(property))
     setQuotedScope(job.quoted_scope || "")
 setQuotedMaterials(job.quoted_materials || "")
 setAdminNote(job.admin_note || "")
-setInvoiceMethod(job.invoice_method || "charge_up")
+setInvoiceMethod(job.invoice_method || "")
     setXeroQuoteNumber(job.xero_quote_number || "")
 
     setError(null)
@@ -914,6 +925,13 @@ setInvoiceMethod(job.invoice_method || "charge_up")
   const handleCreateJob = async () => {
     if (!selectedProperty) return
 
+    if (!invoiceMethod) {
+      setError(
+        "Choose an invoice method — this property's billing type doesn't set one automatically."
+      )
+      return
+    }
+
     setSaving(true)
     setError(null)
 
@@ -991,7 +1009,7 @@ admin_note: adminNote || null,
     setSelectedStaffIds([])
     setQuotedScope("")
     setQuotedMaterials("")
-    setInvoiceMethod("charge_up")
+    setInvoiceMethod("")
     setXeroQuoteNumber("")
 
     router.refresh()
@@ -2014,11 +2032,34 @@ const handleSendClientEmail = async () => {
                   value={invoiceMethod}
                   onChange={(e) => setInvoiceMethod(e.target.value)}
                 >
+                  <option value="" disabled>
+                    Select invoice method…
+                  </option>
                   <option value="charge_up">Charge Up</option>
                   <option value="subscription">Subscription</option>
                   <option value="quoted">Quoted / Fixed Quote</option>
                   <option value="non_billable">Non Billable</option>
                 </select>
+
+                {selectedProperty &&
+                invoiceMethod &&
+                getDefaultInvoiceMethod(selectedProperty) &&
+                invoiceMethod !== getDefaultInvoiceMethod(selectedProperty) ? (
+                  <p className="mt-1.5 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                    Heads up: this property is set to{" "}
+                    <span className="font-medium">
+                      {selectedProperty.billing_type}
+                    </span>{" "}
+                    billing, which normally invoices as{" "}
+                    {INVOICE_METHOD_LABELS[
+                      getDefaultInvoiceMethod(selectedProperty)
+                    ] || getDefaultInvoiceMethod(selectedProperty)}
+                    . Saving as{" "}
+                    {INVOICE_METHOD_LABELS[invoiceMethod] || invoiceMethod} —
+                    make sure that is deliberate (fine for one-off extra
+                    work).
+                  </p>
+                ) : null}
               </div>
 
               {invoiceMethod === "quoted" && (
@@ -2094,7 +2135,7 @@ const handleSendClientEmail = async () => {
                     setSelectedStaffIds([])
                     setQuotedScope("")
                     setQuotedMaterials("")
-                    setInvoiceMethod("charge_up")
+                    setInvoiceMethod("")
                     setXeroQuoteNumber("")
                   }}
                   className="h-11 flex-1 rounded-md border"
