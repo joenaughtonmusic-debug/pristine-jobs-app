@@ -1,11 +1,14 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import {
+  BOARD_STAGES,
   addDaysFromNow,
   appendActivities,
   createActivity,
   formatDateTime,
+  getBoardStageIndex,
   type SalesLead,
   type SalesLeadActivity,
+  type SalesLeadStatus,
 } from "@/lib/sales-leads"
 
 // Stage transitions for the pipeline board (Phase 1 Slice 3). Each function
@@ -229,6 +232,50 @@ export async function markJobScheduled(
     createActivity(
       "status_change",
       "Quote → Job scheduled (booked via the quote builder)."
+    )
+  )
+}
+
+// The canonical status a lead lands on when advanced from each board stage
+// without firing that stage's action (skip). Index = current board stage.
+const SKIP_TARGET_STATUS: Array<SalesLeadStatus | null> = [
+  "contacted", // from New lead
+  "visit_booked", // from Contacted
+  "estimate_done", // from Visit booked (→ Quote column)
+  "scheduled", // from Quote
+  "completed", // from Job scheduled
+  null, // Job completed is the final stage
+]
+
+// Advance to the next board stage WITHOUT the stage's action — for leads
+// whose step already happened outside the app (e.g. contacted by phone
+// before the lead was entered). Queues nothing and sends nothing; same shape
+// as markQuoteAccepted: recording offline reality.
+export async function advanceStageWithoutAction(
+  supabase: SupabaseClient,
+  leadId: string
+): Promise<TransitionResult> {
+  const found = await getLead(supabase, leadId)
+  if ("error" in found) return found
+  const { lead } = found
+
+  const stageIndex = getBoardStageIndex(lead.status)
+  const nextStatus = SKIP_TARGET_STATUS[stageIndex]
+
+  if (!nextStatus) {
+    return { error: "This lead is already at the final stage." }
+  }
+
+  const fromLabel = BOARD_STAGES[stageIndex].label
+  const toLabel = BOARD_STAGES[getBoardStageIndex(nextStatus)].label
+
+  return updateLead(
+    supabase,
+    lead,
+    { status: nextStatus },
+    createActivity(
+      "status_change",
+      `Advanced without action: ${fromLabel} → ${toLabel} (handled outside the app).`
     )
   )
 }

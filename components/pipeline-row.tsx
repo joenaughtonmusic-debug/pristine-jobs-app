@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react"
 import Link from "next/link"
-import { Check, ChevronDown, ChevronRight } from "lucide-react"
+import { ChevronDown, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -14,6 +14,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import {
+  advanceStageAction,
   contactLeadAction,
   confirmVisitAction,
   markJobScheduledAction,
@@ -25,6 +26,7 @@ import {
 import { getContactDraft } from "@/lib/sales-lead-templates"
 import {
   BOARD_STAGES,
+  BOARD_STAGE_COLORS,
   formatActivityType,
   formatDateTime,
   fromDatetimeLocalValue,
@@ -33,14 +35,6 @@ import {
   toDatetimeLocalValue,
   type SalesLead,
 } from "@/lib/sales-leads"
-
-// Compact card subtitle: "suburb · service" (Phase1 spec §3).
-function cardSubtitle(lead: SalesLead) {
-  const parts = [lead.suburb?.trim(), lead.service_needed?.trim()].filter(
-    Boolean
-  )
-  return parts.length > 0 ? parts.join(" · ") : "Details not set"
-}
 
 function contactSubject(lead: SalesLead) {
   const service = lead.service_needed?.trim().toLowerCase() || "garden"
@@ -73,6 +67,11 @@ export function PipelineRow({ lead }: { lead: SalesLead }) {
   const stageIndex = getBoardStageIndex(lead.status)
   const activities = parseNotes(lead.notes)
   const accepted = Boolean(lead.quote_accepted_at)
+  const stageColors = BOARD_STAGE_COLORS[BOARD_STAGES[stageIndex].key]
+  // Red "needs action" dot: display-only for now — shown on the four stages
+  // whose card carries a primary action (columns 1–4). Wiring it to real
+  // per-lead conditions (e.g. overdue follow-ups) is a later slice.
+  const needsAction = stageIndex <= 3
 
   const openModal = (kind: Exclude<ModalKind, null>) => {
     setError(null)
@@ -207,10 +206,14 @@ export function PipelineRow({ lead }: { lead: SalesLead }) {
           >
             {index === stageIndex ? (
               <div
-                className={`w-full max-w-[190px] rounded-lg border bg-white p-3 shadow-sm transition-colors ${
+                className={`relative w-full max-w-[190px] overflow-hidden rounded-lg border bg-white p-3 pl-4 shadow-sm transition-colors ${
                   expanded ? "border-gray-900" : "border-gray-300"
                 }`}
               >
+                <span
+                  aria-hidden
+                  className={`absolute inset-y-0 left-0 w-1.5 ${stageColors.bar}`}
+                />
                 <button
                   type="button"
                   onClick={() => setExpanded((value) => !value)}
@@ -223,13 +226,32 @@ export function PipelineRow({ lead }: { lead: SalesLead }) {
                     <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" />
                   )}
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-semibold text-gray-900">
+                    <span className="block break-words text-sm font-semibold text-gray-900">
                       {lead.name}
                     </span>
-                    <span className="mt-0.5 block truncate text-xs text-gray-500">
-                      {cardSubtitle(lead)}
-                    </span>
+                    {lead.suburb?.trim() ? (
+                      <span className="mt-0.5 block break-words text-xs text-gray-500">
+                        {lead.suburb}
+                      </span>
+                    ) : null}
+                    {lead.service_needed?.trim() ? (
+                      <span className="mt-0.5 block break-words text-xs text-gray-600">
+                        {lead.service_needed}
+                      </span>
+                    ) : null}
+                    {!lead.suburb?.trim() && !lead.service_needed?.trim() ? (
+                      <span className="mt-0.5 block text-xs text-gray-400">
+                        Details not set
+                      </span>
+                    ) : null}
                   </span>
+                  {needsAction ? (
+                    <span
+                      className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-red-500"
+                      aria-label="This stage needs action"
+                      title="This stage needs action"
+                    />
+                  ) : null}
                 </button>
 
                 {renderStageActions()}
@@ -239,9 +261,10 @@ export function PipelineRow({ lead }: { lead: SalesLead }) {
                 ) : null}
               </div>
             ) : index < stageIndex ? (
-              <Check
-                className="h-4 w-4 text-gray-300"
+              <span
+                className="h-3.5 w-3.5 rounded-full bg-green-200"
                 aria-label={`${stage.label} completed`}
+                title={`${stage.label} completed`}
               />
             ) : null}
           </div>
@@ -321,6 +344,18 @@ export function PipelineRow({ lead }: { lead: SalesLead }) {
           </section>
 
           <div className="mt-4 flex flex-wrap gap-2">
+            {stageIndex < BOARD_STAGES.length - 1 ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={pending}
+                title="Move to the next stage without sending anything — for steps already handled by phone/text/in person"
+                onClick={() => run(() => advanceStageAction(lead.id))}
+              >
+                Advance stage (no action)
+              </Button>
+            ) : null}
             <Button
               type="button"
               variant="outline"

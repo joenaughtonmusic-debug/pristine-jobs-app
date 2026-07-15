@@ -5,6 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import { createClient } from "@/lib/supabase/server"
 import { buildManualLeadRow, type ManualLeadInput } from "@/lib/sales-lead-manual"
 import {
+  advanceStageWithoutAction,
   confirmVisit,
   markJobScheduled,
   markLost,
@@ -114,6 +115,12 @@ export async function markJobScheduledAction(
   leadId: string
 ): Promise<TransitionResult> {
   return runTransition((supabase) => markJobScheduled(supabase, leadId))
+}
+
+export async function advanceStageAction(
+  leadId: string
+): Promise<TransitionResult> {
+  return runTransition((supabase) => advanceStageWithoutAction(supabase, leadId))
 }
 
 export async function markLostAction(

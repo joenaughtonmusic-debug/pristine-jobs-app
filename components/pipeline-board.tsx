@@ -1,7 +1,12 @@
 import Link from "next/link"
 import { AddLeadForm } from "@/components/add-lead-form"
 import { PipelineRow } from "@/components/pipeline-row"
-import { BOARD_STAGES, isOnActiveBoard, type SalesLead } from "@/lib/sales-leads"
+import {
+  BOARD_STAGES,
+  BOARD_STAGE_COLORS,
+  isOnActiveBoard,
+  type SalesLead,
+} from "@/lib/sales-leads"
 
 type Props = {
   leads: SalesLead[]
@@ -32,10 +37,14 @@ export function PipelineBoard({ leads = [] }: Props) {
 
       <div className="overflow-x-auto rounded-lg border bg-white">
         <div className="min-w-[900px]">
-          <div className="grid grid-cols-6 border-b bg-gray-50 text-xs font-medium uppercase tracking-wide text-gray-500">
+          <div className="grid grid-cols-6 border-b bg-gray-50 text-xs font-medium uppercase tracking-wide">
             {BOARD_STAGES.map((stage) => (
-              <div key={stage.key} className="px-3 py-3 text-center">
-                {stage.label}
+              <div key={stage.key} className="flex justify-center px-2 py-2.5">
+                <span
+                  className={`rounded-full px-3 py-1 ${BOARD_STAGE_COLORS[stage.key].header}`}
+                >
+                  {stage.label}
+                </span>
               </div>
             ))}
           </div>

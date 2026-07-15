@@ -322,6 +322,25 @@ export const BOARD_STAGES: Array<{ key: BoardStageKey; label: string }> = [
   { key: "job_completed", label: "Job completed" },
 ]
 
+// Stage colours (display only): green → orange → blue pairs, left to right,
+// each pair progressing lighter → darker. Headings are muted tint pills
+// (subtle backgrounds, darker text); the card's `bar` accent strip keeps the
+// stronger stage colour since it's small.
+export const BOARD_STAGE_COLORS: Record<
+  BoardStageKey,
+  { header: string; bar: string }
+> = {
+  new_lead: { header: "bg-green-50 text-green-700", bar: "bg-green-300" },
+  contacted: { header: "bg-green-100 text-green-800", bar: "bg-green-700" },
+  visit_booked: {
+    header: "bg-orange-50 text-orange-700",
+    bar: "bg-orange-300",
+  },
+  quote: { header: "bg-orange-100 text-orange-800", bar: "bg-orange-600" },
+  job_scheduled: { header: "bg-blue-50 text-blue-700", bar: "bg-blue-300" },
+  job_completed: { header: "bg-blue-100 text-blue-800", bar: "bg-blue-700" },
+}
+
 // Index into BOARD_STAGES for a given lead status. Takes a string (not the
 // SalesLeadStatus union) so statuses added by a later migration — e.g.
 // "scheduled" / "completed" — don't break the board before the mapping is
