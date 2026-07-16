@@ -16,6 +16,30 @@ export default function LoginPage() {
   const [password, setPassword] = useState("")
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [resetMode, setResetMode] = useState(false)
+  const [resetSent, setResetSent] = useState(false)
+
+  const handleResetRequest = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setLoading(true)
+    setError(null)
+
+    // The recovery email template links to /auth/confirm with a token_hash;
+    // redirectTo covers projects still on the default template.
+    const supabase = createClient()
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/auth/update-password`,
+    })
+
+    setLoading(false)
+
+    if (error) {
+      setError(error.message)
+      return
+    }
+
+    setResetSent(true)
+  }
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -66,9 +90,77 @@ router.push("/jobs")
             </div>
           </div>
           <CardTitle className="text-2xl text-balance">Pristine Jobs</CardTitle>
-          <p className="text-muted-foreground text-sm">Sign in to manage your jobs</p>
+          <p className="text-muted-foreground text-sm">
+            {resetMode ? "Reset your password" : "Sign in to manage your jobs"}
+          </p>
         </CardHeader>
         <CardContent>
+          {resetMode ? (
+            resetSent ? (
+              <div className="text-center">
+                <p className="text-sm text-muted-foreground">
+                  If an account exists for {email}, a password-reset email is
+                  on its way. Open the link on this device to set a new
+                  password.
+                </p>
+                <button
+                  type="button"
+                  className="mt-4 text-sm font-medium underline"
+                  onClick={() => {
+                    setResetMode(false)
+                    setResetSent(false)
+                    setError(null)
+                  }}
+                >
+                  Back to sign in
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleResetRequest}>
+                <FieldGroup>
+                  <Field>
+                    <FieldLabel htmlFor="reset-email">Email</FieldLabel>
+                    <Input
+                      id="reset-email"
+                      type="email"
+                      placeholder="you@example.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      required
+                      autoComplete="email"
+                      className="h-12"
+                    />
+                  </Field>
+                </FieldGroup>
+
+                {error && (
+                  <p className="text-destructive text-sm mt-4 text-center">
+                    {error}
+                  </p>
+                )}
+
+                <Button
+                  type="submit"
+                  className="w-full h-12 mt-6 text-base"
+                  disabled={loading}
+                >
+                  {loading ? <Spinner className="mr-2" /> : null}
+                  {loading ? "Sending..." : "Send reset email"}
+                </Button>
+
+                <button
+                  type="button"
+                  className="mt-4 w-full text-center text-sm text-muted-foreground underline"
+                  onClick={() => {
+                    setResetMode(false)
+                    setError(null)
+                  }}
+                >
+                  Back to sign in
+                </button>
+              </form>
+            )
+          ) : (
           <form onSubmit={handleLogin}>
             <FieldGroup>
               <Field>
@@ -111,7 +203,19 @@ router.push("/jobs")
               {loading ? <Spinner className="mr-2" /> : null}
               {loading ? "Signing in..." : "Sign In"}
             </Button>
+
+            <button
+              type="button"
+              className="mt-4 w-full text-center text-sm text-muted-foreground underline"
+              onClick={() => {
+                setResetMode(true)
+                setError(null)
+              }}
+            >
+              Forgot password?
+            </button>
           </form>
+          )}
         </CardContent>
       </Card>
     </main>
