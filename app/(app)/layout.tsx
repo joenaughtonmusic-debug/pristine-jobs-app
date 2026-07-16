@@ -10,10 +10,9 @@ export default async function AppLayout({
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  // TEMP: bypass login during local development
-// if (!user) {
-//   redirect("/")
-// }
+  if (!user) {
+    redirect("/")
+  }
 
   return (
     <div className="min-h-screen flex flex-col pb-16">
