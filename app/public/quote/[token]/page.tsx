@@ -1,5 +1,50 @@
 import { redirect } from "next/navigation"
 import { createAdminClient } from "@/lib/supabase/admin"
+import {
+  recordOnlineQuoteAcceptance,
+  recordOnlineQuoteDecline,
+} from "@/lib/sales-lead-transitions"
+
+// Phase 2: stamp the outcome on the pipeline lead linked to this draft
+// (sales_leads.quote_draft_id, migration 043). Stamp only — the board card
+// is advanced manually (Phase 1 spec §7). Best-effort: a lead-side failure
+// must never break the customer's accept/decline page, and pre-043 the
+// lookup just finds nothing.
+async function stampLinkedLead(
+  supabase: Awaited<ReturnType<typeof createAdminClient>>,
+  quoteId: string,
+  outcome: "accepted" | "declined",
+  acceptedName?: string
+) {
+  try {
+    const { data: lead } = await supabase
+      .from("sales_leads")
+      .select("id")
+      .eq("quote_draft_id", quoteId)
+      .maybeSingle()
+
+    if (!lead) return
+
+    const result =
+      outcome === "accepted"
+        ? await recordOnlineQuoteAcceptance(supabase, lead.id, acceptedName)
+        : await recordOnlineQuoteDecline(supabase, lead.id)
+
+    if ("error" in result) {
+      console.error("[public-quote] failed to stamp linked lead", {
+        quoteId,
+        outcome,
+        message: result.error,
+      })
+    }
+  } catch (error) {
+    console.error("[public-quote] failed to stamp linked lead", {
+      quoteId,
+      outcome,
+      error,
+    })
+  }
+}
 
 export const dynamic = "force-dynamic"
 
@@ -130,6 +175,8 @@ async function acceptQuote(formData: FormData) {
     redirect(`/public/quote/${token}?error=accept`)
   }
 
+  await stampLinkedLead(supabase, quoteId, "accepted", acceptedCustomerName)
+
   redirect(`/public/quote/${token}?accepted=1`)
 }
 
@@ -157,6 +204,8 @@ async function declineQuote(formData: FormData) {
   if (error) {
     redirect(`/public/quote/${token}?error=decline`)
   }
+
+  await stampLinkedLead(supabase, quoteId, "declined")
 
   redirect(`/public/quote/${token}?declined=1`)
 }

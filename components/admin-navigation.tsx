@@ -2,7 +2,11 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import type { AdminNavGroup, AdminNavLink } from "@/lib/admin-navigation-config"
+import type {
+  AdminNavBadges,
+  AdminNavGroup,
+  AdminNavLink,
+} from "@/lib/admin-navigation-config"
 
 function getSectionId(label: string) {
   return label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
@@ -11,9 +15,14 @@ function getSectionId(label: string) {
 type Props = {
   navGroups: AdminNavGroup[]
   topLevelLinks?: AdminNavLink[]
+  badges?: AdminNavBadges
 }
 
-export function AdminNavigation({ navGroups, topLevelLinks = [] }: Props) {
+export function AdminNavigation({
+  navGroups,
+  topLevelLinks = [],
+  badges = {},
+}: Props) {
   const [openSection, setOpenSection] = useState<string | null>(null)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [dashboardGroup, ...dropdownGroups] = navGroups
@@ -25,6 +34,21 @@ export function AdminNavigation({ navGroups, topLevelLinks = [] }: Props) {
   const closeMenus = () => {
     setOpenSection(null)
     setMobileOpen(false)
+  }
+
+  // Real to-do counts (owner rule: never decoration). A link shows its own
+  // count; a collapsed dropdown shows the sum of its links' counts so the
+  // number is visible without opening the menu.
+  const linkLabel = (link: AdminNavLink) =>
+    badges[link.href] ? `${link.label} (${badges[link.href]})` : link.label
+
+  const groupLabel = (group: AdminNavGroup) => {
+    const total = group.links.reduce(
+      (sum, link) => sum + (badges[link.href] || 0),
+      0
+    )
+
+    return total ? `${group.label} (${total})` : group.label
   }
 
   return (
@@ -46,7 +70,7 @@ export function AdminNavigation({ navGroups, topLevelLinks = [] }: Props) {
               className="rounded-md px-3 py-2 font-medium text-gray-800 hover:bg-gray-100"
               onClick={closeMenus}
             >
-              {link.label}
+              {linkLabel(link)}
             </Link>
           ))}
 
@@ -63,7 +87,7 @@ export function AdminNavigation({ navGroups, topLevelLinks = [] }: Props) {
                   aria-controls={`admin-nav-${sectionId}`}
                   onClick={() => toggleSection(sectionId)}
                 >
-                  {group.label}
+                  {groupLabel(group)}
                 </button>
 
                 {isOpen && (
@@ -78,7 +102,7 @@ export function AdminNavigation({ navGroups, topLevelLinks = [] }: Props) {
                         className="block rounded-md px-3 py-2 text-gray-700 hover:bg-gray-50 hover:text-gray-950"
                         onClick={closeMenus}
                       >
-                        {link.label}
+                        {linkLabel(link)}
                       </Link>
                     ))}
                   </div>
@@ -124,7 +148,7 @@ export function AdminNavigation({ navGroups, topLevelLinks = [] }: Props) {
                               className="rounded-md px-3 py-2 font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-950"
                               onClick={closeMenus}
                             >
-                              {link.label}
+                              {linkLabel(link)}
                             </Link>
                           ))}
                           {topLevelLinks.map((link) => (
@@ -134,7 +158,7 @@ export function AdminNavigation({ navGroups, topLevelLinks = [] }: Props) {
                               className="rounded-md px-3 py-2 font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-950"
                               onClick={closeMenus}
                             >
-                              {link.label}
+                              {linkLabel(link)}
                             </Link>
                           ))}
                         </div>
@@ -147,7 +171,7 @@ export function AdminNavigation({ navGroups, topLevelLinks = [] }: Props) {
                             aria-controls={`admin-mobile-nav-${sectionId}`}
                             onClick={() => toggleSection(sectionId)}
                           >
-                            {group.label}
+                            {groupLabel(group)}
                             <span aria-hidden="true">{isOpen ? "−" : "+"}</span>
                           </button>
 
@@ -163,7 +187,7 @@ export function AdminNavigation({ navGroups, topLevelLinks = [] }: Props) {
                                   className="rounded-md px-3 py-2 font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-950"
                                   onClick={closeMenus}
                                 >
-                                  {link.label}
+                                  {linkLabel(link)}
                                 </Link>
                               ))}
                             </div>

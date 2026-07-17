@@ -47,6 +47,11 @@ export type SalesLead = {
   quote_value: number | string | null
   lost_reason: string | null
   notes: SalesLeadActivity[] | unknown
+  // Phase 2 links (migration 043). Both nullable — a fresh website lead has
+  // neither. The job/invoice chain is reached via the quote draft
+  // (quote_drafts.first_scheduled_job_id), never a direct job link.
+  property_id: string | null
+  quote_draft_id: string | null
 }
 
 export type PipelineStageKey =
@@ -458,4 +463,59 @@ function isFollowUpDueAt(value: string): boolean {
   const endOfToday = new Date()
   endOfToday.setHours(23, 59, 59, 999)
   return new Date(value).getTime() <= endOfToday.getTime()
+}
+
+// --- Phase 2: creating a quote from the board --------------------------------
+// The board's Create-quote modal picks a quote type and template, then hands
+// off to the quote builder prefilled (?lead=). These are suggestions only —
+// a wrong template silently applied is worse than a blank form.
+
+export type QuoteType = "maintenance" | "one_off" | "landscaping"
+
+export type QuoteTemplateOption = {
+  id: string
+  name: string
+  category: string | null
+  frequency: string | null
+}
+
+// Same rule the quote builder applies when a template is picked: category
+// "Maintenance" (or any frequency) → maintenance, "Landscape" → landscaping.
+export function getTemplateQuoteType(
+  template: Pick<QuoteTemplateOption, "category" | "frequency">
+): QuoteType {
+  if (template.category === "Maintenance" || Boolean(template.frequency)) {
+    return "maintenance"
+  }
+
+  if (template.category === "Landscape") return "landscaping"
+
+  return "one_off"
+}
+
+export function suggestQuoteTypeFromService(
+  service: string | null | undefined
+): QuoteType {
+  const value = (service || "").toLowerCase()
+
+  if (value.includes("landscap")) return "landscaping"
+  if (/mainten|maintain|regular|ongoing|recurring/.test(value)) {
+    return "maintenance"
+  }
+
+  return "one_off"
+}
+
+// Preselect a template only when the quote type narrows it to exactly one —
+// e.g. maintenance has six frequency variants, so none is preselected and
+// the user picks.
+export function suggestTemplateForQuoteType(
+  templates: QuoteTemplateOption[],
+  quoteType: QuoteType
+): string {
+  const matches = templates.filter(
+    (template) => getTemplateQuoteType(template) === quoteType
+  )
+
+  return matches.length === 1 ? matches[0].id : ""
 }

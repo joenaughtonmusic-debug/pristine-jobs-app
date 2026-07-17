@@ -319,6 +319,114 @@ export async function markQuoteAccepted(
   )
 }
 
+// Phase 2: a quote draft saved in the quote builder (opened via
+// /admin/quotes?lead=<id>) links back to its lead, write-once. No status
+// change — the lead advances when Joe marks the quote sent, not when the
+// draft is saved.
+export async function linkQuoteDraft(
+  supabase: SupabaseClient,
+  leadId: string,
+  quoteDraftId: string
+): Promise<TransitionResult> {
+  if (!quoteDraftId.trim()) {
+    return { error: "Missing quote draft id." }
+  }
+
+  const found = await getLead(supabase, leadId)
+  if ("error" in found) return found
+  const { lead } = found
+
+  if (lead.quote_draft_id) {
+    return lead.quote_draft_id === quoteDraftId
+      ? { ok: true }
+      : {
+          error:
+            "This lead is already linked to a different quote draft — check the activity thread.",
+        }
+  }
+
+  // Guarded at the database, not just the read above: `.is(..., null)` makes
+  // the write-once atomic (same pattern as first_scheduled_job_id in the
+  // quote builder), so two concurrent saves can't both link.
+  const { data: updated, error } = await supabase
+    .from("sales_leads")
+    .update({
+      quote_draft_id: quoteDraftId,
+      notes: appendActivities(
+        lead.notes,
+        createActivity(
+          "note",
+          "Quote draft created in the quote builder and linked to this lead."
+        )
+      ),
+    })
+    .eq("id", lead.id)
+    .is("quote_draft_id", null)
+    .select("id")
+
+  if (error) {
+    return { error: error.message }
+  }
+
+  if (!updated || updated.length === 0) {
+    return {
+      error:
+        "Another quote draft was linked to this lead at the same time — refresh the board and check which draft is linked before sending anything.",
+    }
+  }
+
+  return { ok: true }
+}
+
+// Phase 2: the public quote page stamps acceptance on the linked lead.
+// Stamp only — advancement stays manual (Phase 1 spec §7); the card is moved
+// when the job is scheduled. Idempotent so a double-submit can't error the
+// customer's accept page.
+export async function recordOnlineQuoteAcceptance(
+  supabase: SupabaseClient,
+  leadId: string,
+  acceptedName?: string | null
+): Promise<TransitionResult> {
+  const found = await getLead(supabase, leadId)
+  if ("error" in found) return found
+
+  if (found.lead.quote_accepted_at) {
+    return { ok: true }
+  }
+
+  return updateLead(
+    supabase,
+    found.lead,
+    { quote_accepted_at: new Date().toISOString() },
+    createActivity(
+      "communication",
+      `Customer accepted the quote online${
+        acceptedName?.trim() ? ` (name given: ${acceptedName.trim()})` : ""
+      }.`
+    )
+  )
+}
+
+// A decline is logged but changes nothing — the customer may still be worth a
+// call, so marking Lost stays a human decision.
+export async function recordOnlineQuoteDecline(
+  supabase: SupabaseClient,
+  leadId: string
+): Promise<TransitionResult> {
+  const found = await getLead(supabase, leadId)
+  if ("error" in found) return found
+
+  return updateLead(
+    supabase,
+    found.lead,
+    {},
+    createActivity(
+      "communication",
+      "Customer declined the quote online. No status change — review and mark lost if appropriate."
+    )
+  )
+}
+
 // Quote → Job scheduled. Only allowed once the quote is accepted. The actual
 // scheduled_jobs row is booked through the existing quote-builder flow
 // (createAcceptedQuoteSchedule); this records the advancement on the lead.
