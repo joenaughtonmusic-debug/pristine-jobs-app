@@ -378,6 +378,91 @@ export async function linkQuoteDraft(
   return { ok: true }
 }
 
+// Brief 03: queueing a proposal send from the quote builder IS the "quote
+// sent" stage action, so the linked lead advances without a second click on
+// the board. Only advances forward from pre-quote stages — a lead already at
+// Quote sent or beyond is left alone (ok, not an error: a resend shouldn't
+// fail the queue flow).
+const PRE_QUOTE_STATUSES: SalesLeadStatus[] = [
+  "new",
+  "contacted",
+  "visit_booked",
+  "estimate_done",
+]
+
+export async function markQuoteSentForDraft(
+  supabase: SupabaseClient,
+  quoteDraftId: string
+): Promise<TransitionResult> {
+  const { data: lead, error } = await supabase
+    .from("sales_leads")
+    .select("id, status")
+    .eq("quote_draft_id", quoteDraftId)
+    .maybeSingle()
+
+  if (error) {
+    return { error: error.message }
+  }
+
+  if (!lead || !PRE_QUOTE_STATUSES.includes(lead.status)) {
+    return { ok: true }
+  }
+
+  return markQuoteSent(supabase, lead.id)
+}
+
+// Brief 03: when a property is created for a lead's customer (new-customer
+// save or accepted-quote conversion), the lead gets its property link.
+// Never overwrites an existing link.
+export async function setLeadProperty(
+  supabase: SupabaseClient,
+  leadId: string,
+  propertyId: string
+): Promise<TransitionResult> {
+  if (!propertyId.trim()) {
+    return { error: "Missing property id." }
+  }
+
+  const found = await getLead(supabase, leadId)
+  if ("error" in found) return found
+  const { lead } = found
+
+  if (lead.property_id) {
+    return { ok: true }
+  }
+
+  return updateLead(
+    supabase,
+    lead,
+    { property_id: propertyId },
+    createActivity("note", "Customer property created and linked to this lead.")
+  )
+}
+
+// Same link, but resolved via the lead's quote draft — used where the builder
+// only knows the draft (accepted-quote conversion). No linked lead is fine.
+export async function setLeadPropertyForDraft(
+  supabase: SupabaseClient,
+  quoteDraftId: string,
+  propertyId: string
+): Promise<TransitionResult> {
+  const { data: lead, error } = await supabase
+    .from("sales_leads")
+    .select("id")
+    .eq("quote_draft_id", quoteDraftId)
+    .maybeSingle()
+
+  if (error) {
+    return { error: error.message }
+  }
+
+  if (!lead) {
+    return { ok: true }
+  }
+
+  return setLeadProperty(supabase, lead.id, propertyId)
+}
+
 // Phase 2: the public quote page stamps acceptance on the linked lead.
 // Stamp only — advancement stays manual (Phase 1 spec §7); the card is moved
 // when the job is scheduled. Idempotent so a double-submit can't error the

@@ -2,7 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { createClient } from "@/lib/supabase/client"
-import { linkQuoteDraftAction } from "@/app/(app)/sales-pipeline/actions"
+import {
+  linkQuoteDraftAction,
+  markQuoteSentForDraftAction,
+  setLeadPropertyAction,
+  setLeadPropertyForDraftAction,
+} from "@/app/(app)/sales-pipeline/actions"
 import { getTemplateQuoteType } from "@/lib/sales-leads"
 
 type PropertyOption = {
@@ -358,6 +363,72 @@ function getQuoteTypeFromTemplate(template: QuoteTemplate): QuoteType {
   return getTemplateQuoteType(template)
 }
 
+type NewCustomerDetails = {
+  client_name: string
+  client_email: string | null
+  phone: string | null
+  address_line_1: string | null
+  suburb: string | null
+}
+
+// The ONE property-creation path in this component (Brief 03: reuse the
+// estimate→property conversion's logic, do not invent a second). The
+// billing_type / service_frequency write is the subject of the parked
+// billing audit — byte-for-byte as the original conversion, do not change it.
+async function createCustomerProperty(
+  supabase: ReturnType<typeof createClient>,
+  details: NewCustomerDetails,
+  quote: { quote_type: string | null; frequency: string | null }
+) {
+  const propertyCode =
+    makePropertyCode(
+      [details.address_line_1, details.suburb].filter(Boolean).join(" ")
+    ) || makePropertyCode(details.client_name)
+
+  // Idempotent by design: these writes aren't transaction-wrapped with their
+  // callers, so a retry after a downstream failure must reuse the property it
+  // already created rather than duplicate it (the "phantom rows" failure mode
+  // Brief 03 exists because of). Same code + same name = same customer.
+  const { data: existing, error: existingError } = await supabase
+    .from("properties")
+    .select("id")
+    .eq("property_code", propertyCode)
+    .eq("client_name", details.client_name)
+    .eq("is_active", true)
+    .limit(1)
+    .maybeSingle()
+
+  if (existingError) {
+    return { data: null, error: existingError }
+  }
+
+  if (existing) {
+    return { data: existing, error: null }
+  }
+
+  return supabase
+    .from("properties")
+    .insert({
+      client_name: details.client_name,
+      client_email: details.client_email || null,
+      phone: details.phone || null,
+      address_line_1: details.address_line_1 || null,
+      suburb: details.suburb || null,
+      property_code: propertyCode,
+      billing_type:
+        getNormalisedQuoteType(quote.quote_type) === "maintenance"
+          ? "subscription"
+          : "charge_up",
+      service_frequency:
+        getNormalisedQuoteType(quote.quote_type) === "maintenance"
+          ? quote.frequency || null
+          : null,
+      is_active: true,
+    })
+    .select("id")
+    .single()
+}
+
 function getLeadDetailNotes(lead: LeadOption) {
   return [
     `Customer: ${lead.name}`,
@@ -497,6 +568,14 @@ export function AdminQuoteBuilderClient({
   const [propertyId, setPropertyId] = useState("")
   const [estimateId, setEstimateId] = useState("")
   const [scheduledJobId, setScheduledJobId] = useState("")
+  // Brief 03: quoting a brand-new customer creates their properties row at
+  // save time (via createCustomerProperty — the one shared creation path).
+  const [newCustomerMode, setNewCustomerMode] = useState(false)
+  const [newCustomerName, setNewCustomerName] = useState("")
+  const [newCustomerEmail, setNewCustomerEmail] = useState("")
+  const [newCustomerPhone, setNewCustomerPhone] = useState("")
+  const [newCustomerAddress, setNewCustomerAddress] = useState("")
+  const [newCustomerSuburb, setNewCustomerSuburb] = useState("")
   const [templateId, setTemplateId] = useState("")
   const [quoteType, setQuoteType] = useState<QuoteType>("one_off")
   const [quoteTitle, setQuoteTitle] = useState("")
@@ -539,6 +618,7 @@ export function AdminQuoteBuilderClient({
   const [proposalSubject, setProposalSubject] = useState("")
   const [proposalBody, setProposalBody] = useState("")
   const [proposalLink, setProposalLink] = useState("")
+  const [proposalRecipient, setProposalRecipient] = useState("")
   const [firstVisitDate, setFirstVisitDate] = useState("")
   const [firstVisitStartTime, setFirstVisitStartTime] = useState("")
   const [firstVisitStaffId, setFirstVisitStaffId] = useState("")
@@ -667,6 +747,14 @@ export function AdminQuoteBuilderClient({
     ) {
       setPropertyId(selectedLead.property_id)
     }
+
+    // Brief 03: prefill the new-customer form from the lead (without turning
+    // the mode on — creating the properties row stays the operator's call).
+    setNewCustomerName(selectedLead.name || "")
+    setNewCustomerEmail(selectedLead.email || "")
+    setNewCustomerPhone(selectedLead.phone || "")
+    setNewCustomerAddress(selectedLead.address || "")
+    setNewCustomerSuburb(selectedLead.suburb || "")
     // Run once for the handed-in lead; the deps it reads are page-load props.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedLead?.id])
@@ -777,11 +865,23 @@ export function AdminQuoteBuilderClient({
     setPropertyId(nextPropertyId)
     if (nextPropertyId) {
       setEstimateId("")
+      setNewCustomerMode(false)
     }
     setScheduledJobId("")
 
     if (property && !quoteTitle) {
       setQuoteTitle(`Quote for ${property.client_name}`)
+    }
+  }
+
+  const enableNewCustomerMode = () => {
+    setNewCustomerMode(true)
+    setPropertyId("")
+    setEstimateId("")
+    setScheduledJobId("")
+
+    if (newCustomerName.trim()) {
+      setQuoteTitle((current) => current || `Quote for ${newCustomerName.trim()}`)
     }
   }
 
@@ -793,6 +893,7 @@ export function AdminQuoteBuilderClient({
     if (nextEstimateId) {
       setPropertyId("")
       setScheduledJobId("")
+      setNewCustomerMode(false)
     }
 
     if (!estimate) return
@@ -1048,25 +1149,64 @@ export function AdminQuoteBuilderClient({
     }
   }
 
+  // Brief 03: the public quote page IS the preview — never a second renderer.
+  const previewProposal = async (draft: QuoteDraftSummary) => {
+    setError(null)
+
+    try {
+      const { token } = await ensureQuoteAcceptLink(draft)
+      // Safari can silently block window.open from an async continuation —
+      // it returns null instead of throwing, so check and say so.
+      const opened = window.open(`/public/quote/${token}`, "_blank", "noopener")
+
+      if (!opened) {
+        setError(
+          "The preview was blocked by the browser's pop-up blocker. Allow pop-ups for this site, or use Copy Proposal Link and open it in a new tab."
+        )
+      }
+    } catch (previewError) {
+      setError(
+        previewError instanceof Error
+          ? previewError.message
+          : "Could not open the preview."
+      )
+    }
+  }
+
   const openSendProposalModal = async (draft: QuoteDraftSummary) => {
     setMessage(null)
     setError(null)
 
     try {
       const { publicUrl } = await ensureQuoteAcceptLink(draft)
+      const copyQuoteType = getNormalisedQuoteType(draft.quote_type)
+      const firstName =
+        draft.customer_name.trim().split(/\s+/)[0] || draft.customer_name
+
       setSendProposalDraft({
         ...draft,
         public_accept_url: publicUrl,
       })
-      setProposalSubject("Your Pristine Gardens maintenance proposal")
+      setProposalRecipient(draft.customer_email || "")
+      setProposalSubject(
+        copyQuoteType === "maintenance"
+          ? "Your garden maintenance proposal — Pristine Gardens"
+          : copyQuoteType === "landscaping"
+            ? "Your landscaping quote — Pristine Gardens"
+            : "Your garden quote — Pristine Gardens"
+      )
       setProposalLink(publicUrl)
-      setProposalBody(`Hi ${draft.customer_name},
+      setProposalBody(`Hi ${firstName},
 
-Thanks for meeting with us.
-
-You can view and accept your garden maintenance proposal here:
+Thanks for the opportunity to quote for your garden${
+        copyQuoteType === "maintenance" ? "'s ongoing maintenance" : ""
+      }. The full ${
+        copyQuoteType === "maintenance" ? "proposal" : "quote"
+      }, including scope and pricing, is here:
 
 ${publicUrl}
+
+Have a read through, and accept online when you're ready. If anything needs adjusting, reply to this email or give me a call and we'll sort it.
 
 Kind regards,
 Joe
@@ -1083,6 +1223,15 @@ Pristine Gardens`)
   const markProposalSent = async () => {
     if (!sendProposalDraft) return
 
+    // Make sends to customer_email — an empty address would queue a send
+    // that can never leave, so it's required here.
+    const recipient = proposalRecipient.trim()
+
+    if (!recipient || !recipient.includes("@")) {
+      setError("Enter the customer's email address before queueing the send.")
+      return
+    }
+
     setSendingProposal(true)
     setMessage(null)
     setError(null)
@@ -1091,6 +1240,7 @@ Pristine Gardens`)
     const { error: updateError } = await supabase
       .from("quote_drafts")
       .update({
+        customer_email: recipient,
         proposal_status: "ready_to_send",
         proposal_ready_to_send_at: readyAt,
         proposal_email_subject: proposalSubject.trim(),
@@ -1100,15 +1250,28 @@ Pristine Gardens`)
       })
       .eq("id", sendProposalDraft.id)
 
-    setSendingProposal(false)
-
     if (updateError) {
+      setSendingProposal(false)
       setError(updateError.message)
       return
     }
 
+    // Brief 03 (owner decision): queueing the send is the "quote sent" stage
+    // action — the linked board card advances without a second click. No
+    // linked lead, or already past Quote: quiet no-op.
+    const leadResult = await markQuoteSentForDraftAction(sendProposalDraft.id)
+
+    setSendingProposal(false)
     setSendProposalDraft(null)
     await loadQuoteDrafts()
+
+    if ("error" in leadResult) {
+      setError(
+        `Proposal queued for Make.com, but the pipeline card could not be updated: ${leadResult.error}`
+      )
+      return
+    }
+
     setMessage("Proposal queued for Make.com to send.")
   }
 
@@ -1146,40 +1309,127 @@ Pristine Gardens`)
   }
 
   const convertAcceptedQuoteToProperty = async (draft: QuoteDraftSummary) => {
-    if (!draft.estimate_id) {
-      setError("This quote is not linked to an estimate.")
-      return
-    }
-
     setConvertingQuoteId(draft.id)
     setMessage(null)
     setError(null)
 
-    const { data: estimate, error: estimateError } = await supabase
-      .from("estimates")
-      .select(`
-        id,
-        customer_name,
-        customer_email,
-        customer_phone,
-        address_line_1,
-        suburb,
-        converted_property_id
-      `)
-      .eq("id", draft.estimate_id)
-      .single()
+    // Estimate-linked drafts convert from the estimate, exactly as before.
+    if (draft.estimate_id) {
+      const { data: estimate, error: estimateError } = await supabase
+        .from("estimates")
+        .select(`
+          id,
+          customer_name,
+          customer_email,
+          customer_phone,
+          address_line_1,
+          suburb,
+          converted_property_id
+        `)
+        .eq("id", draft.estimate_id)
+        .single()
 
-    if (estimateError || !estimate) {
+      if (estimateError || !estimate) {
+        setConvertingQuoteId(null)
+        setError(estimateError?.message || "Could not load linked estimate.")
+        return
+      }
+
+      if (estimate.converted_property_id) {
+        const { error: quoteUpdateError } = await supabase
+          .from("quote_drafts")
+          .update({
+            property_id: estimate.converted_property_id,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", draft.id)
+
+        setConvertingQuoteId(null)
+
+        if (quoteUpdateError) {
+          setError(quoteUpdateError.message)
+          return
+        }
+
+        await loadQuoteDrafts()
+        setMessage("Estimate is already converted. Quote linked to property.")
+        return
+      }
+
+      const { data: property, error: propertyError } = await createCustomerProperty(
+        supabase,
+        {
+          client_name: estimate.customer_name,
+          client_email: estimate.customer_email,
+          phone: estimate.customer_phone,
+          address_line_1: estimate.address_line_1,
+          suburb: estimate.suburb,
+        },
+        draft
+      )
+
+      if (propertyError || !property) {
+        setConvertingQuoteId(null)
+        setError(propertyError?.message || "Could not create property.")
+        return
+      }
+
+      const now = new Date().toISOString()
+      const { error: updateEstimateError } = await supabase
+        .from("estimates")
+        .update({
+          converted_property_id: property.id,
+          estimate_status: "converted",
+          updated_at: now,
+        })
+        .eq("id", estimate.id)
+
+      if (updateEstimateError) {
+        setConvertingQuoteId(null)
+        setError(updateEstimateError.message)
+        return
+      }
+
+      const { error: updateQuoteError } = await supabase
+        .from("quote_drafts")
+        .update({
+          property_id: property.id,
+          updated_at: now,
+        })
+        .eq("id", draft.id)
+
       setConvertingQuoteId(null)
-      setError(estimateError?.message || "Could not load linked estimate.")
+
+      if (updateQuoteError) {
+        setError(updateQuoteError.message)
+        return
+      }
+
+      await loadQuoteDrafts()
+      setMessage("Accepted quote converted to property.")
       return
     }
 
-    if (estimate.converted_property_id) {
+    // Brief 03: no estimate — a board-lead quote (or a draft with neither).
+    // Convert from the linked lead's details, falling back to what the draft
+    // itself carries. This is where accepted lead-quotes used to dead-end.
+    const { data: linkedLead, error: leadError } = await supabase
+      .from("sales_leads")
+      .select("id, name, email, phone, address, suburb, property_id")
+      .eq("quote_draft_id", draft.id)
+      .maybeSingle()
+
+    if (leadError) {
+      setConvertingQuoteId(null)
+      setError(leadError.message)
+      return
+    }
+
+    if (linkedLead?.property_id) {
       const { error: quoteUpdateError } = await supabase
         .from("quote_drafts")
         .update({
-          property_id: estimate.converted_property_id,
+          property_id: linkedLead.property_id,
           updated_at: new Date().toISOString(),
         })
         .eq("id", draft.id)
@@ -1192,38 +1442,21 @@ Pristine Gardens`)
       }
 
       await loadQuoteDrafts()
-      setMessage("Estimate is already converted. Quote linked to property.")
+      setMessage("Lead already has a property. Quote linked to it.")
       return
     }
 
-    const propertyCode =
-      makePropertyCode(
-        [estimate.address_line_1, estimate.suburb]
-          .filter(Boolean)
-          .join(" ")
-      ) || makePropertyCode(estimate.customer_name)
-
-    const { data: property, error: propertyError } = await supabase
-      .from("properties")
-      .insert({
-        client_name: estimate.customer_name,
-        client_email: estimate.customer_email || null,
-        phone: estimate.customer_phone || null,
-        address_line_1: estimate.address_line_1 || null,
-        suburb: estimate.suburb || null,
-        property_code: propertyCode,
-        billing_type:
-          getNormalisedQuoteType(draft.quote_type) === "maintenance"
-            ? "subscription"
-            : "charge_up",
-        service_frequency:
-          getNormalisedQuoteType(draft.quote_type) === "maintenance"
-            ? draft.frequency || null
-            : null,
-        is_active: true,
-      })
-      .select("id")
-      .single()
+    const { data: property, error: propertyError } = await createCustomerProperty(
+      supabase,
+      {
+        client_name: draft.customer_name,
+        client_email: draft.customer_email,
+        phone: linkedLead?.phone || null,
+        address_line_1: linkedLead?.address || null,
+        suburb: linkedLead?.suburb || null,
+      },
+      draft
+    )
 
     if (propertyError || !property) {
       setConvertingQuoteId(null)
@@ -1231,37 +1464,34 @@ Pristine Gardens`)
       return
     }
 
-    const now = new Date().toISOString()
-    const { error: updateEstimateError } = await supabase
-      .from("estimates")
-      .update({
-        converted_property_id: property.id,
-        estimate_status: "converted",
-        updated_at: now,
-      })
-      .eq("id", estimate.id)
-
-    if (updateEstimateError) {
-      setConvertingQuoteId(null)
-      setError(updateEstimateError.message)
-      return
-    }
-
     const { error: updateQuoteError } = await supabase
       .from("quote_drafts")
       .update({
         property_id: property.id,
-        updated_at: now,
+        updated_at: new Date().toISOString(),
       })
       .eq("id", draft.id)
 
-    setConvertingQuoteId(null)
-
     if (updateQuoteError) {
+      setConvertingQuoteId(null)
       setError(updateQuoteError.message)
       return
     }
 
+    if (linkedLead) {
+      const linkResult = await setLeadPropertyForDraftAction(draft.id, property.id)
+
+      if ("error" in linkResult) {
+        setConvertingQuoteId(null)
+        setError(
+          `Property created and linked to the quote, but the pipeline lead could not be updated: ${linkResult.error}`
+        )
+        await loadQuoteDrafts()
+        return
+      }
+    }
+
+    setConvertingQuoteId(null)
     await loadQuoteDrafts()
     setMessage("Accepted quote converted to property.")
   }
@@ -1450,15 +1680,23 @@ Pristine Gardens`)
     setMessage(null)
     setError(null)
 
-    if (!selectedProperty && !selectedEstimate && !selectedLead) {
-      setError("Select a property or estimate before saving the quote draft.")
+    if (!selectedProperty && !selectedEstimate && !selectedLead && !newCustomerMode) {
+      setError(
+        "Select a property or estimate, or add a new customer, before saving the quote draft."
+      )
       return
     }
 
-    const customerName =
-      selectedProperty?.client_name ||
-      selectedEstimate?.customer_name ||
-      selectedLead?.name
+    if (newCustomerMode && !newCustomerName.trim()) {
+      setError("Enter the new customer's name before saving.")
+      return
+    }
+
+    const customerName = newCustomerMode
+      ? newCustomerName.trim()
+      : selectedProperty?.client_name ||
+        selectedEstimate?.customer_name ||
+        selectedLead?.name
 
     if (!customerName) {
       setError("No customer name available for this quote draft.")
@@ -1471,6 +1709,34 @@ Pristine Gardens`)
     }
 
     setSaving(true)
+
+    // Brief 03: a new customer becomes a properties row before the draft is
+    // inserted, so the draft (and the linked lead, below) carry property_id
+    // from the start.
+    let newPropertyId: string | null = null
+
+    if (newCustomerMode) {
+      const { data: newProperty, error: newPropertyError } =
+        await createCustomerProperty(
+          supabase,
+          {
+            client_name: newCustomerName.trim(),
+            client_email: newCustomerEmail.trim() || null,
+            phone: newCustomerPhone.trim() || null,
+            address_line_1: newCustomerAddress.trim() || null,
+            suburb: newCustomerSuburb.trim() || null,
+          },
+          { quote_type: quoteType, frequency: frequency || null }
+        )
+
+      if (newPropertyError || !newProperty) {
+        setSaving(false)
+        setError(newPropertyError?.message || "Could not create the new customer.")
+        return
+      }
+
+      newPropertyId = newProperty.id
+    }
 
     const lineItemsToSave = hasMaintenancePricing
       ? lineItems.map((item, index) => ({
@@ -1508,19 +1774,21 @@ Pristine Gardens`)
     const { data: savedDraft, error: saveError } = await supabase
       .from("quote_drafts")
       .insert({
-      // A lead that already knows its property (add-existing-customer)
-      // carries it onto the draft even though the property select is the
-      // usual source — don't make the user re-pick a property we know.
-      property_id: selectedProperty?.id || selectedLead?.property_id || null,
+      // A new customer's just-created property wins; otherwise a lead that
+      // already knows its property (add-existing-customer) carries it onto
+      // the draft — don't make the user re-pick a property we know.
+      property_id:
+        newPropertyId || selectedProperty?.id || selectedLead?.property_id || null,
       estimate_id: selectedEstimate?.id || null,
       scheduled_job_id: scheduledJobId || null,
       quote_template_id: templateId || null,
       customer_name: customerName,
-      customer_email:
-        selectedProperty?.client_email ||
-        selectedEstimate?.customer_email ||
-        selectedLead?.email ||
-        null,
+      customer_email: newCustomerMode
+        ? newCustomerEmail.trim() || null
+        : selectedProperty?.client_email ||
+          selectedEstimate?.customer_email ||
+          selectedLead?.email ||
+          null,
       quote_title: quoteTitle.trim(),
       quote_type: quoteType,
       customer_scope: customerScope.trim() || null,
@@ -1604,12 +1872,31 @@ Pristine Gardens`)
       linkedThisSave = true
     }
 
+    // Brief 03: a new customer created for a board lead also links the lead
+    // to its property (the deferred conversion backfill, done at the source).
+    if (selectedLead && newPropertyId) {
+      const propertyLink = await setLeadPropertyAction(selectedLead.id, newPropertyId)
+
+      if ("error" in propertyLink) {
+        await loadQuoteDrafts()
+        setSaving(false)
+        setError(
+          `Draft and customer saved, but the pipeline lead's property link failed: ${propertyLink.error}`
+        )
+        return
+      }
+    }
+
     await loadQuoteDrafts()
     setSaving(false)
     setMessage(
-      linkedThisSave
-        ? "Quote draft saved and linked to the pipeline lead."
-        : "Quote draft saved."
+      newPropertyId && linkedThisSave
+        ? "Quote draft saved, new customer created, and linked to the pipeline lead."
+        : newPropertyId
+          ? "Quote draft saved and new customer created."
+          : linkedThisSave
+            ? "Quote draft saved and linked to the pipeline lead."
+            : "Quote draft saved."
     )
   }
 
@@ -1760,6 +2047,74 @@ Pristine Gardens`)
                   </option>
                 ))}
               </select>
+            </div>
+
+            <div className="md:col-span-2">
+              {!newCustomerMode ? (
+                // A lead that already has a property must not grow a second
+                // one — the draft and the lead would then disagree about
+                // which property is the customer's.
+                selectedLead?.property_id ? null : (
+                  <button
+                    type="button"
+                    onClick={enableNewCustomerMode}
+                    className="text-sm font-medium text-emerald-700 underline hover:text-emerald-900"
+                  >
+                    + New customer (not in the list)
+                  </button>
+                )
+              ) : (
+                <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold text-emerald-900">
+                      New customer
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setNewCustomerMode(false)}
+                      className="text-xs text-emerald-800 underline"
+                    >
+                      cancel
+                    </button>
+                  </div>
+                  <p className="mt-1 text-xs text-emerald-800">
+                    Saving the draft creates this customer as a property and
+                    links everything up.
+                  </p>
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    <input
+                      className="h-11 w-full rounded-md border px-3"
+                      placeholder="Customer name (required)"
+                      value={newCustomerName}
+                      onChange={(event) => setNewCustomerName(event.target.value)}
+                    />
+                    <input
+                      className="h-11 w-full rounded-md border px-3"
+                      placeholder="Email"
+                      value={newCustomerEmail}
+                      onChange={(event) => setNewCustomerEmail(event.target.value)}
+                    />
+                    <input
+                      className="h-11 w-full rounded-md border px-3"
+                      placeholder="Phone"
+                      value={newCustomerPhone}
+                      onChange={(event) => setNewCustomerPhone(event.target.value)}
+                    />
+                    <input
+                      className="h-11 w-full rounded-md border px-3"
+                      placeholder="Suburb"
+                      value={newCustomerSuburb}
+                      onChange={(event) => setNewCustomerSuburb(event.target.value)}
+                    />
+                    <input
+                      className="h-11 w-full rounded-md border px-3 md:col-span-2"
+                      placeholder="Street address"
+                      value={newCustomerAddress}
+                      onChange={(event) => setNewCustomerAddress(event.target.value)}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
             <div>
@@ -2224,17 +2579,10 @@ Pristine Gardens`)
             {saving ? "Saving..." : "Save Draft"}
           </button>
 
-          <button
-            type="button"
-            disabled
-            className="mt-3 h-11 w-full rounded-md bg-gray-200 font-medium text-gray-500"
-          >
-            Create Xero Quote
-          </button>
-
-          <p className="mt-2 text-xs text-gray-500">
-            Xero quote creation to be wired next.
-          </p>
+          {/* Brief 03 (owner decision): the disabled "Create Xero Quote"
+              button is gone — quotes originate in the app, invoicing stays
+              in Xero. Saved drafts are previewed and sent from the Recent
+              Quote Drafts list below. */}
         </aside>
       </div>
 
@@ -2324,10 +2672,7 @@ Pristine Gardens`)
                           <button
                             type="button"
                             onClick={() => convertAcceptedQuoteToProperty(draft)}
-                            disabled={
-                              !draft.estimate_id ||
-                              convertingQuoteId === draft.id
-                            }
+                            disabled={convertingQuoteId === draft.id}
                             className="h-9 rounded-md bg-emerald-700 px-3 text-xs font-medium text-white disabled:bg-gray-300"
                           >
                             {convertingQuoteId === draft.id
@@ -2566,7 +2911,8 @@ Pristine Gardens`)
       <section className="mt-8 rounded-xl border bg-white p-4 shadow-sm">
         <h2 className="text-lg font-semibold">Recent Quote Drafts</h2>
         <p className="mb-4 text-sm text-gray-500">
-          Mark saved drafts as ready for Make.com to create the Xero quote.
+          Preview each quote exactly as the customer sees it, then send it
+          from here — Make.com delivers the email.
         </p>
 
         {quoteDrafts.length > 0 ? (
@@ -2577,10 +2923,10 @@ Pristine Gardens`)
               )
               const convertedPropertyId =
                 linkedEstimate?.converted_property_id || draft.property_id
+              // Brief 03: estimate no longer required — lead-linked (and even
+              // bare) drafts convert from their own details.
               const canConvertToProperty =
-                draft.status === "accepted" &&
-                Boolean(draft.estimate_id) &&
-                !convertedPropertyId
+                draft.status === "accepted" && !convertedPropertyId
               const canCreateSchedule =
                 draft.status === "accepted" &&
                 Boolean(draft.property_id) &&
@@ -2731,6 +3077,28 @@ Pristine Gardens`)
                 </div>
 
                 <div className="flex flex-col gap-2 xl:items-end">
+                  {/* A plain link when the token exists (always, for saved
+                      drafts) — immune to pop-up blockers. The button fallback
+                      backfills a token for any legacy draft missing one. */}
+                  {draft.public_accept_token ? (
+                    <a
+                      href={`/public/quote/${draft.public_accept_token}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex h-10 items-center justify-center rounded-md border px-3 text-sm font-medium hover:bg-gray-50"
+                    >
+                      Preview
+                    </a>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => previewProposal(draft)}
+                      className="h-10 rounded-md border px-3 text-sm font-medium hover:bg-gray-50"
+                    >
+                      Preview
+                    </button>
+                  )}
+
                   <button
                     type="button"
                     onClick={() => copyProposalLink(draft)}
@@ -2742,18 +3110,10 @@ Pristine Gardens`)
                       : "Copy Proposal Link"}
                   </button>
 
-                  {draft.status === "draft" ? (
-                    <button
-                      type="button"
-                      onClick={() => prepareXeroQuote(draft.id)}
-                      disabled={preparingXeroQuoteId === draft.id}
-                      className="h-10 rounded-md bg-blue-600 px-3 text-sm font-medium text-white disabled:bg-gray-300"
-                    >
-                      {preparingXeroQuoteId === draft.id
-                        ? "Preparing..."
-                        : "Create Xero Quote"}
-                    </button>
-                  ) : (
+                  {/* Brief 03 (owner decision): Create Xero Quote is hidden —
+                      quotes originate in the app now. prepareXeroQuote stays
+                      in the code in case it's ever wanted back. */}
+                  {draft.status !== "draft" && (
                     <span className="text-xs text-gray-500">
                       {getQuoteStatusLabel(draft.status)}
                     </span>
@@ -2817,19 +3177,20 @@ Pristine Gardens`)
                       Send Proposal
                     </button>
                   )}
-                  {!canSendProposal && !draft.quote_sent_at && (
-                    <>
-                      <button
-                        type="button"
-                        disabled
-                        className="h-10 rounded-md bg-gray-200 px-3 text-sm font-medium text-gray-500"
-                      >
-                        Send Quote from App
-                      </button>
-                      <div className="max-w-[180px] text-xs text-gray-500 xl:text-right">
-                        Send quote workflow to be wired next.
+                  {draft.proposal_status === "ready_to_send" &&
+                    !draft.quote_sent_at && (
+                      <div className="max-w-[190px] rounded-md bg-amber-50 px-2 py-1 text-xs font-medium text-amber-800 xl:text-right">
+                        Queued — Make.com sends it on its next run.
                       </div>
-                    </>
+                    )}
+                  {draft.proposal_status === "error" && (
+                    <div className="max-w-[190px] text-xs text-red-600 xl:text-right">
+                      Send failed
+                      {draft.proposal_send_error
+                        ? `: ${draft.proposal_send_error}`
+                        : ""}{" "}
+                      — use Send Proposal to try again.
+                    </div>
                   )}
                   {draft.quote_sent_at && (
                     <div className="text-xs font-medium text-green-700">
@@ -2974,10 +3335,14 @@ Pristine Gardens`)
                 <div className="font-medium">{sendProposalDraft.quote_title}</div>
               </div>
               <div>
-                <span className="text-gray-500">Customer Email</span>
-                <div className="font-medium">
-                  {sendProposalDraft.customer_email || "No email on quote"}
-                </div>
+                <span className="text-gray-500">Send To (required)</span>
+                <input
+                  className="mt-1 h-10 w-full rounded-md border px-3"
+                  type="email"
+                  placeholder="customer@email.co.nz"
+                  value={proposalRecipient}
+                  onChange={(event) => setProposalRecipient(event.target.value)}
+                />
               </div>
               <div className="min-w-0">
                 <span className="text-gray-500">Proposal Link</span>

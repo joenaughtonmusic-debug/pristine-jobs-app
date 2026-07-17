@@ -17,9 +17,12 @@ import {
   markLost,
   markQuoteAccepted,
   markQuoteSent,
+  markQuoteSentForDraft,
   moveToQuote,
   queueContactAndMarkContacted,
   sendFollowUp,
+  setLeadProperty,
+  setLeadPropertyForDraft,
   type TransitionResult,
 } from "@/lib/sales-lead-transitions"
 
@@ -196,6 +199,36 @@ export async function linkQuoteDraftAction(
 ): Promise<TransitionResult> {
   return runTransition((supabase) =>
     linkQuoteDraft(supabase, leadId, quoteDraftId)
+  )
+}
+
+// Brief 03: called by the quote builder when a proposal is queued for Make —
+// advances the linked lead to Quote sent (2-day follow-up) without a second
+// board click. No linked lead, or already past Quote: quiet no-op.
+export async function markQuoteSentForDraftAction(
+  quoteDraftId: string
+): Promise<TransitionResult> {
+  return runTransition((supabase) =>
+    markQuoteSentForDraft(supabase, quoteDraftId)
+  )
+}
+
+// Brief 03: property created for a lead's customer (new-customer save in the
+// builder) — write sales_leads.property_id.
+export async function setLeadPropertyAction(
+  leadId: string,
+  propertyId: string
+): Promise<TransitionResult> {
+  return runTransition((supabase) => setLeadProperty(supabase, leadId, propertyId))
+}
+
+// Brief 03: same link resolved via the draft (accepted-quote conversion).
+export async function setLeadPropertyForDraftAction(
+  quoteDraftId: string,
+  propertyId: string
+): Promise<TransitionResult> {
+  return runTransition((supabase) =>
+    setLeadPropertyForDraft(supabase, quoteDraftId, propertyId)
   )
 }
 
