@@ -10,18 +10,24 @@ import {
   BOARD_STAGES,
   BOARD_STAGE_COLORS,
   isOnActiveBoard,
+  type QuoteTemplateOption,
   type SalesLead,
 } from "@/lib/sales-leads"
 
 type Props = {
   leads: SalesLead[]
   invoicedJobs?: InvoicedJob[]
+  templates?: QuoteTemplateOption[]
 }
 
 // Board shell: server-rendered. One row per client across six stage columns.
 // Each row (PipelineRow) is an interactive client component owning its own
 // expand/collapse drawer; the board itself stays a server component.
-export function PipelineBoard({ leads = [], invoicedJobs = [] }: Props) {
+export function PipelineBoard({
+  leads = [],
+  invoicedJobs = [],
+  templates = [],
+}: Props) {
   const boardLeads = leads.filter(isOnActiveBoard)
 
   return (
@@ -60,7 +66,9 @@ export function PipelineBoard({ leads = [], invoicedJobs = [] }: Props) {
               No active leads yet.
             </div>
           ) : (
-            boardLeads.map((lead) => <PipelineRow key={lead.id} lead={lead} />)
+            boardLeads.map((lead) => (
+              <PipelineRow key={lead.id} lead={lead} templates={templates} />
+            ))
           )}
         </div>
       </div>

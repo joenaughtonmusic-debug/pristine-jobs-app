@@ -5,6 +5,7 @@ import {
   adminNavGroups,
   adminTopLevelLinks,
 } from "@/lib/admin-navigation-config"
+import { getAdminNavBadges } from "@/lib/admin-nav-badges"
 
 // Admin pages are gated on profiles.role via the live is_admin() function —
 // the database's source of truth (NOT staff_members.staff_type, which only
@@ -21,11 +22,14 @@ export default async function AdminLayout({
     redirect("/jobs")
   }
 
+  const badges = await getAdminNavBadges(supabase)
+
   return (
     <div>
       <AdminNavigation
         navGroups={adminNavGroups}
         topLevelLinks={adminTopLevelLinks}
+        badges={badges}
       />
 
       {children}

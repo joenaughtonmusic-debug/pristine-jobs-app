@@ -2,7 +2,7 @@ import { redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
 import { PipelineBoard } from "@/components/pipeline-board"
 import type { InvoicedJob } from "@/components/invoiced-jobs-section"
-import type { SalesLead } from "@/lib/sales-leads"
+import type { QuoteTemplateOption, SalesLead } from "@/lib/sales-leads"
 
 export const dynamic = "force-dynamic"
 
@@ -41,10 +41,23 @@ export default async function SalesPipelinePage() {
     console.error("[sales-pipeline] failed to load invoiced jobs", invoicedError)
   }
 
+  // Phase 2: the Create-quote modal offers the active quote templates
+  // (suggestion only — the quote itself is built in /admin/quotes).
+  const { data: templates, error: templatesError } = await supabase
+    .from("quote_templates")
+    .select("id, name, category, frequency")
+    .eq("is_active", true)
+    .order("name", { ascending: true })
+
+  if (templatesError) {
+    console.error("[sales-pipeline] failed to load quote templates", templatesError)
+  }
+
   return (
     <PipelineBoard
       leads={(leads || []) as SalesLead[]}
       invoicedJobs={(invoicedJobs || []) as unknown as InvoicedJob[]}
+      templates={(templates || []) as QuoteTemplateOption[]}
     />
   )
 }

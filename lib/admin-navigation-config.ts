@@ -3,6 +3,10 @@ export type AdminNavLink = {
   label: string
 }
 
+// Counts shown as "(n)" next to nav items, keyed by link href. Owner rule:
+// only real to-do counts (e.g. open team notes), never decoration.
+export type AdminNavBadges = Record<string, number>
+
 export type AdminNavGroup = {
   label: string
   links: AdminNavLink[]

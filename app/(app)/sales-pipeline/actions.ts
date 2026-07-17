@@ -12,6 +12,7 @@ import {
 import {
   advanceStageWithoutAction,
   confirmVisit,
+  linkQuoteDraft,
   markJobScheduled,
   markLost,
   markQuoteAccepted,
@@ -22,9 +23,11 @@ import {
   type TransitionResult,
 } from "@/lib/sales-lead-transitions"
 
-// sales_leads has no user_id column; its RLS policies check
-// auth.role() = 'authenticated' (migration 032), so the insert runs
-// server-side under the signed-in user's session.
+// sales_leads is admin-write under RLS (migration 041; authenticated users
+// can only SELECT). These actions run under the signed-in session — the
+// sales-pipeline layout is is_admin()-gated, so that session is an admin's;
+// a non-admin hitting an action directly gets a clean refusal from the
+// database, not a crash.
 export async function createManualLead(
   input: ManualLeadInput
 ): Promise<{ ok: true } | { error: string }> {
@@ -107,8 +110,8 @@ export async function createExistingCustomerLead(
 }
 
 // Shared wrapper for the stage actions: authenticate, run the transition
-// under the signed-in session (sales_leads RLS is authenticated-role, no
-// user_id column), refresh the board.
+// under the signed-in session (admin-write RLS per migration 041 — see the
+// note at the top of this file), refresh the board.
 async function runTransition(
   transition: (supabase: SupabaseClient) => Promise<TransitionResult>
 ): Promise<TransitionResult> {
@@ -182,6 +185,18 @@ export async function sendFollowUpAction(
   input: { subject: string; body: string }
 ): Promise<TransitionResult> {
   return runTransition((supabase) => sendFollowUp(supabase, leadId, input))
+}
+
+// Phase 2: called by the quote builder after saving a draft that was opened
+// from a pipeline lead (/admin/quotes?lead=<id>). Also refreshes the board
+// the builder can't reach via its own revalidate.
+export async function linkQuoteDraftAction(
+  leadId: string,
+  quoteDraftId: string
+): Promise<TransitionResult> {
+  return runTransition((supabase) =>
+    linkQuoteDraft(supabase, leadId, quoteDraftId)
+  )
 }
 
 export async function markLostAction(

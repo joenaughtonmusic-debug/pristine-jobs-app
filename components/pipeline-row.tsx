@@ -37,8 +37,13 @@ import {
   fromDatetimeLocalValue,
   getBoardStageIndex,
   getFollowUpBadge,
+  getTemplateQuoteType,
   parseNotes,
+  suggestQuoteTypeFromService,
+  suggestTemplateForQuoteType,
   toDatetimeLocalValue,
+  type QuoteTemplateOption,
+  type QuoteType,
   type SalesLead,
 } from "@/lib/sales-leads"
 
@@ -61,13 +66,21 @@ type ActionResult = { ok: true } | { error: string }
 // Slice 3: stage actions & advancement. Each stage's primary action advances
 // sales_leads.status through a server action and logs to the activity thread.
 // Advancement is manual (spec §7) — nothing moves on inbound replies.
-export function PipelineRow({ lead }: { lead: SalesLead }) {
+export function PipelineRow({
+  lead,
+  templates = [],
+}: {
+  lead: SalesLead
+  templates?: QuoteTemplateOption[]
+}) {
   const [expanded, setExpanded] = useState(false)
   const [modal, setModal] = useState<ModalKind>(null)
   const [subject, setSubject] = useState("")
   const [body, setBody] = useState("")
   const [visitAt, setVisitAt] = useState("")
   const [lostReason, setLostReason] = useState("")
+  const [quoteType, setQuoteType] = useState<QuoteType>("one_off")
+  const [templateId, setTemplateId] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [pending, startTransition] = useTransition()
 
@@ -76,10 +89,6 @@ export function PipelineRow({ lead }: { lead: SalesLead }) {
   const accepted = Boolean(lead.quote_accepted_at)
   const followUpBadge = getFollowUpBadge(lead)
   const stageColors = BOARD_STAGE_COLORS[BOARD_STAGES[stageIndex].key]
-  // Red "needs action" dot: display-only for now — shown on the four stages
-  // whose card carries a primary action (columns 1–4). Wiring it to real
-  // per-lead conditions (e.g. overdue follow-ups) is a later slice.
-  const needsAction = stageIndex <= 3
 
   const openModal = (kind: Exclude<ModalKind, null>) => {
     setError(null)
@@ -87,6 +96,12 @@ export function PipelineRow({ lead }: { lead: SalesLead }) {
     if (kind === "contact") {
       setSubject(contactSubject(lead))
       setBody(getContactDraft(lead))
+    } else if (kind === "create_quote") {
+      // Suggestion only (Brief 02): pre-pick the type from the service, and a
+      // template only when the type narrows it to exactly one.
+      const suggestedType = suggestQuoteTypeFromService(lead.service_needed)
+      setQuoteType(suggestedType)
+      setTemplateId(suggestTemplateForQuoteType(templates, suggestedType))
     } else if (kind === "follow_up") {
       if (lead.status === "contacted") {
         setSubject("Following up on your enquiry — Pristine Gardens")
@@ -178,10 +193,17 @@ export function PipelineRow({ lead }: { lead: SalesLead }) {
         )
       case "estimate_done":
         return (
-          <ActionButton
-            label="Create + send quote"
-            onClick={() => openModal("create_quote")}
-          />
+          <>
+            {lead.quote_draft_id ? (
+              <p className="mt-2 text-xs font-medium text-green-700">
+                Quote draft linked ✓
+              </p>
+            ) : null}
+            <ActionButton
+              label="Create + send quote"
+              onClick={() => openModal("create_quote")}
+            />
+          </>
         )
       case "quote_sent":
       case "follow_up_due":
@@ -261,13 +283,6 @@ export function PipelineRow({ lead }: { lead: SalesLead }) {
                       </span>
                     ) : null}
                   </span>
-                  {needsAction ? (
-                    <span
-                      className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-red-500"
-                      aria-label="This stage needs action"
-                      title="This stage needs action"
-                    />
-                  ) : null}
                 </button>
 
                 {followUpBadge ? (
@@ -551,30 +566,99 @@ export function PipelineRow({ lead }: { lead: SalesLead }) {
             <DialogHeader>
               <DialogTitle>Create + send quote for {lead.name}</DialogTitle>
             </DialogHeader>
-            <p className="text-sm text-gray-500">
-              Build and send the quote in the{" "}
-              <Link
-                href="/admin/quotes"
-                className="font-medium text-gray-900 underline"
-                target="_blank"
-              >
-                quote builder
-              </Link>
-              , then mark it sent here. A follow-up reminder is set for 2 days
-              from now. (Leads link to quotes automatically in a later phase.)
-            </p>
+            {lead.quote_draft_id ? (
+              <p className="text-sm text-gray-500">
+                A quote draft is already linked to this lead. Finish and send
+                it from the{" "}
+                <Link
+                  href="/admin/quotes"
+                  className="font-medium text-gray-900 underline"
+                  target="_blank"
+                >
+                  quote builder
+                </Link>
+                , then mark it sent here — that sets the follow-up reminder.
+              </p>
+            ) : (
+              <>
+                <p className="text-sm text-gray-500">
+                  Pick the quote type and template (pre-suggested from the
+                  enquiry), then finish and save the quote in the builder — it
+                  links back to this lead automatically. Once it&apos;s sent,
+                  come back and mark it sent here.
+                </p>
+                <label className="grid gap-2 text-sm">
+                  <span className="font-medium text-gray-900">Quote type</span>
+                  <select
+                    className="h-10 rounded-md border border-input bg-white px-3 text-sm"
+                    value={quoteType}
+                    onChange={(event) => {
+                      const nextType = event.target.value as QuoteType
+                      setQuoteType(nextType)
+                      setTemplateId(
+                        suggestTemplateForQuoteType(templates, nextType)
+                      )
+                    }}
+                  >
+                    <option value="maintenance">Maintenance</option>
+                    <option value="one_off">One-off</option>
+                    <option value="landscaping">Landscaping</option>
+                  </select>
+                </label>
+                <label className="grid gap-2 text-sm">
+                  <span className="font-medium text-gray-900">
+                    Quote template
+                  </span>
+                  <select
+                    className="h-10 rounded-md border border-input bg-white px-3 text-sm"
+                    value={templateId}
+                    onChange={(event) => setTemplateId(event.target.value)}
+                  >
+                    <option value="">No template — start blank</option>
+                    {[...templates]
+                      .sort((a, b) =>
+                        Number(getTemplateQuoteType(b) === quoteType) -
+                        Number(getTemplateQuoteType(a) === quoteType)
+                      )
+                      .map((template) => (
+                        <option key={template.id} value={template.id}>
+                          {template.name}
+                          {template.category ? ` — ${template.category}` : ""}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+              </>
+            )}
             {error ? <p className="text-sm text-red-600">{error}</p> : null}
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={closeModal}>
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                disabled={pending}
-                onClick={() => run(() => markQuoteSentAction(lead.id))}
-              >
-                {pending ? "Saving…" : "Mark quote sent"}
-              </Button>
+            <DialogFooter className="gap-2 sm:justify-between">
+              {lead.quote_draft_id ? (
+                <span />
+              ) : (
+                <Button asChild type="button">
+                  <Link
+                    href={`/admin/quotes?lead=${lead.id}&quote_type=${quoteType}${
+                      templateId ? `&template=${templateId}` : ""
+                    }`}
+                    target="_blank"
+                  >
+                    Open quote builder →
+                  </Link>
+                </Button>
+              )}
+              <div className="flex gap-2">
+                <Button type="button" variant="outline" onClick={closeModal}>
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  variant={lead.quote_draft_id ? "default" : "outline"}
+                  disabled={pending}
+                  onClick={() => run(() => markQuoteSentAction(lead.id))}
+                >
+                  {pending ? "Saving…" : "Mark quote sent"}
+                </Button>
+              </div>
             </DialogFooter>
           </DialogContent>
         </Dialog>

@@ -10,16 +10,51 @@ export const dynamic = "force-dynamic"
 type Props = {
   searchParams?: Promise<{
     estimate?: string | string[]
+    lead?: string | string[]
+    quote_type?: string | string[]
+    template?: string | string[]
   }>
 }
+
+function firstParam(value: string | string[] | undefined): string | null {
+  return (Array.isArray(value) ? value[0] : value) || null
+}
+
+const QUOTE_TYPES = ["maintenance", "one_off", "landscaping"] as const
+type QuoteType = (typeof QUOTE_TYPES)[number]
 
 export default async function AdminQuotesPage({ searchParams }: Props) {
   const supabase = await createClient()
   const resolvedSearchParams = await searchParams
-  const estimateParam = resolvedSearchParams?.estimate
-  const selectedEstimateId = Array.isArray(estimateParam)
-    ? estimateParam[0] || null
-    : estimateParam || null
+  const selectedEstimateId = firstParam(resolvedSearchParams?.estimate)
+
+  // Phase 2: the pipeline board's Create-quote modal opens this page with
+  // ?lead=<id> (+ suggested quote_type/template). The builder prefills from
+  // the lead and links the saved draft back via linkQuoteDraftAction.
+  const selectedLeadId = firstParam(resolvedSearchParams?.lead)
+  const quoteTypeParam = firstParam(resolvedSearchParams?.quote_type)
+  const initialQuoteType = QUOTE_TYPES.includes(quoteTypeParam as QuoteType)
+    ? (quoteTypeParam as QuoteType)
+    : null
+  const initialTemplateId = firstParam(resolvedSearchParams?.template)
+
+  let selectedLead = null
+  let leadError: string | null = null
+
+  if (selectedLeadId) {
+    const { data, error } = await supabase
+      .from("sales_leads")
+      .select(
+        "id, name, email, phone, address, suburb, service_needed, message, property_id, quote_draft_id"
+      )
+      .eq("id", selectedLeadId)
+      .maybeSingle()
+
+    selectedLead = data
+    if (error || !data) {
+      leadError = error?.message || "Pipeline lead not found."
+    }
+  }
 
   const { data: properties, error: propertiesError } = await supabase
     .from("properties")
@@ -204,6 +239,9 @@ export default async function AdminQuotesPage({ searchParams }: Props) {
       scheduledJobs={scheduledJobs || []}
       estimates={estimates || []}
       selectedEstimateId={selectedEstimateId}
+      selectedLead={selectedLead}
+      initialQuoteType={initialQuoteType}
+      initialTemplateId={initialTemplateId}
       queryErrors={[
         propertiesError?.message,
         scheduledJobsError?.message,
@@ -211,6 +249,7 @@ export default async function AdminQuotesPage({ searchParams }: Props) {
         templatesError?.message,
         staffError?.message,
         quoteDraftsError?.message,
+        leadError,
       ].flatMap((message) => (message ? [message] : []))}
       templates={templates || []}
       staff={staff || []}

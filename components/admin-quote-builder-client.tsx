@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { createClient } from "@/lib/supabase/client"
+import { linkQuoteDraftAction } from "@/app/(app)/sales-pipeline/actions"
+import { getTemplateQuoteType } from "@/lib/sales-leads"
 
 type PropertyOption = {
   id: string
@@ -62,6 +64,21 @@ type QuoteTemplate = {
   fertiliser_price: number | null
   stump_paste_size: string | null
   stump_paste_price: number | null
+}
+
+// Phase 2: a pipeline lead handed in via /admin/quotes?lead=<id>. The saved
+// draft is linked back to it (sales_leads.quote_draft_id) write-once.
+type LeadOption = {
+  id: string
+  name: string
+  email: string | null
+  phone: string | null
+  address: string | null
+  suburb: string | null
+  service_needed: string | null
+  message: string | null
+  property_id: string | null
+  quote_draft_id: string | null
 }
 
 type QuoteDraftSummary = {
@@ -166,6 +183,9 @@ type Props = {
   scheduledJobs: ScheduledJobOption[]
   estimates: EstimateOption[]
   selectedEstimateId: string | null
+  selectedLead?: LeadOption | null
+  initialQuoteType?: QuoteType | null
+  initialTemplateId?: string | null
   queryErrors: string[]
   templates: QuoteTemplate[]
   staff: StaffMember[]
@@ -332,14 +352,25 @@ function getScheduleActionLabel(value?: string | null) {
   return "Schedule One-off Job"
 }
 
+// Shared with the pipeline board's Create-quote modal so both derive the
+// same quote type from a template (lib/sales-leads.ts).
 function getQuoteTypeFromTemplate(template: QuoteTemplate): QuoteType {
-  if (template.category === "Maintenance" || Boolean(template.frequency)) {
-    return "maintenance"
-  }
+  return getTemplateQuoteType(template)
+}
 
-  if (template.category === "Landscape") return "landscaping"
-
-  return "one_off"
+function getLeadDetailNotes(lead: LeadOption) {
+  return [
+    `Customer: ${lead.name}`,
+    lead.email ? `Email: ${lead.email}` : null,
+    lead.phone ? `Phone: ${lead.phone}` : null,
+    [lead.address, lead.suburb].filter(Boolean).length > 0
+      ? `Address: ${[lead.address, lead.suburb].filter(Boolean).join(", ")}`
+      : null,
+    lead.service_needed ? `Service needed: ${lead.service_needed}` : null,
+    lead.message ? `Enquiry:\n${lead.message}` : null,
+  ]
+    .filter(Boolean)
+    .join("\n\n")
 }
 
 function parseLineItems(value: unknown): LineItem[] {
@@ -454,6 +485,9 @@ export function AdminQuoteBuilderClient({
   scheduledJobs,
   estimates,
   selectedEstimateId,
+  selectedLead = null,
+  initialQuoteType = null,
+  initialTemplateId = null,
   queryErrors,
   templates,
   staff,
@@ -514,6 +548,9 @@ export function AdminQuoteBuilderClient({
     useState(false)
   const [sendingProposal, setSendingProposal] = useState(false)
   const [saving, setSaving] = useState(false)
+  // Set after a save links the handed-in lead, so a second save on the same
+  // page can't attempt a relink (the link is write-once).
+  const [leadLinkedDraftId, setLeadLinkedDraftId] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -522,9 +559,15 @@ export function AdminQuoteBuilderClient({
   const selectedTemplate = templates.find((template) => template.id === templateId) || null
   const jobsForProperty = scheduledJobs.filter((job) => job.property_id === propertyId)
   const selectedCustomerName =
-    selectedProperty?.client_name || selectedEstimate?.customer_name || "No customer selected"
+    selectedProperty?.client_name ||
+    selectedEstimate?.customer_name ||
+    selectedLead?.name ||
+    "No customer selected"
   const selectedCustomerEmail =
-    selectedProperty?.client_email || selectedEstimate?.customer_email || null
+    selectedProperty?.client_email ||
+    selectedEstimate?.customer_email ||
+    selectedLead?.email ||
+    null
   const getPropertyDisplay = (propertyId: string | null) => {
     if (!propertyId) return "No property"
 
@@ -594,6 +637,39 @@ export function AdminQuoteBuilderClient({
 
     handleEstimateChange(estimate.id)
   }, [selectedEstimateId, estimates])
+
+  // Phase 2: prefill from a pipeline lead (?lead=). The template is applied
+  // first (it may set the quote type); an explicit quote_type param wins only
+  // when no template was suggested. The lead's property, if it has one
+  // (add-existing-customer), is preselected so the draft carries property_id.
+  // Lead details go into internal notes at save time (like estimate details).
+  useEffect(() => {
+    if (!selectedLead) return
+
+    // Only prefill ids that exist in the option lists — a stale id in the
+    // URL (or an inactive property) would leave a controlled select showing
+    // nothing while state silently holds a value. The save-time fallback
+    // still carries selectedLead.property_id either way.
+    if (
+      initialTemplateId &&
+      templates.some((template) => template.id === initialTemplateId)
+    ) {
+      handleTemplateChange(initialTemplateId)
+    } else if (initialQuoteType) {
+      setQuoteType(initialQuoteType)
+    }
+
+    setQuoteTitle((current) => current || `Quote for ${selectedLead.name}`)
+
+    if (
+      selectedLead.property_id &&
+      properties.some((property) => property.id === selectedLead.property_id)
+    ) {
+      setPropertyId(selectedLead.property_id)
+    }
+    // Run once for the handed-in lead; the deps it reads are page-load props.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedLead?.id])
 
   useEffect(() => {
     const missingTokenDrafts = quoteDrafts.filter(
@@ -1374,8 +1450,18 @@ Pristine Gardens`)
     setMessage(null)
     setError(null)
 
-    if (!selectedProperty && !selectedEstimate) {
+    if (!selectedProperty && !selectedEstimate && !selectedLead) {
       setError("Select a property or estimate before saving the quote draft.")
+      return
+    }
+
+    const customerName =
+      selectedProperty?.client_name ||
+      selectedEstimate?.customer_name ||
+      selectedLead?.name
+
+    if (!customerName) {
+      setError("No customer name available for this quote draft.")
       return
     }
 
@@ -1405,11 +1491,14 @@ Pristine Gardens`)
     const estimateNotesForDraft = selectedEstimate
       ? getEstimateDetailNotes(selectedEstimate)
       : ""
+    const leadNotesForDraft =
+      selectedLead && !selectedEstimate ? getLeadDetailNotes(selectedLead) : ""
     const internalNotesToSave = [
       internalNotes.trim() || null,
       selectedEstimate && estimateNotesForDraft
         ? `Estimate details:\n${estimateNotesForDraft}`
         : null,
+      leadNotesForDraft ? `Lead details:\n${leadNotesForDraft}` : null,
     ]
       .filter(Boolean)
       .join("\n\n")
@@ -1419,12 +1508,19 @@ Pristine Gardens`)
     const { data: savedDraft, error: saveError } = await supabase
       .from("quote_drafts")
       .insert({
-      property_id: selectedProperty?.id || null,
+      // A lead that already knows its property (add-existing-customer)
+      // carries it onto the draft even though the property select is the
+      // usual source — don't make the user re-pick a property we know.
+      property_id: selectedProperty?.id || selectedLead?.property_id || null,
       estimate_id: selectedEstimate?.id || null,
       scheduled_job_id: scheduledJobId || null,
       quote_template_id: templateId || null,
-      customer_name: selectedProperty?.client_name || selectedEstimate!.customer_name,
-      customer_email: selectedProperty?.client_email || selectedEstimate?.customer_email || null,
+      customer_name: customerName,
+      customer_email:
+        selectedProperty?.client_email ||
+        selectedEstimate?.customer_email ||
+        selectedLead?.email ||
+        null,
       quote_title: quoteTitle.trim(),
       quote_type: quoteType,
       customer_scope: customerScope.trim() || null,
@@ -1455,9 +1551,11 @@ Pristine Gardens`)
       .select("id")
       .single()
 
-    setSaving(false)
-
+    // saving stays true until the estimate/lead link steps finish — a Save
+    // button that re-enables mid-flight is how a lead ends up with two
+    // drafts and only one linked.
     if (saveError) {
+      setSaving(false)
       setError(saveError.message)
       return
     }
@@ -1473,13 +1571,46 @@ Pristine Gardens`)
         .eq("id", selectedEstimate.id)
 
       if (estimateError) {
+        setSaving(false)
         setError(estimateError.message)
         return
       }
     }
 
+    // Phase 2: link the draft back to the pipeline lead (write-once — skips
+    // when the lead already had a draft, or when this page already linked).
+    let linkedThisSave = false
+
+    if (
+      selectedLead &&
+      savedDraft?.id &&
+      !selectedLead.quote_draft_id &&
+      !leadLinkedDraftId
+    ) {
+      const linkResult = await linkQuoteDraftAction(selectedLead.id, savedDraft.id)
+
+      if ("error" in linkResult) {
+        // The draft itself saved — show it in the list so the failure can't
+        // hide a real row.
+        await loadQuoteDrafts()
+        setSaving(false)
+        setError(
+          `Quote draft saved, but linking it to the pipeline lead failed: ${linkResult.error}`
+        )
+        return
+      }
+
+      setLeadLinkedDraftId(savedDraft.id)
+      linkedThisSave = true
+    }
+
     await loadQuoteDrafts()
-    setMessage("Quote draft saved.")
+    setSaving(false)
+    setMessage(
+      linkedThisSave
+        ? "Quote draft saved and linked to the pipeline lead."
+        : "Quote draft saved."
+    )
   }
 
   const renderFollowUpGroup = (
@@ -1574,6 +1705,23 @@ Pristine Gardens`)
           {queryErrors.map((queryError) => (
             <div key={queryError}>{queryError}</div>
           ))}
+        </div>
+      )}
+
+      {selectedLead && (
+        <div className="mb-4 rounded-lg border border-green-200 bg-green-50 p-4 text-sm text-green-900">
+          <div className="font-medium">
+            Creating quote for pipeline lead: {selectedLead.name}
+            {selectedLead.suburb ? ` — ${selectedLead.suburb}` : ""}
+          </div>
+          {selectedLead.service_needed && (
+            <div className="mt-1">{selectedLead.service_needed}</div>
+          )}
+          <div className="mt-1 text-xs text-green-800">
+            {selectedLead.quote_draft_id || leadLinkedDraftId
+              ? "This lead already has a linked quote draft — saving another will NOT relink it."
+              : "Saving the draft links it back to this lead on the pipeline board automatically."}
+          </div>
         </div>
       )}
 

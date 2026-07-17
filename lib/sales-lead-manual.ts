@@ -39,9 +39,9 @@ function trim(value: string | null | undefined) {
 }
 
 // Slice 6: existing/repeat customers enter at Visit booked, skipping the
-// New lead → Contacted courtship (Phase1 spec §6). The property linkage is
-// recorded in the activity note only — sales_leads.property_id arrives in
-// Phase 2.
+// New lead → Contacted courtship (Phase1 spec §6). Phase 2 links the lead to
+// its property via sales_leads.property_id (migration 043); the activity note
+// keeps the human-readable record.
 export type ExistingCustomerProperty = {
   id: string
   client_name: string | null
@@ -62,6 +62,7 @@ export type ExistingCustomerLeadRow = Omit<ManualLeadRow, "status"> & {
   address: string | null
   status: "visit_booked"
   site_visit_at: string | null
+  property_id: string
 }
 
 export function buildExistingCustomerLeadRow(
@@ -92,6 +93,7 @@ export function buildExistingCustomerLeadRow(
       source: "existing_customer",
       status: "visit_booked",
       site_visit_at: input.site_visit_at || null,
+      property_id: property.id,
       notes: [
         createActivity(
           "note",
