@@ -191,7 +191,21 @@ const allowancePriceDefaults = {
   stumpPaste: { none: 0, small: 7, large: 19 },
 }
 
-const maintenanceCustomerScope = "On going maintenance"
+// Slice 2: the standard maintenance scope, pre-filled (editable) whenever
+// Maintenance is selected. The visit list lives HERE, once — the line-item
+// description below stays short so the proposal doesn't show it twice.
+const maintenanceCustomerScope = `Ongoing garden maintenance to keep the garden tidy and healthy throughout the year.
+
+Each visit can include, but isn't limited to:
+• Weed control
+• Shrub and hedge trimming
+• Pruning
+• Removal of self-seeded plants
+• Feeding and spraying where required
+• General garden tidy
+• Blow down of work areas
+
+All greenwaste removed. Greenwaste volumes vary visit to visit and are charged accordingly.`
 
 // The one sentence the app owns in the maintenance line description
 // (greenwaste auto-range). Matched loosely so a re-save replaces the previous
@@ -212,16 +226,6 @@ function buildGreenwasteRangeSentence(range: {
 }
 
 const maintenanceLineItemDescription = `Ongoing garden maintenance.
-
-Main focus on weed control, trimming, pruning and keeping the garden tidy throughout the year.
-
-Each visit may include:
-• Weed control
-• Shrub trimming
-• Removal of self-seeded plants
-• Feeding and spraying where required
-• General garden tidy
-• Blow down of work areas
 
 All greenwaste removed.`
 
@@ -807,7 +811,9 @@ export function AdminQuoteBuilderClient({
     ) {
       handleTemplateChange(initialTemplateId)
     } else if (initialQuoteType) {
-      setQuoteType(initialQuoteType)
+      // Through the handler (not setQuoteType) so the type-driven content —
+      // maintenance scope boilerplate, blank line item — arrives too.
+      handleQuoteTypeChange(initialQuoteType)
     }
 
     setQuoteTitle((current) => current || `Quote for ${selectedLead.name}`)
@@ -966,20 +972,53 @@ export function AdminQuoteBuilderClient({
   // the recurring pricing machinery, so leaving maintenance must drop the
   // frequency or the hidden inputs would keep pricing the quote.
   const handleQuoteTypeChange = (nextType: QuoteType) => {
+    if (nextType === quoteType) return
+
     setQuoteType(nextType)
 
-    if (nextType !== "maintenance") {
-      // If the maintenance pricing was live, the auto-effect has already
-      // overwritten line 1 with a maintenance-derived price — zero it so a
-      // stale figure can't ship as a one-off/landscaping total.
-      if (hasMaintenancePricing) {
-        setLineItems((items) =>
-          items.length > 0
-            ? [{ ...items[0], unit_price: 0 }, ...items.slice(1)]
-            : items
-        )
-      }
+    // Slice 2 (smart clear, Joe's call 19 Jul): type drives content, but
+    // only for content the app put there — anything hand-edited stays.
+    if (
+      selectedTemplate &&
+      getQuoteTypeFromTemplate(selectedTemplate) !== nextType
+    ) {
+      setTemplateId("")
+    }
 
+    if (!customerScopeEdited) {
+      setCustomerScope(
+        nextType === "maintenance" ? maintenanceCustomerScope : ""
+      )
+    }
+
+    if (!termsEdited) {
+      setTermsConditions("")
+    }
+
+    if (!lineItemsEdited) {
+      // Template-sourced line items reset for the new type — this also
+      // drops maintenance line wording and any greenwaste range sentence.
+      setLineItems([
+        {
+          description:
+            nextType === "maintenance" ? maintenanceLineItemDescription : "Labour",
+          quantity: 1,
+          unit_price: 0,
+          category: "labour",
+        },
+      ])
+    } else if (nextType !== "maintenance" && hasMaintenancePricing) {
+      // Hand-edited line items stay, but the auto-effect has overwritten
+      // line 1 with a maintenance-derived price — zero it so a stale figure
+      // can't ship as a one-off/landscaping total (slice 1).
+      setLineItems((items) =>
+        items.length > 0
+          ? [{ ...items[0], unit_price: 0 }, ...items.slice(1)]
+          : items
+      )
+    }
+
+    if (nextType !== "maintenance") {
       setFrequency("")
     }
   }
@@ -2501,12 +2540,19 @@ Pristine Gardens`)
                 onChange={(event) => handleTemplateChange(event.target.value)}
               >
                 <option value="">No template</option>
-                {templates.map((template) => (
-                  <option key={template.id} value={template.id}>
-                    {template.name}
-                    {template.category ? ` - ${template.category}` : ""}
-                  </option>
-                ))}
+                {/* Slice 2: only templates for the selected type — a
+                    maintenance template has no business on a one-off. */}
+                {templates
+                  .filter(
+                    (template) =>
+                      getQuoteTypeFromTemplate(template) === quoteType
+                  )
+                  .map((template) => (
+                    <option key={template.id} value={template.id}>
+                      {template.name}
+                      {template.category ? ` - ${template.category}` : ""}
+                    </option>
+                  ))}
               </select>
             </div>
 
