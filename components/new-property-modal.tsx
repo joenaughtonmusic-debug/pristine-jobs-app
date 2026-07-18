@@ -128,6 +128,16 @@ export function NewPropertyModal({ open, onOpenChange }: Props) {
             <option value="subscription">Subscription</option>
           </select>
 
+          {billingType === "subscription" && (
+            <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              Subscription billing is manual: the app never creates the
+              recurring invoice, and visits on subscription jobs are not
+              invoiced per visit. Set up the repeating invoice in Xero
+              (Business → Invoices → Repeating) or this customer will not be
+              billed.
+            </p>
+          )}
+
           <input className="h-11 w-full rounded-md border px-3" placeholder="Xero contact ID optional" value={xeroContactId} onChange={(e) => setXeroContactId(e.target.value)} />
 
           <input className="h-11 w-full rounded-md border px-3" type="number" step="0.25" placeholder="Default duration e.g. 2.5" value={defaultDuration} onChange={(e) => setDefaultDuration(e.target.value)} />

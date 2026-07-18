@@ -70,6 +70,7 @@ type QuoteDraft = {
   gst: number | string | null
   total: number | string | null
   monthly_equivalent: number | string | null
+  per_visit_price: number | string | null
   frequency: string | null
   created_at: string | null
   proposal_sent_at: string | null
@@ -81,10 +82,12 @@ type QuoteDraft = {
     | {
         address_line_1: string | null
         suburb: string | null
+        billing_type: string | null
       }
     | {
         address_line_1: string | null
         suburb: string | null
+        billing_type: string | null
       }[]
     | null
 }
@@ -268,6 +271,7 @@ const QUOTE_BASE_COLUMNS = `
   gst,
   total,
   monthly_equivalent,
+  per_visit_price,
   frequency,
   created_at,
   proposal_sent_at,
@@ -277,7 +281,8 @@ const QUOTE_BASE_COLUMNS = `
   quote_declined_at,
   properties (
     address_line_1,
-    suburb
+    suburb,
+    billing_type
   )
 `
 
@@ -329,6 +334,10 @@ export default async function PublicQuotePage({ params, searchParams }: Props) {
   const proposalDate = quoteDraft.proposal_sent_at || quoteDraft.created_at
   const proposalCopy = getProposalCopy(quoteDraft.quote_type)
   const isMaintenance = quoteDraft.quote_type === "maintenance"
+  // Billing presentation follows the property's billing_type. Quotes without
+  // a property yet (new customers) present as charge_up — the default since
+  // 18 Jul 2026; subscription is the explicit exception.
+  const isSubscription = property?.billing_type === "subscription"
   const galleryPhotos = parseQuotePhotos(quoteDraft.photos)
 
   return (
@@ -433,16 +442,29 @@ export default async function PublicQuotePage({ params, searchParams }: Props) {
                 </div>
               </div>
             )}
-            {isMaintenance && (
-              <div className="rounded-lg bg-white p-4">
-                <div className="text-xs font-medium uppercase text-stone-500">
-                  Monthly Equivalent
+            {isMaintenance &&
+              (isSubscription ? (
+                <div className="rounded-lg bg-white p-4">
+                  <div className="text-xs font-medium uppercase text-stone-500">
+                    Monthly Equivalent
+                  </div>
+                  <div className="mt-2 text-xl font-semibold text-[#123d2a]">
+                    {money(quoteDraft.monthly_equivalent || quoteDraft.total)}
+                  </div>
                 </div>
-                <div className="mt-2 text-xl font-semibold text-[#123d2a]">
-                  {money(quoteDraft.monthly_equivalent || quoteDraft.total)}
+              ) : (
+                <div className="rounded-lg bg-white p-4">
+                  <div className="text-xs font-medium uppercase text-stone-500">
+                    Price Per Visit
+                  </div>
+                  <div className="mt-2 text-xl font-semibold text-[#123d2a]">
+                    {money(quoteDraft.per_visit_price || quoteDraft.total)}
+                  </div>
+                  <div className="mt-1 text-xs text-stone-500">
+                    Invoiced after each visit
+                  </div>
                 </div>
-              </div>
-            )}
+              ))}
             <div className="rounded-lg bg-white p-4">
               <div className="text-xs font-medium uppercase text-stone-500">
                 Total Investment

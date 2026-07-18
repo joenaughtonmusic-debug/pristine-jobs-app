@@ -2041,6 +2041,15 @@ const handleSendClientEmail = async () => {
                   <option value="non_billable">Non Billable</option>
                 </select>
 
+                {invoiceMethod === "subscription" && (
+                  <p className="mt-1.5 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                    Subscription is manual billing: this job&apos;s visits will
+                    NOT be invoiced per visit, and the app never creates the
+                    recurring invoice. Make sure a repeating invoice exists in
+                    Xero for this customer — otherwise nothing bills.
+                  </p>
+                )}
+
                 {selectedProperty &&
                 invoiceMethod &&
                 getDefaultInvoiceMethod(selectedProperty) &&
