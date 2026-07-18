@@ -156,7 +156,7 @@ function templateToForm(template: QuoteTemplate): TemplateForm {
     terms_conditions: template.terms_conditions || "",
     frequency: template.frequency || "",
     labour_hours: Number(template.labour_hours || 0),
-    labour_rate: Number(template.labour_rate || 90),
+    labour_rate: Number(template.labour_rate || 80),
     greenwaste_bags: Number(template.greenwaste_bags || 0),
     greenwaste_rate: Number(template.greenwaste_rate || 26.5),
     sprays_size: template.sprays_size || "small",
