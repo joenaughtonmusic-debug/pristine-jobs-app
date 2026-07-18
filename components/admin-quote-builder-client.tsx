@@ -10,6 +10,14 @@ import {
 } from "@/app/(app)/sales-pipeline/actions"
 import { getTemplateQuoteType } from "@/lib/sales-leads"
 import { getPublicQuoteUrl } from "@/lib/public-quote-url"
+import {
+  QUOTE_LINE_CATEGORIES,
+  QUOTE_LINE_TAX_TYPE,
+  getQuoteLineCategory,
+  inferQuoteLineCategory,
+  type QuoteLineCategoryKey,
+} from "@/lib/quote-line-categories"
+import { buildQuoteExportText } from "@/lib/quote-export"
 
 type PropertyOption = {
   id: string
@@ -101,7 +109,12 @@ type QuoteDraftSummary = {
   customer_scope: string | null
   first_scheduled_job_id: string | null
   total: number | null
+  subtotal?: number | string | null
+  gst?: number | string | null
   monthly_equivalent: number | null
+  hero_image_url?: string | null
+  photos?: unknown
+  line_items?: unknown
   created_at: string
   xero_quote_number: string | null
   xero_quote_status: string | null
@@ -133,6 +146,17 @@ type LineItem = {
   description: string
   quantity: number
   unit_price: number
+  // Brief 04: one of the owner's seven categories — supplies the Xero
+  // item_code/account_code at save time (lib/quote-line-categories).
+  category: QuoteLineCategoryKey
+}
+
+// Brief 04 Part 3a: { url, caption, sort_order } entries in
+// quote_drafts.photos.
+type QuotePhoto = {
+  url: string
+  caption: string
+  sort_order: number
 }
 
 type AllowanceType = "sprays" | "fertiliser" | "stumpPaste"
@@ -455,8 +479,32 @@ function parseLineItems(value: unknown): LineItem[] {
         typeof record.description === "string" ? record.description : "",
       quantity: Number(record.quantity || 1),
       unit_price: Number(record.unit_price || 0),
+      category: inferQuoteLineCategory({
+        category: typeof record.category === "string" ? record.category : null,
+        account_code:
+          typeof record.account_code === "string" ? record.account_code : null,
+        item_code:
+          typeof record.item_code === "string" ? record.item_code : null,
+      }),
     }
   })
+}
+
+function parseQuotePhotos(value: unknown): QuotePhoto[] {
+  if (!Array.isArray(value)) return []
+
+  return value
+    .filter(
+      (item): item is Record<string, unknown> =>
+        Boolean(item) && typeof item === "object"
+    )
+    .map((item, index) => ({
+      url: typeof item.url === "string" ? item.url : "",
+      caption: typeof item.caption === "string" ? item.caption : "",
+      sort_order: Number(item.sort_order ?? index + 1),
+    }))
+    .filter((photo) => photo.url)
+    .sort((a, b) => a.sort_order - b.sort_order)
 }
 
 function generateAcceptToken() {
@@ -583,7 +631,7 @@ export function AdminQuoteBuilderClient({
   const [termsEdited, setTermsEdited] = useState(false)
   const [lineItemsEdited, setLineItemsEdited] = useState(false)
   const [lineItems, setLineItems] = useState<LineItem[]>([
-    { description: "Labour", quantity: 1, unit_price: 0 },
+    { description: "Labour", quantity: 1, unit_price: 0, category: "labour" },
   ])
   const [frequency, setFrequency] = useState("")
   const [labourHours, setLabourHours] = useState(0)
@@ -623,6 +671,14 @@ export function AdminQuoteBuilderClient({
   const [creatingMaintenanceSchedule, setCreatingMaintenanceSchedule] =
     useState(false)
   const [sendingProposal, setSendingProposal] = useState(false)
+  // Brief 04 Part 3a: per-quote hero + captioned gallery, edited in a modal
+  // on the draft row (photos are presentation, not priced content, so they
+  // stay editable after the draft is saved).
+  const [photosDraft, setPhotosDraft] = useState<QuoteDraftSummary | null>(null)
+  const [heroImageUrl, setHeroImageUrl] = useState("")
+  const [galleryPhotos, setGalleryPhotos] = useState<QuotePhoto[]>([])
+  const [uploadingQuotePhoto, setUploadingQuotePhoto] = useState(false)
+  const [savingPhotos, setSavingPhotos] = useState(false)
   const [saving, setSaving] = useState(false)
   // Set after a save links the handed-in lead, so a second save on the same
   // page can't attempt a relink (the link is write-once).
@@ -836,9 +892,17 @@ export function AdminQuoteBuilderClient({
     if (!hasMaintenancePricing) return
 
     setLineItems((items) => {
-      const [firstItem, ...rest] = items.length > 0
-        ? items
-        : [{ description: "Maintenance subscription", quantity: 1, unit_price: 0 }]
+      const [firstItem, ...rest] =
+        items.length > 0
+          ? items
+          : [
+              {
+                description: "Maintenance subscription",
+                quantity: 1,
+                unit_price: 0,
+                category: "labour" as const,
+              },
+            ]
 
       return [
         {
@@ -918,6 +982,7 @@ export function AdminQuoteBuilderClient({
           description: maintenanceLineItemDescription,
           quantity: 1,
           unit_price: Number(getTemplateMonthlyEquivalent(template).toFixed(2)),
+          category: "labour",
         },
       ])
       setLineItemsEdited(false)
@@ -938,7 +1003,14 @@ export function AdminQuoteBuilderClient({
       setLineItems(
         templateItems.length > 0
           ? templateItems
-          : [{ description: "Labour", quantity: 1, unit_price: 0 }]
+          : [
+              {
+                description: "Labour",
+                quantity: 1,
+                unit_price: 0,
+                category: "labour",
+              },
+            ]
       )
     }
 
@@ -979,7 +1051,7 @@ export function AdminQuoteBuilderClient({
         return {
           ...item,
           [field]:
-            field === "description"
+            field === "description" || field === "category"
               ? value
               : Number(value || 0),
         }
@@ -991,7 +1063,7 @@ export function AdminQuoteBuilderClient({
     setLineItemsEdited(true)
     setLineItems((items) => [
       ...items,
-      { description: "", quantity: 1, unit_price: 0 },
+      { description: "", quantity: 1, unit_price: 0, category: "labour" },
     ])
   }
 
@@ -1023,6 +1095,11 @@ export function AdminQuoteBuilderClient({
         xero_quote_status,
         xero_quote_error,
         public_accept_token,
+        subtotal,
+        gst,
+        hero_image_url,
+        photos,
+        line_items,
         quote_sent_at,
         proposal_sent_note,
         proposal_status,
@@ -1162,6 +1239,156 @@ export function AdminQuoteBuilderClient({
           : "Could not open the preview."
       )
     }
+  }
+
+  // Brief 04 Part 3b: the boring quote as clean text, for pasting anywhere.
+  const copyQuoteDetails = async (draft: QuoteDraftSummary) => {
+    setMessage(null)
+    setError(null)
+
+    try {
+      await navigator.clipboard.writeText(buildQuoteExportText(draft))
+      setMessage("Quote details copied to the clipboard.")
+    } catch (copyError) {
+      setError(
+        copyError instanceof Error
+          ? copyError.message
+          : "Could not copy the quote details."
+      )
+    }
+  }
+
+  // --- Brief 04 Part 3a: quote photos ---------------------------------------
+
+  const openPhotosModal = (draft: QuoteDraftSummary) => {
+    setMessage(null)
+    setError(null)
+    setPhotosDraft(draft)
+    setHeroImageUrl(draft.hero_image_url || "")
+    setGalleryPhotos(parseQuotePhotos(draft.photos))
+  }
+
+  // Same bucket and pattern as job photos (components/job-detail.tsx), under
+  // a quote-photos/ prefix — deliberately not a new bucket.
+  const uploadQuotePhotoFile = async (draftId: string, file: File) => {
+    const safeName = file.name
+      .toLowerCase()
+      .replace(/[^a-z0-9._-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+    const objectPath = `quote-photos/${draftId}/${Date.now()}-${
+      safeName || "quote-photo"
+    }`
+
+    const { error: uploadError } = await supabase.storage
+      .from("job-photos")
+      .upload(objectPath, file, { cacheControl: "3600", upsert: false })
+
+    if (uploadError) {
+      throw new Error(uploadError.message)
+    }
+
+    const { data: publicUrlData } = supabase.storage
+      .from("job-photos")
+      .getPublicUrl(objectPath)
+
+    if (!publicUrlData.publicUrl) {
+      throw new Error("Could not get a public URL for the uploaded photo.")
+    }
+
+    return publicUrlData.publicUrl
+  }
+
+  const handleHeroFileChange = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = event.target.files?.[0]
+    event.target.value = ""
+    if (!file || !photosDraft) return
+
+    setUploadingQuotePhoto(true)
+    setError(null)
+
+    try {
+      setHeroImageUrl(await uploadQuotePhotoFile(photosDraft.id, file))
+    } catch (uploadError) {
+      setError(
+        uploadError instanceof Error
+          ? uploadError.message
+          : "Hero image upload failed."
+      )
+    } finally {
+      setUploadingQuotePhoto(false)
+    }
+  }
+
+  const handleGalleryFilesChange = async (
+    event: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const files = [...(event.target.files || [])]
+    event.target.value = ""
+    if (files.length === 0 || !photosDraft) return
+
+    setUploadingQuotePhoto(true)
+    setError(null)
+
+    try {
+      for (const file of files) {
+        const url = await uploadQuotePhotoFile(photosDraft.id, file)
+        setGalleryPhotos((photos) => [
+          ...photos,
+          { url, caption: "", sort_order: photos.length + 1 },
+        ])
+      }
+    } catch (uploadError) {
+      setError(
+        uploadError instanceof Error
+          ? uploadError.message
+          : "Photo upload failed."
+      )
+    } finally {
+      setUploadingQuotePhoto(false)
+    }
+  }
+
+  const moveGalleryPhoto = (index: number, direction: -1 | 1) => {
+    setGalleryPhotos((photos) => {
+      const target = index + direction
+      if (target < 0 || target >= photos.length) return photos
+      const next = [...photos]
+      ;[next[index], next[target]] = [next[target], next[index]]
+      return next
+    })
+  }
+
+  const saveQuotePhotos = async () => {
+    if (!photosDraft) return
+
+    setSavingPhotos(true)
+    setError(null)
+
+    const { error: updateError } = await supabase
+      .from("quote_drafts")
+      .update({
+        hero_image_url: heroImageUrl || null,
+        photos: galleryPhotos.map((photo, index) => ({
+          url: photo.url,
+          caption: photo.caption.trim(),
+          sort_order: index + 1,
+        })),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", photosDraft.id)
+
+    setSavingPhotos(false)
+
+    if (updateError) {
+      setError(updateError.message)
+      return
+    }
+
+    setPhotosDraft(null)
+    await loadQuoteDrafts()
+    setMessage("Quote photos saved.")
   }
 
   const openSendProposalModal = async (draft: QuoteDraftSummary) => {
@@ -1726,9 +1953,25 @@ Pristine Gardens`)
       newPropertyId = newProperty.id
     }
 
+    // Brief 04: every saved line carries its Xero identity from the
+    // category (item_code / account_code / OUTPUT2 / position), so the
+    // invoice view can emit it unchanged for quoted jobs.
+    const withXeroFields = (item: LineItem, index: number) => {
+      const category = getQuoteLineCategory(item.category)
+
+      return {
+        ...item,
+        category: category.key,
+        item_code: category.item_code,
+        account_code: category.account_code,
+        tax_type: QUOTE_LINE_TAX_TYPE,
+        sort_order: index + 1,
+      }
+    }
+
     const lineItemsToSave = hasMaintenancePricing
       ? lineItems.map((item, index) => ({
-          ...item,
+          ...withXeroFields(item, index),
           quantity: index === 0 ? 1 : item.quantity,
           unit_price:
             index === 0 ? Number(monthlyEquivalent.toFixed(2)) : item.unit_price,
@@ -1737,8 +1980,8 @@ Pristine Gardens`)
               ? Number(monthlyEquivalent.toFixed(2))
               : Number(item.quantity || 0) * Number(item.unit_price || 0),
         }))
-      : lineItems.map((item) => ({
-          ...item,
+      : lineItems.map((item, index) => ({
+          ...withXeroFields(item, index),
           line_total: Number(item.quantity || 0) * Number(item.unit_price || 0),
         }))
 
@@ -2172,7 +2415,6 @@ Pristine Gardens`)
                 onChange={(event) => setStatus(event.target.value)}
               >
                 <option value="draft">Draft</option>
-                <option value="ready_for_xero">Ready for Xero</option>
                 <option value="xero_created">Xero Created</option>
                 <option value="sent">Sent</option>
                 <option value="accepted">Accepted</option>
@@ -2437,15 +2679,36 @@ Pristine Gardens`)
                 return (
                   <div
                     key={index}
-                    className="grid gap-3 rounded-lg border p-3 md:grid-cols-[1fr_100px_130px_120px_auto]"
+                    className="grid gap-3 rounded-lg border p-3 md:grid-cols-[150px_1fr_90px_120px_110px_auto]"
                   >
-                    <input
-                      className="h-10 rounded-md border px-3"
+                    <select
+                      className="h-10 rounded-md border bg-white px-2 text-sm"
+                      value={item.category}
+                      onChange={(event) =>
+                        updateLineItem(index, "category", event.target.value)
+                      }
+                    >
+                      {QUOTE_LINE_CATEGORIES.map((category) => (
+                        <option key={category.key} value={category.key}>
+                          {category.label}
+                        </option>
+                      ))}
+                    </select>
+
+                    {/* Prose lives in the description (Brief 04) — the
+                        proposal renders it with paragraphs preserved, so
+                        writing it needs more than one line too. */}
+                    <textarea
+                      className="min-h-[40px] rounded-md border px-3 py-2"
+                      rows={Math.min(
+                        8,
+                        Math.max(1, item.description.split("\n").length)
+                      )}
                       value={item.description}
                       onChange={(event) =>
                         updateLineItem(index, "description", event.target.value)
                       }
-                      placeholder="Description"
+                      placeholder="Description — scope prose goes here and shows on the proposal"
                     />
 
                     <input
@@ -3094,6 +3357,22 @@ Pristine Gardens`)
                       : "Copy Proposal Link"}
                   </button>
 
+                  <button
+                    type="button"
+                    onClick={() => openPhotosModal(draft)}
+                    className="h-10 rounded-md border px-3 text-sm font-medium hover:bg-gray-50"
+                  >
+                    Photos
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => copyQuoteDetails(draft)}
+                    className="h-10 rounded-md border px-3 text-sm font-medium hover:bg-gray-50"
+                  >
+                    Copy Quote Details
+                  </button>
+
                   {/* Brief 03 (owner decision): Create Xero Quote is hidden —
                       quotes originate in the app now. prepareXeroQuote stays
                       in the code in case it's ever wanted back. */}
@@ -3300,6 +3579,158 @@ Pristine Gardens`)
                     : getScheduleActionLabel(scheduleDraft.quote_type)}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {photosDraft && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-5 shadow-xl">
+            <h2 className="text-xl font-semibold">
+              Photos — {photosDraft.quote_title}
+            </h2>
+
+            <div className="mt-4">
+              <div className="text-sm font-medium">Hero image</div>
+              <p className="text-xs text-gray-500">
+                Shown at the top of the proposal. Leave empty to use the
+                standard garden photo.
+              </p>
+              {heroImageUrl ? (
+                <div className="mt-2">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={heroImageUrl}
+                    alt="Proposal hero"
+                    className="h-36 w-full rounded-md object-cover"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setHeroImageUrl("")}
+                    className="mt-2 text-xs text-gray-600 underline"
+                  >
+                    Remove — use the default
+                  </button>
+                </div>
+              ) : (
+                <p className="mt-2 text-xs text-gray-500">
+                  Using the default hero.
+                </p>
+              )}
+              <input
+                type="file"
+                accept="image/*"
+                disabled={uploadingQuotePhoto}
+                onChange={handleHeroFileChange}
+                className="mt-2 block text-sm"
+              />
+            </div>
+
+            <div className="mt-6">
+              <div className="text-sm font-medium">Gallery</div>
+              <p className="text-xs text-gray-500">
+                Optional photos with captions, shown after the scope on the
+                proposal. Any quote can use them.
+              </p>
+
+              {galleryPhotos.length > 0 ? (
+                <div className="mt-3 space-y-3">
+                  {galleryPhotos.map((photo, index) => (
+                    <div
+                      key={`${photo.url}-${index}`}
+                      className="flex items-start gap-3 rounded-md border p-2"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={photo.url}
+                        alt={photo.caption || `Photo ${index + 1}`}
+                        className="h-16 w-24 shrink-0 rounded object-cover"
+                      />
+                      <input
+                        className="h-10 flex-1 rounded-md border px-3 text-sm"
+                        placeholder="Caption (optional)"
+                        value={photo.caption}
+                        onChange={(event) =>
+                          setGalleryPhotos((photos) =>
+                            photos.map((p, i) =>
+                              i === index
+                                ? { ...p, caption: event.target.value }
+                                : p
+                            )
+                          )
+                        }
+                      />
+                      <div className="flex flex-col gap-1">
+                        <button
+                          type="button"
+                          onClick={() => moveGalleryPhoto(index, -1)}
+                          className="rounded border px-2 text-xs"
+                          aria-label="Move photo up"
+                        >
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => moveGalleryPhoto(index, 1)}
+                          className="rounded border px-2 text-xs"
+                          aria-label="Move photo down"
+                        >
+                          ↓
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setGalleryPhotos((photos) =>
+                            photos.filter((_, i) => i !== index)
+                          )
+                        }
+                        className="rounded-md border px-2 py-1 text-xs text-red-600"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-2 text-xs text-gray-500">No photos yet.</p>
+              )}
+
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                disabled={uploadingQuotePhoto}
+                onChange={handleGalleryFilesChange}
+                className="mt-3 block text-sm"
+              />
+              {uploadingQuotePhoto && (
+                <p className="mt-1 text-xs text-gray-500">Uploading…</p>
+              )}
+            </div>
+
+            {error && (
+              <p className="mt-3 text-sm text-red-600">{error}</p>
+            )}
+
+            <div className="mt-5 flex gap-3">
+              <button
+                type="button"
+                onClick={() => setPhotosDraft(null)}
+                disabled={savingPhotos}
+                className="h-11 flex-1 rounded-md border"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={saveQuotePhotos}
+                disabled={savingPhotos || uploadingQuotePhoto}
+                className="h-11 flex-1 rounded-md bg-emerald-700 font-medium text-white disabled:bg-gray-300"
+              >
+                {savingPhotos ? "Saving…" : "Save Photos"}
+              </button>
             </div>
           </div>
         </div>

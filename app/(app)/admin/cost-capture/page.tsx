@@ -6,7 +6,10 @@ import {
   getCostCaptureIssueLabels,
   getCostCaptureStatus,
 } from "@/lib/cost-capture"
-import { isQuotedJob, readyInvoiceStatusForVisit } from "@/lib/quoted-invoicing"
+import {
+  isLegacyQuotedJob,
+  readyInvoiceStatusForVisit,
+} from "@/lib/quoted-invoicing"
 
 export const dynamic = "force-dynamic"
 const DEFAULT_COST_CAPTURE_START_DATE = "2026-06-10"
@@ -267,10 +270,13 @@ async function addVisitMaterialCost(formData: FormData) {
 
   if (!visitId || !description || quantity <= 0) return
 
-  // Quoted jobs are invoiced once from the quote, never per visit — exclude any
-  // extra charges too so they can't leak into a per-visit invoice.
-  const quoted = await isQuotedJob(supabase, scheduledJobId)
-  const invoiceStatus = quoted
+  // Brief 04: extras on an app-quoted job are VARIATIONS — genuinely in
+  // addition to the agreed price — so they invoice per-visit like any other
+  // extra (the view labels them and posts to materials). Only legacy quoted
+  // jobs (hand-invoiced from Xero, no app quote) keep the old exclusion:
+  // their visits never fire Make, so a 'ready' extra would just dangle.
+  const legacyQuoted = await isLegacyQuotedJob(supabase, scheduledJobId)
+  const invoiceStatus = legacyQuoted
     ? "excluded"
     : billableStatus === "needs_review"
       ? "review"

@@ -61,6 +61,8 @@ type QuoteDraft = {
   customer_email: string | null
   quote_title: string
   quote_type: string | null
+  hero_image_url: string | null
+  photos: unknown
   customer_scope: string | null
   terms_conditions: string | null
   line_items: unknown
@@ -132,6 +134,49 @@ function firstOrValue<T>(value: T | T[] | null | undefined) {
 
 function parseLineItems(value: unknown): LineItem[] {
   return Array.isArray(value) ? (value as LineItem[]) : []
+}
+
+type QuotePhoto = { url: string; caption: string }
+
+function parseQuotePhotos(value: unknown): QuotePhoto[] {
+  if (!Array.isArray(value)) return []
+
+  return value
+    .filter(
+      (item): item is Record<string, unknown> =>
+        Boolean(item) && typeof item === "object" && typeof item.url === "string"
+    )
+    .sort((a, b) => Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0))
+    .map((item) => ({
+      url: item.url as string,
+      caption: typeof item.caption === "string" ? item.caption : "",
+    }))
+}
+
+// Brief 04 Part 3: the three quote types share one structure and one
+// renderer — the templates differ in wording only. Maintenance copy is
+// unchanged (the owner approves it as is).
+const PROPOSAL_COPY = {
+  maintenance: {
+    title: "Garden Maintenance Proposal",
+    preamble: "Designed to keep your garden looking its best throughout the year.",
+  },
+  one_off: {
+    title: "Garden Tidy Proposal",
+    preamble:
+      "A one-off visit to bring the garden back to its best — the full scope and price are set out below.",
+  },
+  landscaping: {
+    title: "Landscaping Proposal",
+    preamble:
+      "The full scope and pricing for your landscaping project are set out below.",
+  },
+} as const
+
+function getProposalCopy(quoteType: string | null | undefined) {
+  if (quoteType === "maintenance") return PROPOSAL_COPY.maintenance
+  if (quoteType === "landscaping") return PROPOSAL_COPY.landscaping
+  return PROPOSAL_COPY.one_off
 }
 
 async function acceptQuote(formData: FormData) {
@@ -210,39 +255,57 @@ async function declineQuote(formData: FormData) {
   redirect(`/public/quote/${token}?declined=1`)
 }
 
+const QUOTE_BASE_COLUMNS = `
+  id,
+  customer_name,
+  customer_email,
+  quote_title,
+  quote_type,
+  customer_scope,
+  terms_conditions,
+  line_items,
+  subtotal,
+  gst,
+  total,
+  monthly_equivalent,
+  frequency,
+  created_at,
+  proposal_sent_at,
+  status,
+  public_accept_token,
+  quote_accepted_at,
+  quote_declined_at,
+  properties (
+    address_line_1,
+    suburb
+  )
+`
+
 export default async function PublicQuotePage({ params, searchParams }: Props) {
   const { token } = await params
   const query = await searchParams
   const supabase = await createAdminClient()
-  const { data: quote, error } = await supabase
+  let { data: quote, error } = await supabase
     .from("quote_drafts")
-    .select(`
-      id,
-      customer_name,
-      customer_email,
-      quote_title,
-      quote_type,
-      customer_scope,
-      terms_conditions,
-      line_items,
-      subtotal,
-      gst,
-      total,
-      monthly_equivalent,
-      frequency,
-      created_at,
-      proposal_sent_at,
-      status,
-      public_accept_token,
-      quote_accepted_at,
-      quote_declined_at,
-      properties (
-        address_line_1,
-        suburb
-      )
-    `)
+    .select(`hero_image_url, photos, ${QUOTE_BASE_COLUMNS}`)
     .eq("public_accept_token", token)
     .maybeSingle()
+
+  // A customer's quote link must never break on deploy order: if the photo
+  // columns (migration 045) aren't applied yet, retry without them rather
+  // than showing "Quote not found" for a valid quote.
+  if (error) {
+    const legacy = await supabase
+      .from("quote_drafts")
+      .select(QUOTE_BASE_COLUMNS)
+      .eq("public_accept_token", token)
+      .maybeSingle()
+
+    quote = legacy.data
+      ? ({ ...legacy.data, hero_image_url: null, photos: [] } as typeof quote)
+      : null
+    error = legacy.error
+  }
 
   if (error || !quote) {
     return (
@@ -264,6 +327,9 @@ export default async function PublicQuotePage({ params, searchParams }: Props) {
     [property?.address_line_1, property?.suburb].filter(Boolean).join(", ") ||
     "To be confirmed"
   const proposalDate = quoteDraft.proposal_sent_at || quoteDraft.created_at
+  const proposalCopy = getProposalCopy(quoteDraft.quote_type)
+  const isMaintenance = quoteDraft.quote_type === "maintenance"
+  const galleryPhotos = parseQuotePhotos(quoteDraft.photos)
 
   return (
     <main className="bg-white text-stone-900 print:bg-white">
@@ -278,16 +344,20 @@ export default async function PublicQuotePage({ params, searchParams }: Props) {
 
         <section className="mt-6 overflow-hidden rounded-2xl border border-stone-200 bg-stone-50 shadow-sm print:shadow-none">
           <img
-            src="/images/20240207_121259.jpg"
-            alt="Established garden maintained by Pristine Gardens"
+            src={quoteDraft.hero_image_url || "/images/20240207_121259.jpg"}
+            alt={
+              quoteDraft.hero_image_url
+                ? "Photo for this proposal"
+                : "Established garden maintained by Pristine Gardens"
+            }
             className="h-56 w-full object-cover sm:h-72"
           />
           <div className="bg-[#123d2a] px-5 py-7 text-center text-white sm:px-8">
             <h1 className="text-3xl font-semibold sm:text-4xl">
-              Garden Maintenance Proposal
+              {proposalCopy.title}
             </h1>
             <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-green-50 sm:text-base">
-              Designed to keep your garden looking its best throughout the year.
+              {proposalCopy.preamble}
             </p>
           </div>
         </section>
@@ -338,7 +408,11 @@ export default async function PublicQuotePage({ params, searchParams }: Props) {
           <h2 className="text-lg font-semibold text-[#123d2a]">
             Service Summary
           </h2>
-          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          <div
+            className={`mt-4 grid gap-3 ${
+              isMaintenance ? "sm:grid-cols-3" : "sm:grid-cols-2"
+            }`}
+          >
             <div className="rounded-lg bg-white p-4">
               <div className="text-xs font-medium uppercase text-stone-500">
                 Quote Type
@@ -347,22 +421,28 @@ export default async function PublicQuotePage({ params, searchParams }: Props) {
                 {formatQuoteType(quoteDraft.quote_type)}
               </div>
             </div>
-            <div className="rounded-lg bg-white p-4">
-              <div className="text-xs font-medium uppercase text-stone-500">
-                Frequency
+            {/* Frequency and monthly-equivalent are maintenance concepts —
+                a fixed-price tidy or landscaping job shows type and total. */}
+            {isMaintenance && (
+              <div className="rounded-lg bg-white p-4">
+                <div className="text-xs font-medium uppercase text-stone-500">
+                  Frequency
+                </div>
+                <div className="mt-2 text-xl font-semibold capitalize text-[#123d2a]">
+                  {formatFrequency(quoteDraft.frequency)}
+                </div>
               </div>
-              <div className="mt-2 text-xl font-semibold capitalize text-[#123d2a]">
-                {formatFrequency(quoteDraft.frequency)}
+            )}
+            {isMaintenance && (
+              <div className="rounded-lg bg-white p-4">
+                <div className="text-xs font-medium uppercase text-stone-500">
+                  Monthly Equivalent
+                </div>
+                <div className="mt-2 text-xl font-semibold text-[#123d2a]">
+                  {money(quoteDraft.monthly_equivalent || quoteDraft.total)}
+                </div>
               </div>
-            </div>
-            <div className="rounded-lg bg-white p-4">
-              <div className="text-xs font-medium uppercase text-stone-500">
-                Monthly Equivalent
-              </div>
-              <div className="mt-2 text-xl font-semibold text-[#123d2a]">
-                {money(quoteDraft.monthly_equivalent || quoteDraft.total)}
-              </div>
-            </div>
+            )}
             <div className="rounded-lg bg-white p-4">
               <div className="text-xs font-medium uppercase text-stone-500">
                 Total Investment
@@ -385,6 +465,29 @@ export default async function PublicQuotePage({ params, searchParams }: Props) {
             {quoteDraft.customer_scope || "Scope to be confirmed."}
           </p>
         </section>
+
+        {galleryPhotos.length > 0 && (
+          <section className="mt-6 rounded-xl border border-stone-200 bg-white p-5 shadow-sm print:shadow-none">
+            <h2 className="text-lg font-semibold text-[#123d2a]">Photos</h2>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              {galleryPhotos.map((photo, index) => (
+                <figure key={`${photo.url}-${index}`}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={photo.url}
+                    alt={photo.caption || `Photo ${index + 1}`}
+                    className="h-56 w-full rounded-lg object-cover"
+                  />
+                  {photo.caption && (
+                    <figcaption className="mt-2 text-sm leading-6 text-stone-600">
+                      {photo.caption}
+                    </figcaption>
+                  )}
+                </figure>
+              ))}
+            </div>
+          </section>
+        )}
 
         <section className="mt-6 rounded-xl border border-stone-200 bg-white p-5 shadow-sm print:shadow-none">
           <h2 className="text-lg font-semibold text-[#123d2a]">
