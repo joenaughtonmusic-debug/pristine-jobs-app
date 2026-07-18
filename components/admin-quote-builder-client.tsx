@@ -9,6 +9,7 @@ import {
   setLeadPropertyForDraftAction,
 } from "@/app/(app)/sales-pipeline/actions"
 import { getTemplateQuoteType } from "@/lib/sales-leads"
+import { getPublicQuoteUrl } from "@/lib/public-quote-url"
 
 type PropertyOption = {
   id: string
@@ -106,7 +107,6 @@ type QuoteDraftSummary = {
   xero_quote_status: string | null
   xero_quote_error: string | null
   public_accept_token: string | null
-  public_accept_url: string | null
   quote_sent_at?: string | null
   proposal_sent_note?: string | null
   proposal_status?: string | null
@@ -468,10 +468,6 @@ function generateAcceptToken() {
     .join("")
 }
 
-function getPublicQuoteUrl(token: string) {
-  return `${window.location.origin}/public/quote/${token}`
-}
-
 function getPropertyLabel(property: PropertyOption) {
   const location = [property.address_line_1, property.suburb]
     .filter(Boolean)
@@ -772,19 +768,17 @@ export function AdminQuoteBuilderClient({
       const updates = await Promise.all(
         missingTokenDrafts.map(async (draft) => {
           const token = generateAcceptToken()
-          const publicUrl = getPublicQuoteUrl(token)
           const { error: updateError } = await supabase
             .from("quote_drafts")
             .update({
               public_accept_token: token,
-              public_accept_url: publicUrl,
               updated_at: new Date().toISOString(),
             })
             .eq("id", draft.id)
 
           if (updateError) return null
 
-          return { id: draft.id, token, publicUrl }
+          return { id: draft.id, token }
         })
       )
 
@@ -793,7 +787,6 @@ export function AdminQuoteBuilderClient({
       const validUpdates = updates.filter(Boolean) as {
         id: string
         token: string
-        publicUrl: string
       }[]
 
       if (validUpdates.length === 0) return
@@ -807,7 +800,6 @@ export function AdminQuoteBuilderClient({
           return {
             ...draft,
             public_accept_token: update.token,
-            public_accept_url: update.publicUrl,
           }
         })
       )
@@ -1031,7 +1023,6 @@ export function AdminQuoteBuilderClient({
         xero_quote_status,
         xero_quote_error,
         public_accept_token,
-        public_accept_url,
         quote_sent_at,
         proposal_sent_note,
         proposal_status,
@@ -1090,22 +1081,23 @@ export function AdminQuoteBuilderClient({
     setMessage("Quote draft marked ready for Xero.")
   }
 
+  // The token is the stored fact; the URL is always derived fresh
+  // (lib/public-quote-url). Never read or write the legacy
+  // public_accept_url column — a stored URL bakes in whatever origin the
+  // draft happened to be saved from (the June localhost-link incident).
   const ensureQuoteAcceptLink = async (draft: QuoteDraftSummary) => {
     if (draft.public_accept_token) {
       return {
         token: draft.public_accept_token,
-        publicUrl:
-          draft.public_accept_url || getPublicQuoteUrl(draft.public_accept_token),
+        publicUrl: getPublicQuoteUrl(draft.public_accept_token),
       }
     }
 
     const token = generateAcceptToken()
-    const publicUrl = getPublicQuoteUrl(token)
     const { error: updateError } = await supabase
       .from("quote_drafts")
       .update({
         public_accept_token: token,
-        public_accept_url: publicUrl,
         updated_at: new Date().toISOString(),
       })
       .eq("id", draft.id)
@@ -1120,13 +1112,12 @@ export function AdminQuoteBuilderClient({
           ? {
               ...currentDraft,
               public_accept_token: token,
-              public_accept_url: publicUrl,
             }
           : currentDraft
       )
     )
 
-    return { token, publicUrl }
+    return { token, publicUrl: getPublicQuoteUrl(token) }
   }
 
   const copyProposalLink = async (draft: QuoteDraftSummary) => {
@@ -1183,10 +1174,7 @@ export function AdminQuoteBuilderClient({
       const firstName =
         draft.customer_name.trim().split(/\s+/)[0] || draft.customer_name
 
-      setSendProposalDraft({
-        ...draft,
-        public_accept_url: publicUrl,
-      })
+      setSendProposalDraft(draft)
       setProposalRecipient(draft.customer_email || "")
       setProposalSubject(
         copyQuoteType === "maintenance"
@@ -1769,7 +1757,6 @@ Pristine Gardens`)
       .filter(Boolean)
       .join("\n\n")
     const acceptToken = generateAcceptToken()
-    const publicAcceptUrl = getPublicQuoteUrl(acceptToken)
 
     const { data: savedDraft, error: saveError } = await supabase
       .from("quote_drafts")
@@ -1800,7 +1787,6 @@ Pristine Gardens`)
       total,
       status,
       public_accept_token: acceptToken,
-      public_accept_url: publicAcceptUrl,
       frequency: frequency || null,
       labour_hours: hasMaintenancePricing ? labourHours : null,
       labour_rate: hasMaintenancePricing ? labourRate : null,
@@ -1911,11 +1897,9 @@ Pristine Gardens`)
         <div className="mt-3 space-y-3">
           {drafts.map((draft) => {
             const dueStages = getDueFollowUpStages(draft)
-            const publicUrl =
-              draft.public_accept_url ||
-              (draft.public_accept_token
-                ? getPublicQuoteUrl(draft.public_accept_token)
-                : null)
+            const publicUrl = draft.public_accept_token
+              ? getPublicQuoteUrl(draft.public_accept_token)
+              : null
 
             return (
               <div key={draft.id} className="rounded-md border p-3">
@@ -2938,7 +2922,7 @@ Pristine Gardens`)
                 (draft.status === "xero_created" ||
                   draft.status === "draft" ||
                   draft.status === "ready_for_xero") &&
-                Boolean(draft.public_accept_url) &&
+                Boolean(draft.public_accept_token) &&
                 !draft.quote_sent_at &&
                 draft.proposal_status !== "ready_to_send" &&
                 draft.proposal_status !== "sent"
