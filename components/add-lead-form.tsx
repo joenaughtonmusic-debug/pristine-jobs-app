@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { createManualLead } from "@/app/(app)/sales-pipeline/actions"
 import { MANUAL_LEAD_SOURCES } from "@/lib/sales-lead-manual"
+import { JOB_TYPE_OPTIONS } from "@/lib/sales-leads"
 
 const EMPTY_FORM = {
   name: "",
@@ -14,6 +15,7 @@ const EMPTY_FORM = {
   phone: "",
   suburb: "",
   service_needed: "",
+  job_type: "",
   source: "web",
   message: "",
 }
@@ -127,6 +129,19 @@ export function AddLeadForm() {
           value={form.service_needed}
           onChange={setField("service_needed")}
         />
+        <select
+          value={form.job_type}
+          onChange={setField("job_type")}
+          aria-label="Job type"
+          className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+        >
+          <option value="">Job type (optional)</option>
+          {JOB_TYPE_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
       </div>
 
       <Textarea

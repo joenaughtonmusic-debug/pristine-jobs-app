@@ -23,6 +23,7 @@ import {
   markQuoteSentAction,
   moveToQuoteAction,
   sendFollowUpAction,
+  setLeadJobTypeAction,
 } from "@/app/(app)/sales-pipeline/actions"
 import {
   getContactDraft,
@@ -38,6 +39,7 @@ import {
   getBoardStageIndex,
   getFollowUpBadge,
   getTemplateQuoteType,
+  JOB_TYPE_OPTIONS,
   parseNotes,
   suggestQuoteTypeFromService,
   suggestTemplateForQuoteType,
@@ -97,9 +99,11 @@ export function PipelineRow({
       setSubject(contactSubject(lead))
       setBody(getContactDraft(lead))
     } else if (kind === "create_quote") {
-      // Suggestion only (Brief 02): pre-pick the type from the service, and a
-      // template only when the type narrows it to exactly one.
-      const suggestedType = suggestQuoteTypeFromService(lead.service_needed)
+      // The lead's structured job type (migration 047) decides with
+      // certainty; the wording guess is only the fallback for leads that
+      // arrived before it was set (Brief 02 behaviour).
+      const suggestedType =
+        lead.job_type ?? suggestQuoteTypeFromService(lead.service_needed)
       setQuoteType(suggestedType)
       setTemplateId(suggestTemplateForQuoteType(templates, suggestedType))
     } else if (kind === "follow_up") {
@@ -325,6 +329,36 @@ export function PipelineRow({
         <div className="border-t bg-gray-50 px-4 py-4">
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
             <DrawerField label="Source" value={lead.source} />
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                Job type
+              </p>
+              <select
+                aria-label="Job type"
+                className="mt-1 h-8 w-full max-w-[180px] rounded-md border border-input bg-white px-2 text-sm"
+                value={lead.job_type || ""}
+                disabled={pending}
+                onChange={(event) =>
+                  run(() =>
+                    setLeadJobTypeAction(
+                      lead.id,
+                      (event.target.value || null) as
+                        | "maintenance"
+                        | "one_off"
+                        | "landscaping"
+                        | null
+                    )
+                  )
+                }
+              >
+                <option value="">Not set</option>
+                {JOB_TYPE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
             <DrawerField
               label="Current stage"
               value={BOARD_STAGES[stageIndex]?.label}

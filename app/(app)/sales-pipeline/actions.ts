@@ -232,6 +232,22 @@ export async function setLeadPropertyForDraftAction(
   )
 }
 
+// Migration 047: structured job type, editable from the expanded card. The
+// CHECK constraint is the backstop; the UI only offers the three values.
+export async function setLeadJobTypeAction(
+  leadId: string,
+  jobType: "maintenance" | "one_off" | "landscaping" | null
+): Promise<TransitionResult> {
+  return runTransition(async (supabase) => {
+    const { error } = await supabase
+      .from("sales_leads")
+      .update({ job_type: jobType, updated_at: new Date().toISOString() })
+      .eq("id", leadId)
+
+    return error ? { error: error.message } : { ok: true }
+  })
+}
+
 export async function markLostAction(
   leadId: string,
   reason: string

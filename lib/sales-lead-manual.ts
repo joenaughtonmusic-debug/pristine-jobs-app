@@ -1,4 +1,8 @@
-import { createActivity, type SalesLeadActivity } from "@/lib/sales-leads"
+import {
+  createActivity,
+  JOB_TYPE_OPTIONS,
+  type SalesLeadActivity,
+} from "@/lib/sales-leads"
 
 // Sources offered when adding a lead by hand from the pipeline board.
 export const MANUAL_LEAD_SOURCES = [
@@ -18,6 +22,7 @@ export type ManualLeadInput = {
   phone?: string
   suburb?: string
   service_needed?: string
+  job_type?: string
   source?: string
   message?: string
 }
@@ -28,10 +33,22 @@ export type ManualLeadRow = {
   phone: string | null
   suburb: string | null
   service_needed: string | null
+  // Optional and OMITTED when unset (never written as null): rows without it
+  // keep inserting fine even if migration 047 hasn't been pasted yet — only
+  // an actual job-type selection needs the column to exist.
+  job_type?: "maintenance" | "one_off" | "landscaping"
   source: string
   message: string | null
   status: "new"
   notes: SalesLeadActivity[]
+}
+
+// Same three values as the migration-047 CHECK constraint, derived from the
+// one JOB_TYPE_OPTIONS list — anything else means "not set".
+function normaliseJobType(value: string | null | undefined) {
+  return JOB_TYPE_OPTIONS.some((option) => option.value === value)
+    ? (value as ManualLeadRow["job_type"])
+    : undefined
 }
 
 function trim(value: string | null | undefined) {
@@ -132,6 +149,9 @@ export function buildManualLeadRow(
       phone: trim(input.phone) || null,
       suburb: trim(input.suburb) || null,
       service_needed: trim(input.service_needed) || null,
+      ...(normaliseJobType(input.job_type)
+        ? { job_type: normaliseJobType(input.job_type) }
+        : {}),
       source,
       message: trim(input.message) || null,
       status: "new",
