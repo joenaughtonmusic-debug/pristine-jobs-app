@@ -157,7 +157,6 @@ export default async function AdminQuotesPage({ searchParams }: Props) {
       xero_quote_status,
       xero_quote_error,
       public_accept_token,
-      public_accept_url,
       quote_sent_at,
       proposal_sent_note,
       proposal_status,

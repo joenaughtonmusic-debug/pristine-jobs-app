@@ -223,7 +223,7 @@ export default async function AdminDashboardPage() {
       .from("quote_drafts")
       .select("id")
       .in("status", ["draft", "ready_for_xero", "xero_created"])
-      .not("public_accept_url", "is", null)
+      .not("public_accept_token", "is", null)
       .is("quote_sent_at", null)
       .or("proposal_status.is.null,proposal_status.eq.not_ready,proposal_status.eq.error")
       .limit(500),
