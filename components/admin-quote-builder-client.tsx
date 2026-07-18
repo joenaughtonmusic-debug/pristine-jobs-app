@@ -612,7 +612,11 @@ export function AdminQuoteBuilderClient({
   const [scheduledJobId, setScheduledJobId] = useState("")
   // Brief 03: quoting a brand-new customer creates their properties row at
   // save time (via createCustomerProperty — the one shared creation path).
-  const [newCustomerMode, setNewCustomerMode] = useState(false)
+  // New customers are the predominant use, so the builder OPENS on
+  // new-customer entry (firm requirement, raised repeatedly — see
+  // docs/Backlog_Notes.md "Quote builder redesign"). Selecting an existing
+  // property, estimate, or a lead that already has a property flips it off.
+  const [newCustomerMode, setNewCustomerMode] = useState(true)
   const [newCustomerName, setNewCustomerName] = useState("")
   const [newCustomerEmail, setNewCustomerEmail] = useState("")
   const [newCustomerPhone, setNewCustomerPhone] = useState("")
@@ -642,7 +646,6 @@ export function AdminQuoteBuilderClient({
   const [fertiliserPrice, setFertiliserPrice] = useState(0)
   const [stumpPasteSize, setStumpPasteSize] = useState("none")
   const [stumpPastePrice, setStumpPastePrice] = useState(0)
-  const [status, setStatus] = useState("draft")
   const [quoteDrafts, setQuoteDrafts] = useState(initialQuoteDrafts)
   const [preparingXeroQuoteId, setPreparingXeroQuoteId] = useState<string | null>(null)
   const [manualAcceptingQuoteId, setManualAcceptingQuoteId] =
@@ -791,15 +794,26 @@ export function AdminQuoteBuilderClient({
 
     setQuoteTitle((current) => current || `Quote for ${selectedLead.name}`)
 
-    if (
-      selectedLead.property_id &&
-      properties.some((property) => property.id === selectedLead.property_id)
-    ) {
-      setPropertyId(selectedLead.property_id)
+    if (selectedLead.property_id) {
+      // Never open on new-customer entry for a lead that already has a
+      // property — even when that property isn't in the active list,
+      // creating a second one would split the customer's history.
+      setNewCustomerMode(false)
+
+      if (
+        properties.some((property) => property.id === selectedLead.property_id)
+      ) {
+        setPropertyId(selectedLead.property_id)
+      } else {
+        setError(
+          "This lead's linked property isn't in the active property list — pick it manually or reactivate it before quoting."
+        )
+      }
     }
 
-    // Brief 03: prefill the new-customer form from the lead (without turning
-    // the mode on — creating the properties row stays the operator's call).
+    // Brief 03: prefill the new-customer form from the lead. A lead without
+    // a property lands straight in new-customer mode (the default), fields
+    // ready; saving the draft is still what creates the properties row.
     setNewCustomerName(selectedLead.name || "")
     setNewCustomerEmail(selectedLead.email || "")
     setNewCustomerPhone(selectedLead.phone || "")
@@ -2032,7 +2046,9 @@ Pristine Gardens`)
       subtotal,
       gst,
       total,
-      status,
+      // Status is app-driven (send + accept flows), never hand-set — the
+      // builder only ever creates drafts.
+      status: "draft",
       public_accept_token: acceptToken,
       frequency: frequency || null,
       labour_hours: hasMaintenancePricing ? labourHours : null,
@@ -2214,7 +2230,7 @@ Pristine Gardens`)
       <header className="mb-6">
         <h1 className="text-2xl font-bold">Quote Builder</h1>
         <p className="text-sm text-gray-500">
-          Create a draft quote from an existing property, job, and template.
+          Create a quote for a new customer, or pick an existing property.
         </p>
       </header>
 
@@ -2246,55 +2262,10 @@ Pristine Gardens`)
       <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
         <section className="rounded-xl border bg-white p-4 shadow-sm">
           <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <label className="mb-1 block text-sm font-medium">
-                Existing Property
-              </label>
-              <select
-                className="h-11 w-full rounded-md border px-3"
-                value={propertyId}
-                onChange={(event) => handlePropertyChange(event.target.value)}
-              >
-                <option value="">Select property</option>
-                {properties.map((property) => (
-                  <option key={property.id} value={property.id}>
-                    {getPropertyLabel(property)}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm font-medium">Estimate</label>
-              <select
-                className="h-11 w-full rounded-md border px-3"
-                value={estimateId}
-                onChange={(event) => handleEstimateChange(event.target.value)}
-              >
-                <option value="">Select estimate</option>
-                {estimates.map((estimate) => (
-                  <option key={estimate.id} value={estimate.id}>
-                    {getEstimateLabel(estimate)}
-                  </option>
-                ))}
-              </select>
-            </div>
-
+            {/* New-customer entry leads; existing-customer selects are the
+                collapse option — the reverse would bury the predominant use. */}
             <div className="md:col-span-2">
-              {!newCustomerMode ? (
-                // A lead that already has a property must not grow a second
-                // one — the draft and the lead would then disagree about
-                // which property is the customer's.
-                selectedLead?.property_id ? null : (
-                  <button
-                    type="button"
-                    onClick={enableNewCustomerMode}
-                    className="text-sm font-medium text-emerald-700 underline hover:text-emerald-900"
-                  >
-                    + New customer (not in the list)
-                  </button>
-                )
-              ) : (
+              {newCustomerMode ? (
                 <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-semibold text-emerald-900">
@@ -2305,7 +2276,7 @@ Pristine Gardens`)
                       onClick={() => setNewCustomerMode(false)}
                       className="text-xs text-emerald-800 underline"
                     >
-                      cancel
+                      Choose existing customer instead
                     </button>
                   </div>
                   <p className="mt-1 text-xs text-emerald-800">
@@ -2345,27 +2316,78 @@ Pristine Gardens`)
                     />
                   </div>
                 </div>
+              ) : // A lead that already has a property must not grow a second
+              // one — the draft and the lead would then disagree about
+              // which property is the customer's.
+              selectedLead?.property_id ? null : (
+                <button
+                  type="button"
+                  onClick={enableNewCustomerMode}
+                  className="text-sm font-medium text-emerald-700 underline hover:text-emerald-900"
+                >
+                  + New customer (not in the list)
+                </button>
               )}
             </div>
 
-            <div>
-              <label className="mb-1 block text-sm font-medium">
-                Scheduled Job
-              </label>
-              <select
-                className="h-11 w-full rounded-md border px-3"
-                value={scheduledJobId}
-                onChange={(event) => handleJobChange(event.target.value)}
-                disabled={!propertyId}
-              >
-                <option value="">No linked job</option>
-                {jobsForProperty.map((job) => (
-                  <option key={job.id} value={job.id}>
-                    {job.scheduled_date || "No date"} - {job.job_type || "job"}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {!newCustomerMode && (
+              <>
+                <div>
+                  <label className="mb-1 block text-sm font-medium">
+                    Existing Property
+                  </label>
+                  <select
+                    className="h-11 w-full rounded-md border px-3"
+                    value={propertyId}
+                    onChange={(event) => handlePropertyChange(event.target.value)}
+                  >
+                    <option value="">Select property</option>
+                    {properties.map((property) => (
+                      <option key={property.id} value={property.id}>
+                        {getPropertyLabel(property)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium">
+                    Estimate
+                  </label>
+                  <select
+                    className="h-11 w-full rounded-md border px-3"
+                    value={estimateId}
+                    onChange={(event) => handleEstimateChange(event.target.value)}
+                  >
+                    <option value="">Select estimate</option>
+                    {estimates.map((estimate) => (
+                      <option key={estimate.id} value={estimate.id}>
+                        {getEstimateLabel(estimate)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium">
+                    Scheduled Job
+                  </label>
+                  <select
+                    className="h-11 w-full rounded-md border px-3"
+                    value={scheduledJobId}
+                    onChange={(event) => handleJobChange(event.target.value)}
+                    disabled={!propertyId}
+                  >
+                    <option value="">No linked job</option>
+                    {jobsForProperty.map((job) => (
+                      <option key={job.id} value={job.id}>
+                        {job.scheduled_date || "No date"} - {job.job_type || "job"}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            )}
 
             {selectedEstimate && (
               <div className="rounded-md border bg-indigo-50 p-3 text-sm text-indigo-900 md:col-span-2">
@@ -2408,21 +2430,6 @@ Pristine Gardens`)
                     {template.category ? ` - ${template.category}` : ""}
                   </option>
                 ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="mb-1 block text-sm font-medium">Status</label>
-              <select
-                className="h-11 w-full rounded-md border px-3"
-                value={status}
-                onChange={(event) => setStatus(event.target.value)}
-              >
-                <option value="draft">Draft</option>
-                <option value="xero_created">Xero Created</option>
-                <option value="sent">Sent</option>
-                <option value="accepted">Accepted</option>
-                <option value="declined">Declined</option>
               </select>
             </div>
 

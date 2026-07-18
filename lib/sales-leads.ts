@@ -52,6 +52,22 @@ export type SalesLead = {
   // (quote_drafts.first_scheduled_job_id), never a direct job link.
   property_id: string | null
   quote_draft_id: string | null
+  // Structured service type (migration 047). Nullable — website leads arrive
+  // unset; service_needed stays free text. When set, it replaces the
+  // wording guess everywhere a quote type is suggested.
+  job_type: "maintenance" | "one_off" | "landscaping" | null
+}
+
+export const JOB_TYPE_OPTIONS = [
+  { value: "maintenance", label: "Maintenance" },
+  { value: "one_off", label: "One-off" },
+  { value: "landscaping", label: "Landscaping" },
+] as const
+
+export function formatJobType(value: string | null | undefined) {
+  return (
+    JOB_TYPE_OPTIONS.find((option) => option.value === value)?.label || null
+  )
 }
 
 export type PipelineStageKey =
