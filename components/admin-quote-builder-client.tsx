@@ -106,6 +106,8 @@ type QuoteDraftSummary = {
   status: string
   frequency: string | null
   labour_hours: number | null
+  labour_rate: number | null
+  greenwaste_rate: number | null
   customer_scope: string | null
   first_scheduled_job_id: string | null
   total: number | null
@@ -425,7 +427,12 @@ type NewCustomerDetails = {
 async function createCustomerProperty(
   supabase: ReturnType<typeof createClient>,
   details: NewCustomerDetails,
-  quote: { quote_type: string | null; frequency: string | null }
+  quote: {
+    quote_type: string | null
+    frequency: string | null
+    labour_rate?: number | null
+    greenwaste_rate?: number | null
+  }
 ) {
   const propertyCode =
     makePropertyCode(
@@ -466,6 +473,19 @@ async function createCustomerProperty(
       service_frequency:
         getNormalisedQuoteType(quote.quote_type) === "maintenance"
           ? quote.frequency || null
+          : null,
+      // Invoicing bills actuals at the PROPERTY's rates (hours ×
+      // hourly_rate, bags × greenwaste_rate) — copy the quoted rates on so
+      // what was quoted is what Make bills. Creation only; existing
+      // properties' rates are never touched (idempotent-reuse path above
+      // returns before this insert).
+      hourly_rate:
+        getNormalisedQuoteType(quote.quote_type) === "maintenance"
+          ? quote.labour_rate ?? null
+          : null,
+      greenwaste_rate:
+        getNormalisedQuoteType(quote.quote_type) === "maintenance"
+          ? quote.greenwaste_rate ?? null
           : null,
       is_active: true,
     })
@@ -659,7 +679,7 @@ export function AdminQuoteBuilderClient({
   ])
   const [frequency, setFrequency] = useState("")
   const [labourHours, setLabourHours] = useState(0)
-  const [labourRate, setLabourRate] = useState(90)
+  const [labourRate, setLabourRate] = useState(80)
   const [greenwasteBags, setGreenwasteBags] = useState(0)
   const [greenwasteRate, setGreenwasteRate] = useState(26.5)
   const [spraysSize, setSpraysSize] = useState("none")
@@ -934,10 +954,14 @@ export function AdminQuoteBuilderClient({
           max: (Number(greenwasteBags) + 1.5) * Number(greenwasteRate),
         }
       : null
+  // Kept stored on the draft for genuinely-subscription customers (their
+  // proposal shows it) — but it is NEVER the price. Maintenance is
+  // charge_up: the quote is the cost of ONE visit, and frequency is
+  // informational only (decision 19 Jul — see Backlog_Notes billing model).
   const monthlyEquivalent = hasMaintenancePricing
     ? calculateMonthlyEquivalent(perVisitPrice, frequency)
     : 0
-  const total = hasMaintenancePricing ? monthlyEquivalent : lineItemsSubtotal
+  const total = hasMaintenancePricing ? perVisitPrice : lineItemsSubtotal
   const gst = total * 3 / 23
   const subtotal = total - gst
 
@@ -950,7 +974,7 @@ export function AdminQuoteBuilderClient({
           ? items
           : [
               {
-                description: "Maintenance subscription",
+                description: "Maintenance visit",
                 quantity: 1,
                 unit_price: 0,
                 category: "labour" as const,
@@ -961,12 +985,12 @@ export function AdminQuoteBuilderClient({
         {
           ...firstItem,
           quantity: 1,
-          unit_price: Number(monthlyEquivalent.toFixed(2)),
+          unit_price: Number(perVisitPrice.toFixed(2)),
         },
         ...rest,
       ]
     })
-  }, [hasMaintenancePricing, monthlyEquivalent])
+  }, [hasMaintenancePricing, perVisitPrice])
 
   // Type filters the builder (service-aware slice 1): only maintenance shows
   // the recurring pricing machinery, so leaving maintenance must drop the
@@ -1124,7 +1148,7 @@ export function AdminQuoteBuilderClient({
 
     setFrequency(template.frequency || "")
     setLabourHours(Number(template.labour_hours || 0))
-    setLabourRate(Number(template.labour_rate || 90))
+    setLabourRate(Number(template.labour_rate || 80))
     setGreenwasteBags(Number(template.greenwaste_bags || 0))
     setGreenwasteRate(Number(template.greenwaste_rate || 26.5))
     setSpraysSize(template.sprays_size || "none")
@@ -1194,6 +1218,8 @@ export function AdminQuoteBuilderClient({
         status,
         frequency,
         labour_hours,
+        labour_rate,
+        greenwaste_rate,
         customer_scope,
         first_scheduled_job_id,
         total,
@@ -2055,7 +2081,16 @@ Pristine Gardens`)
             address_line_1: newCustomerAddress.trim() || null,
             suburb: newCustomerSuburb.trim() || null,
           },
-          { quote_type: quoteType, frequency: frequency || null }
+          {
+            quote_type: quoteType,
+            frequency: frequency || null,
+            // Same gate as the quote save: only rates that actually priced
+            // this quote flow onto the property — an ad-hoc maintenance
+            // quote (no frequency) priced by manual line items must not
+            // stamp the decorative panel defaults as the billing rate.
+            labour_rate: hasMaintenancePricing ? labourRate : null,
+            greenwaste_rate: hasMaintenancePricing ? greenwasteRate : null,
+          }
         )
 
       if (newPropertyError || !newProperty) {
@@ -2104,10 +2139,10 @@ Pristine Gardens`)
           ...withXeroFields(item, index),
           quantity: index === 0 ? 1 : item.quantity,
           unit_price:
-            index === 0 ? Number(monthlyEquivalent.toFixed(2)) : item.unit_price,
+            index === 0 ? Number(perVisitPrice.toFixed(2)) : item.unit_price,
           line_total:
             index === 0
-              ? Number(monthlyEquivalent.toFixed(2))
+              ? Number(perVisitPrice.toFixed(2))
               : Number(item.quantity || 0) * Number(item.unit_price || 0),
           description:
             index === 0
@@ -2920,18 +2955,12 @@ Pristine Gardens`)
               </div>
             )}
             {hasMaintenancePricing && (
-              <>
-                <div className="flex justify-between">
-                  <span className="text-gray-500">Per Visit Price</span>
-                  <span className="font-medium">{money(perVisitPrice)}</span>
-                </div>
-                <div className="flex justify-between rounded-md bg-blue-50 px-3 py-2">
-                  <span className="text-blue-700">Monthly Equivalent</span>
-                  <span className="font-semibold text-blue-900">
-                    {money(monthlyEquivalent)}
-                  </span>
-                </div>
-              </>
+              <div className="flex justify-between rounded-md bg-blue-50 px-3 py-2">
+                <span className="text-blue-700">Price Per Visit</span>
+                <span className="font-semibold text-blue-900">
+                  {money(perVisitPrice)}
+                </span>
+              </div>
             )}
             <div className="flex justify-between">
               <span className="text-gray-500">Subtotal excl. GST</span>
@@ -2951,7 +2980,9 @@ Pristine Gardens`)
 
           {hasMaintenancePricing && (
             <div className="mt-5 rounded-md bg-amber-50 p-3 text-xs text-amber-800">
-              Monthly Equivalent is the recommended customer billing amount for this maintenance subscription. Per Visit Price stays internal.
+              Maintenance is priced per visit — the frequency is when visits
+              happen, not a divisor. Each visit invoices on actual hours and
+              greenwaste.
             </div>
           )}
 
@@ -3233,7 +3264,7 @@ Pristine Gardens`)
                       <th className="py-2 pr-3">Accepted Date</th>
                       <th className="py-2 pr-3">Quote Number</th>
                       <th className="py-2 pr-3">Frequency</th>
-                      <th className="py-2 pr-3 text-right">Monthly Equivalent</th>
+                      <th className="py-2 pr-3 text-right">Total</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -3264,7 +3295,7 @@ Pristine Gardens`)
                           {getQuoteFrequencyLabel(draft.frequency)}
                         </td>
                         <td className="py-3 pr-3 text-right">
-                          {money(Number(draft.monthly_equivalent || 0))}
+                          {money(Number(draft.total || 0))}
                         </td>
                       </tr>
                     ))}

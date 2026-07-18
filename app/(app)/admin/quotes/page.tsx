@@ -150,6 +150,8 @@ export default async function AdminQuotesPage({ searchParams }: Props) {
       monthly_equivalent,
       frequency,
       labour_hours,
+      labour_rate,
+      greenwaste_rate,
       customer_scope,
       first_scheduled_job_id,
       created_at,
