@@ -158,6 +158,25 @@ For future sessions, so the confusion doesn't recur:
 The owner will live in the quote builder; it's the one screen he can't avoid. Five
 separate complaints on 18 July all reduce to **two principles**:
 
+### Slice 2 — confirmed wanted (owner found these testing slice 1, 19 July)
+Slice 1 hid the Internal Pricing Assumptions block by type + greenwaste auto-range.
+**Slice 1's block-hiding works** (confirmed: block disappears on One-off). But
+testing exposed that **type and CONTENT aren't wired together** — this is slice 2:
+- **Switching Quote Type does NOT clear/refresh the text fields.** Load a
+  Maintenance template (fills Scope "Ongoing maintenance", Terms "Ongoing
+  Maintenance Terms", Template "2 Monthly Maintenance"), then switch type to
+  One-off → the pricing block correctly hides, BUT Scope, Terms, and the Template
+  dropdown still show the maintenance content. Confirmed live 19 July, owner
+  rightly confused. Switching type must clear or refresh type-specific text
+  (Scope/Terms/Template) so a One-off quote doesn't carry maintenance wording.
+- **Quote Template dropdown filtered by type.** Currently shows ALL templates
+  regardless of type; should show only templates for the selected type.
+- **Customer-Facing Scope pre-filled with per-category boilerplate** when
+  Maintenance (the "each visit can include…" list + fluctuation notes). The
+  per-category boilerplate piece, confirmed wanted.
+
+These three are one coherent slice: **type drives content**, not just visibility.
+
 ### Principle 1 — the builder reshapes itself to the customer's service type
 Right now it shows everything for everyone. It should show only what's relevant to
 *this* customer, and default to the common case.
@@ -338,3 +357,58 @@ multi-quote-in-one-document and options-excluded-from-total are a RECURRING real
 need for landscaping, not a one-off. Revisit whether the landscaping proposal
 should support grouped quotes + optional line items when the multi-billing/template
 work is done. (Owner is currently fine sending these as 2 separate quotes.)
+
+---
+
+## Calendar sync vs customer self-booking — TWO different sizes (19 July)
+
+The owner raised these together; they are very different builds and should be
+split.
+
+### Google Calendar sync (smaller, plausibly near-term)
+The owner's scheduled jobs appearing on his own Google Calendar. Useful the moment
+a real job is scheduled (e.g. once Sarah accepts).
+
+**⚠️ CORRECTION (19 July) — the owner wants the SITE VISIT on his calendar, NOT
+the accepted job.** These are opposite ends of the pipeline:
+- **Site visit / quoting appointment** — EARLY, before the quote exists. Owner
+  goes to look at the job and price it. THIS is what he wants on his calendar, and
+  what the customer eventually self-books into (9:45 / 3pm / 4pm slots). **This does
+  NOT exist yet — it's the real gap.**
+- **Accepted job schedule** — LATE, after they say yes. Owner does NOT especially
+  want this auto-appearing as a calendar event.
+
+**CONFIRMED by reading BOTH blueprints:**
+- `Integration Google Calendar, Supabase` (ON) = **calendar → app, blockouts only.**
+  Watches Google Calendar, writes `calendar_blockouts`. Availability half. Keep.
+- `Integration Supabase, Google Calendar` (ON) = **app → calendar, creates JOB
+  events.** Reads `jobs` + `staff`, slot-finds (JS), creates event titled
+  `client_name - site_address - job_type` with a computed duration. This is the
+  ACCEPTED-JOB event — i.e. the thing the owner just said he does NOT especially
+  want. (Also note it reads `jobs`, but the app schedules into `scheduled_jobs` —
+  possible dead wiring either way; may not matter if this isn't the wanted feature.)
+
+**So calendar sync + booking slots are ONE feature, not two:** book a quoting
+SITE VISIT into an available slot (owner's slots: 9:45am / 3pm / 4pm, Tue–Fri) and
+put THAT on the calendar. Customer self-booking is the same feature with a
+customer-facing front door. The existing job→calendar scenario is a different
+(later-stage) thing and isn't the gap.
+
+### Customer self-booking (BIG — later, "pick when it hurts")
+A link in the initial customer contact → customer sees open slots → picks one →
+it lands on the owner's calendar. This is a BOOKING SYSTEM, not sync. Touches four
+things: availability rules, live calendar state, customer-facing booking page,
+write-back. That's why it's in the "pick when it hurts" pile, not next-up.
+
+**Priority reasoning (advisor flag):** self-booking optimizes the FRONT of a
+pipeline that hasn't yet been proven end-to-end with a real customer (Sarah is the
+first quote out; no real job has gone all the way to a matching invoice yet). Don't
+polish the entrance before the house is proven. Revisit once real jobs are flowing.
+
+### The owner's slot structure (capture — real operational detail)
+When self-booking IS built, the owner's intended availability:
+- **Morning quote slot: 9:45am**
+- **Afternoon slots: 3:00pm and 4:00pm**
+- **Days: Tuesday to Friday**
+(These are quote/visit booking slots. Confirm whether these are for site-visit
+quoting or for the jobs themselves when building.)
