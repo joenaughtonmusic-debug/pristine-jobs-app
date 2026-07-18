@@ -396,9 +396,10 @@ type NewCustomerDetails = {
 }
 
 // The ONE property-creation path in this component (Brief 03: reuse the
-// estimate→property conversion's logic, do not invent a second). The
-// billing_type / service_frequency write is the subject of the parked
-// billing audit — byte-for-byte as the original conversion, do not change it.
+// estimate→property conversion's logic, do not invent a second).
+// billing_type defaults to charge_up for ALL quote types (Joe's decision,
+// 18 Jul 2026) — subscription is the explicit exception, chosen per job in
+// the schedule, because it needs a manually-created Xero repeating invoice.
 async function createCustomerProperty(
   supabase: ReturnType<typeof createClient>,
   details: NewCustomerDetails,
@@ -439,10 +440,7 @@ async function createCustomerProperty(
       address_line_1: details.address_line_1 || null,
       suburb: details.suburb || null,
       property_code: propertyCode,
-      billing_type:
-        getNormalisedQuoteType(quote.quote_type) === "maintenance"
-          ? "subscription"
-          : "charge_up",
+      billing_type: "charge_up",
       service_frequency:
         getNormalisedQuoteType(quote.quote_type) === "maintenance"
           ? quote.frequency || null
@@ -729,7 +727,7 @@ export function AdminQuoteBuilderClient({
     (draft) =>
       draft.property_id &&
       draft.first_scheduled_job_id &&
-      (getNormalisedQuoteType(draft.quote_type) !== "maintenance" ||
+      (!draft.recurring_invoice_required ||
         draft.recurring_invoice_setup_status === "completed")
   )
   const followUpDrafts = quoteDrafts.filter((draft) => {
@@ -1768,8 +1766,8 @@ Pristine Gardens`)
         planned_start_time: firstVisitStartTime || null,
         planned_duration_hours: duration,
         assigned_staff_id: firstVisitStaffId,
-        invoice_method: quoteType === "maintenance" ? "subscription" : "quoted",
-        billing_mode: quoteType === "maintenance" ? "subscription" : "quoted",
+        invoice_method: quoteType === "maintenance" ? "charge_up" : "quoted",
+        billing_mode: quoteType === "maintenance" ? "charge_up" : "quoted",
         quoted_scope: firstVisitNotes.trim() || scheduleDraft.customer_scope || null,
         quoted_amount:
           quoteType === "maintenance" ? null : Number(scheduleDraft.total || 0),
@@ -1784,10 +1782,16 @@ Pristine Gardens`)
       return
     }
 
+    // Jobs created here bill per visit (charge_up) or against the quote
+    // (quoted) — neither uses a Xero repeating invoice, so clear the
+    // recurring-invoice reminder set at acceptance. Leaving it would queue
+    // the VA to create a repeating invoice on top of per-visit invoices.
     const { error: quoteUpdateError } = await supabase
       .from("quote_drafts")
       .update({
         first_scheduled_job_id: scheduledJob.id,
+        recurring_invoice_required: false,
+        recurring_invoice_setup_status: null,
         updated_at: new Date().toISOString(),
       })
       .eq("id", scheduleDraft.id)
