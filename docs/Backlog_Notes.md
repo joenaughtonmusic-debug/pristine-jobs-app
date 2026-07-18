@@ -175,15 +175,33 @@ Right now it shows everything for everyone. It should show only what's relevant 
   complaint on its own.
 
 ### Principle 2 — capture hours/greenwaste/notes at quote stage, fast
-The real workflow gap: the owner needs to record **hours, greenwaste, and site
-notes while standing in the garden**, but today the only place is the full builder
-— heavy enough that he'll lose the numbers if distracted mid-entry. Two routes,
-both real, both his own idea:
-- **Lightweight capture** — name, address, hours, greenwaste, notes — saves fast,
-  becomes a quote later. Low risk of data loss.
-- **Voice-to-quote** — speak notes + numbers in. A `VoiceToQuote: Webhook to Xero`
-  Make scenario ALREADY EXISTS (seen in scenario list, currently off). Investigate
-  what it does before building anything new.
+
+**⚠️ GUARDRAIL — owner's own words, 19 July:** *"my problem is I over-build things
+in what I think works in the customer's favour without knowing if it does."* Keep
+this SIMPLE. If a spec starts growing into multi-field UI, that's the over-build
+reflex — stop, use the simpler version. Target: less work for the owner AND enough
+for the customer, not maximum precision.
+
+**Greenwaste (and sprays/extras) range — ONE input, auto-range. NOT a min/avg/max
+calculator.** Today the owner types 3 bag amounts into Xero to read back 3 dollar
+figures, then hand-types them into the quote. The app knows the per-bag rate, so:
+- Owner enters ONE average bag count → app shows the average price → app
+  auto-appends the fluctuation line with min/max DERIVED automatically (e.g. avg −1
+  bag min, avg +1.5 bags max — confirm exact rule with owner, his call).
+- Output matches the real Meyrick Place quote: *"approximately $26.50… may
+  fluctuate between $X and $Y depending on amount removed."*
+- **Do NOT build a three-field min/avg/max UI.** Customer gets everything from one
+  average + range sentence; they won't hold the owner to the exact max. The 3-number
+  breakdown is the owner's comfort, not customer clarity. This IS the over-build to
+  avoid.
+
+**Lightweight quick-capture — build this, NOT voice-to-quote (owner's call, 19
+July).** Voice depends on the owner tuning/wiring the existing VoiceToQuote Make
+scenario, which "may not happen." Quick-capture is a form that works the day it
+ships — build the reliable simple thing over the impressive fragile one. Voice +
+transcript-tidy explicitly deferred, can layer on later if ever wanted.
+- Capture: name, address, hours, greenwaste, notes → saves fast → becomes a quote
+  later. Solves "standing in the garden, don't lose the numbers." Low data-loss risk.
 
 ### Cut now (redundant, safe)
 - The **Status dropdown** (Draft / Xero Created / Accepted / Declined) in the

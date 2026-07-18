@@ -193,6 +193,24 @@ const allowancePriceDefaults = {
 
 const maintenanceCustomerScope = "On going maintenance"
 
+// The one sentence the app owns in the maintenance line description
+// (greenwaste auto-range). Matched loosely so a re-save replaces the previous
+// version instead of stacking; everything else in the description is Joe's.
+const GREENWASTE_RANGE_PATTERN =
+  /\s*Greenwaste removal is approximately [^\n]*? depending on the amount removed\./g
+
+function buildGreenwasteRangeSentence(range: {
+  average: number
+  min: number
+  max: number
+}) {
+  return `Greenwaste removal is approximately ${money(
+    range.average
+  )} per visit on average and may fluctuate between ${money(
+    range.min
+  )} and ${money(range.max)} depending on the amount removed.`
+}
+
 const maintenanceLineItemDescription = `Ongoing garden maintenance.
 
 Main focus on weed control, trimming, pruning and keeping the garden tidy throughout the year.
@@ -886,13 +904,30 @@ export function AdminQuoteBuilderClient({
     }, 0)
   }, [lineItems])
 
-  const hasMaintenancePricing = Boolean(frequency)
+  // Maintenance pricing needs BOTH the type and a frequency — the type gate
+  // keeps a leftover frequency from silently pricing a one-off/landscaping
+  // quote off the (now hidden) maintenance inputs.
+  const hasMaintenancePricing = quoteType === "maintenance" && Boolean(frequency)
   const perVisitPrice =
     Number(labourHours || 0) * Number(labourRate || 0) +
     Number(greenwasteBags || 0) * Number(greenwasteRate || 0) +
     Number(spraysPrice || 0) +
     Number(fertiliserPrice || 0) +
     Number(stumpPastePrice || 0)
+  // Greenwaste auto-range (19 Jul): ONE average input; min/max derived by
+  // Joe's rule (avg −1 bag with a half-bag floor / avg +1.5 bags). No
+  // min/avg/max UI — that's the over-build the Backlog_Notes guardrail bans.
+  const greenwasteRange =
+    hasMaintenancePricing &&
+    Number(greenwasteBags) > 0 &&
+    Number(greenwasteRate) > 0
+      ? {
+          average: Number(greenwasteBags) * Number(greenwasteRate),
+          min:
+            Math.max(Number(greenwasteBags) - 1, 0.5) * Number(greenwasteRate),
+          max: (Number(greenwasteBags) + 1.5) * Number(greenwasteRate),
+        }
+      : null
   const monthlyEquivalent = hasMaintenancePricing
     ? calculateMonthlyEquivalent(perVisitPrice, frequency)
     : 0
@@ -926,6 +961,28 @@ export function AdminQuoteBuilderClient({
       ]
     })
   }, [hasMaintenancePricing, monthlyEquivalent])
+
+  // Type filters the builder (service-aware slice 1): only maintenance shows
+  // the recurring pricing machinery, so leaving maintenance must drop the
+  // frequency or the hidden inputs would keep pricing the quote.
+  const handleQuoteTypeChange = (nextType: QuoteType) => {
+    setQuoteType(nextType)
+
+    if (nextType !== "maintenance") {
+      // If the maintenance pricing was live, the auto-effect has already
+      // overwritten line 1 with a maintenance-derived price — zero it so a
+      // stale figure can't ship as a one-off/landscaping total.
+      if (hasMaintenancePricing) {
+        setLineItems((items) =>
+          items.length > 0
+            ? [{ ...items[0], unit_price: 0 }, ...items.slice(1)]
+            : items
+        )
+      }
+
+      setFrequency("")
+    }
+  }
 
   const handlePropertyChange = (nextPropertyId: string) => {
     const property = properties.find((item) => item.id === nextPropertyId) || null
@@ -1987,6 +2044,22 @@ Pristine Gardens`)
       }
     }
 
+    // The app maintains exactly one greenwaste-range sentence in the
+    // maintenance line's description: strip any previous version, then
+    // append the current one (or nothing when bags are 0). Joe's other
+    // wording is never touched.
+    const withGreenwasteRange = (description: string | undefined) => {
+      const base = String(description || "")
+        .replace(GREENWASTE_RANGE_PATTERN, "")
+        .trimEnd()
+
+      if (!greenwasteRange) return base
+
+      const sentence = buildGreenwasteRangeSentence(greenwasteRange)
+
+      return base ? `${base}\n\n${sentence}` : sentence
+    }
+
     const lineItemsToSave = hasMaintenancePricing
       ? lineItems.map((item, index) => ({
           ...withXeroFields(item, index),
@@ -1997,6 +2070,10 @@ Pristine Gardens`)
             index === 0
               ? Number(monthlyEquivalent.toFixed(2))
               : Number(item.quantity || 0) * Number(item.unit_price || 0),
+          description:
+            index === 0
+              ? withGreenwasteRange(item.description)
+              : item.description,
         }))
       : lineItems.map((item, index) => ({
           ...withXeroFields(item, index),
@@ -2440,7 +2517,9 @@ Pristine Gardens`)
               <select
                 className="h-11 w-full rounded-md border px-3"
                 value={quoteType}
-                onChange={(event) => setQuoteType(event.target.value as QuoteType)}
+                onChange={(event) =>
+                  handleQuoteTypeChange(event.target.value as QuoteType)
+                }
               >
                 {quoteTypeOptions.map((option) => (
                   <option key={option.value} value={option.value}>
@@ -2505,13 +2584,17 @@ Pristine Gardens`)
             </div>
           </div>
 
+          {/* Service-aware slice 1: the recurring pricing machinery is a
+              maintenance concept — one-off and landscaping quotes price off
+              line items and never see this block. */}
+          {quoteType === "maintenance" && (
           <div className="mt-6 rounded-lg border bg-gray-50 p-4">
             <div className="mb-3">
               <h2 className="text-lg font-semibold">
                 Internal Pricing Assumptions
               </h2>
               <p className="text-sm text-gray-500">
-                These inputs calculate the maintenance subscription price and are not customer-facing unless written into the line item wording.
+                These inputs calculate the maintenance price and are not customer-facing unless written into the line item wording.
               </p>
             </div>
 
@@ -2584,6 +2667,15 @@ Pristine Gardens`)
                   onChange={(event) => setGreenwasteRate(parseDecimalInput(event.target.value))}
                 />
               </div>
+
+              {greenwasteRange && (
+                <div className="md:col-span-3 rounded-md bg-white px-3 py-2 text-xs text-gray-600">
+                  Greenwaste ≈ {money(greenwasteRange.average)} per visit on
+                  average. Saving adds the range line to the quote wording:
+                  may fluctuate between {money(greenwasteRange.min)} and{" "}
+                  {money(greenwasteRange.max)}.
+                </div>
+              )}
             </div>
 
             <div className="mt-4 grid gap-3 md:grid-cols-3">
@@ -2669,6 +2761,7 @@ Pristine Gardens`)
               </div>
             </div>
           </div>
+          )}
 
           <div className="mt-6">
             <div className="mb-3 flex items-center justify-between">
