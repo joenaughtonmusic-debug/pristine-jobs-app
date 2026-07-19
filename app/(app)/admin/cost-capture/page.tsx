@@ -9,6 +9,7 @@ import {
 import {
   isLegacyQuotedJob,
   readyInvoiceStatusForVisit,
+  zeroLineRefusalForVisit,
 } from "@/lib/quoted-invoicing"
 
 export const dynamic = "force-dynamic"
@@ -337,6 +338,27 @@ async function markReadyForInvoice(formData: FormData) {
 
   // Quoted jobs are invoiced once from the quote, never per visit — exclude instead.
   const invoiceStatus = await readyInvoiceStatusForVisit(supabase, visitId)
+
+  // Guard 2: never queue a visit Make can't price — refuse loudly instead.
+  if (invoiceStatus === "ready") {
+    const refusal = await zeroLineRefusalForVisit(supabase, visitId)
+
+    if (refusal) {
+      await supabase
+        .from("visits")
+        .update({
+          ready_for_invoice: false,
+          invoice_status: "error",
+          invoice_error: refusal,
+          cost_capture_override_reason: overrideReason || null,
+        })
+        .eq("id", visitId)
+
+      revalidatePath("/admin/cost-capture")
+      revalidatePath("/admin/invoices")
+      return
+    }
+  }
 
   await supabase
     .from("visits")

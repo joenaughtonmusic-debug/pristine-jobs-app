@@ -2,7 +2,10 @@
 
 import { useState, useEffect } from "react"
 import { createClient } from "@/lib/supabase/client"
-import { readyInvoiceStatusForJob } from "@/lib/quoted-invoicing"
+import {
+  readyInvoiceStatusForJob,
+  zeroLineRefusalForVisit,
+} from "@/lib/quoted-invoicing"
 import {
   Dialog,
   DialogContent,
@@ -253,8 +256,11 @@ if (existingVisit) {
       work_notes: workNotes.trim() || null,
       next_visit_notes: nextVisitNotes.trim() || null,
       completion_status: "completed",
-      ready_for_invoice: readyForInvoice,
-      invoice_status: readyForInvoice ? readyInvoiceStatus : "not_ready",
+      // Guard 2 (crew path): always insert unqueued — the ready stamp happens
+      // after the zero-line check below, so a visit Make can't price never
+      // becomes 'ready', not even for an instant.
+      ready_for_invoice: false,
+      invoice_status: "not_ready",
       cost_capture_reviewed_at: materialReviewComplete
         ? new Date().toISOString()
         : null,
@@ -401,6 +407,39 @@ if (existingVisit) {
   }
 }
 
+    }
+
+    // Guard 2 (crew path): stamp the invoice queue state last. A refusal keeps
+    // the completed work recorded but leaves the visit in the error state the
+    // admin errors tab already surfaces — never a 'ready' visit with 0 lines.
+    if (readyForInvoice && createdVisit) {
+      const refusal =
+        readyInvoiceStatus === "ready"
+          ? await zeroLineRefusalForVisit(supabase, createdVisit.id)
+          : null
+
+      const { error: queueStampError } = await supabase
+        .from("visits")
+        .update(
+          refusal
+            ? {
+                ready_for_invoice: false,
+                invoice_status: "error",
+                invoice_error: refusal,
+              }
+            : {
+                ready_for_invoice: true,
+                invoice_status: readyInvoiceStatus,
+                invoice_error: null,
+              }
+        )
+        .eq("id", createdVisit.id)
+
+      if (queueStampError) {
+        setError(queueStampError.message)
+        setLoading(false)
+        return
+      }
     }
 
     const { error: jobError } = await supabase
