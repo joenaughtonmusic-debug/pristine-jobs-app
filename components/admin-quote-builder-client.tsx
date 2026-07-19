@@ -12,6 +12,10 @@ import {
 import { getTemplateQuoteType } from "@/lib/sales-leads"
 import { getPublicQuoteUrl } from "@/lib/public-quote-url"
 import {
+  buildCrewMaterialsList,
+  getQuoteLabourHours,
+} from "@/lib/quote-materials"
+import {
   QUOTE_LINE_CATEGORIES,
   QUOTE_LINE_TAX_TYPE,
   getQuoteLineCategory,
@@ -109,6 +113,9 @@ type QuoteDraftSummary = {
   labour_hours: number | null
   labour_rate: number | null
   greenwaste_rate: number | null
+  sprays_size: string | null
+  fertiliser_size: string | null
+  stump_paste_size: string | null
   customer_scope: string | null
   first_scheduled_job_id: string | null
   total: number | null
@@ -1221,6 +1228,9 @@ export function AdminQuoteBuilderClient({
         labour_hours,
         labour_rate,
         greenwaste_rate,
+        sprays_size,
+        fertiliser_size,
+        stump_paste_size,
         customer_scope,
         first_scheduled_job_id,
         total,
@@ -1851,12 +1861,15 @@ Pristine Gardens`)
     setFirstVisitDate("")
     setFirstVisitStartTime("")
     setFirstVisitStaffId("")
-    setFirstVisitDuration(
-      getNormalisedQuoteType(draft.quote_type) === "maintenance" &&
-        typeof draft.labour_hours === "number"
-        ? String(draft.labour_hours)
-        : ""
-    )
+    // Same mapping as the schedule page: maintenance → pricing-panel hours;
+    // one-off/landscaping → the single labour line's quantity (blank when
+    // ambiguous).
+    const quotedHours = getQuoteLabourHours({
+      quote_type: getNormalisedQuoteType(draft.quote_type),
+      labour_hours: draft.labour_hours,
+      line_items: draft.line_items,
+    })
+    setFirstVisitDuration(quotedHours ? String(quotedHours) : "")
     setFirstVisitNotes(draft.customer_scope || "")
     setMessage(null)
     setError(null)
@@ -1883,6 +1896,11 @@ Pristine Gardens`)
       return
     }
 
+    if (firstVisitDuration && Number(firstVisitDuration) < 0) {
+      setError("Duration can't be negative.")
+      return
+    }
+
     setCreatingMaintenanceSchedule(true)
     setMessage(null)
     setError(null)
@@ -1906,6 +1924,10 @@ Pristine Gardens`)
         invoice_method: quoteType === "maintenance" ? "charge_up" : "quoted",
         billing_mode: quoteType === "maintenance" ? "charge_up" : "quoted",
         quoted_scope: firstVisitNotes.trim() || scheduleDraft.customer_scope || null,
+        // Crew Brief: materials-ish line items become the crew's
+        // "Included Materials" list (same helper as the schedule page).
+        quoted_materials:
+          buildCrewMaterialsList(scheduleDraft.line_items, scheduleDraft) || null,
         quoted_amount:
           quoteType === "maintenance" ? null : Number(scheduleDraft.total || 0),
         status: "scheduled",
@@ -3746,6 +3768,7 @@ Pristine Gardens`)
                 <input
                   type="number"
                   step="0.25"
+                  min="0"
                   className="h-11 w-full rounded-md border px-3"
                   value={firstVisitDuration}
                   onChange={(event) =>
