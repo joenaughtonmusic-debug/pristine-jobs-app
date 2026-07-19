@@ -11,7 +11,10 @@ import {
 } from "@/app/(app)/sales-pipeline/actions"
 import { getTemplateQuoteType } from "@/lib/sales-leads"
 import { getPublicQuoteUrl } from "@/lib/public-quote-url"
-import { buildCrewMaterialsList } from "@/lib/quote-materials"
+import {
+  buildCrewMaterialsList,
+  getQuoteLabourHours,
+} from "@/lib/quote-materials"
 import {
   QUOTE_LINE_CATEGORIES,
   QUOTE_LINE_TAX_TYPE,
@@ -1858,12 +1861,15 @@ Pristine Gardens`)
     setFirstVisitDate("")
     setFirstVisitStartTime("")
     setFirstVisitStaffId("")
-    setFirstVisitDuration(
-      getNormalisedQuoteType(draft.quote_type) === "maintenance" &&
-        typeof draft.labour_hours === "number"
-        ? String(draft.labour_hours)
-        : ""
-    )
+    // Same mapping as the schedule page: maintenance → pricing-panel hours;
+    // one-off/landscaping → the single labour line's quantity (blank when
+    // ambiguous).
+    const quotedHours = getQuoteLabourHours({
+      quote_type: getNormalisedQuoteType(draft.quote_type),
+      labour_hours: draft.labour_hours,
+      line_items: draft.line_items,
+    })
+    setFirstVisitDuration(quotedHours ? String(quotedHours) : "")
     setFirstVisitNotes(draft.customer_scope || "")
     setMessage(null)
     setError(null)
@@ -1887,6 +1893,11 @@ Pristine Gardens`)
 
     if (!firstVisitStaffId) {
       setError("Choose assigned staff.")
+      return
+    }
+
+    if (firstVisitDuration && Number(firstVisitDuration) < 0) {
+      setError("Duration can't be negative.")
       return
     }
 
@@ -3757,6 +3768,7 @@ Pristine Gardens`)
                 <input
                   type="number"
                   step="0.25"
+                  min="0"
                   className="h-11 w-full rounded-md border px-3"
                   value={firstVisitDuration}
                   onChange={(event) =>

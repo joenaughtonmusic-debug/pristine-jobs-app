@@ -6,7 +6,10 @@ import Link from "next/link"
 import { createClient } from "@/lib/supabase/client"
 import { NewPropertyModal } from "@/components/new-property-modal"
 import { markJobScheduledForDraftAction } from "@/app/(app)/sales-pipeline/actions"
-import { buildCrewMaterialsList } from "@/lib/quote-materials"
+import {
+  buildCrewMaterialsList,
+  getQuoteLabourHours,
+} from "@/lib/quote-materials"
 import {
   formatServiceFrequency,
   formatServiceValue,
@@ -174,6 +177,7 @@ export type QuotePrefill = {
   quote_type: string | null
   customer_scope: string | null
   line_items: unknown
+  labour_hours?: number | string | null
   sprays_size?: string | null
   fertiliser_size?: string | null
   stump_paste_size?: string | null
@@ -784,6 +788,14 @@ setInvoiceMethod(getDefaultInvoiceMethod(property))
     if (materials) {
       setQuotedMaterials(materials)
     }
+
+    // Quoted labour hours become the Duration; when the quote can't say
+    // (no labour line, or several), the property/template default stays.
+    const quotedHours = getQuoteLabourHours(activeQuotePrefill)
+
+    if (quotedHours) {
+      setPlannedDuration(String(quotedHours))
+    }
     // Run once per arriving quote; everything else it reads is page-load data.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeQuotePrefill?.id])
@@ -997,6 +1009,11 @@ setInvoiceMethod(job.invoice_method || "")
       setError(
         "Choose an invoice method — this property's billing type doesn't set one automatically."
       )
+      return
+    }
+
+    if (plannedDuration && parseFloat(plannedDuration) < 0) {
+      setError("Duration can't be negative.")
       return
     }
 
@@ -2189,6 +2206,7 @@ const handleSendClientEmail = async () => {
                   <input
                     type="number"
                     step="0.25"
+                    min="0"
                     className="h-11 w-full rounded-md border px-3"
                     value={plannedDuration}
                     onChange={(e) => setPlannedDuration(e.target.value)}

@@ -28,6 +28,43 @@ const ALLOWANCE_LABELS: Array<[keyof QuoteAllowances, string]> = [
   ["stump_paste_size", "Stump paste"],
 ]
 
+// Live rows store line_items in three shapes: a real jsonb array (current
+// builder), a JSON-stringified array or single object (legacy rows — seen
+// on real quotes). Everything downstream gets a plain array.
+export function parseStoredLineItems(value: unknown): Record<string, unknown>[] {
+  let parsed = value
+
+  if (typeof parsed === "string") {
+    try {
+      parsed = JSON.parse(parsed)
+    } catch {
+      return []
+    }
+  }
+
+  if (Array.isArray(parsed)) {
+    return parsed.filter(
+      (item): item is Record<string, unknown> =>
+        Boolean(item) && typeof item === "object"
+    )
+  }
+
+  if (parsed && typeof parsed === "object") {
+    return [parsed as Record<string, unknown>]
+  }
+
+  return []
+}
+
+function categoryOf(item: Record<string, unknown>) {
+  return inferQuoteLineCategory({
+    category: typeof item.category === "string" ? item.category : null,
+    account_code:
+      typeof item.account_code === "string" ? item.account_code : null,
+    item_code: typeof item.item_code === "string" ? item.item_code : null,
+  })
+}
+
 export function buildCrewMaterialsList(
   lineItems: unknown,
   allowances?: QuoteAllowances | null
@@ -42,20 +79,8 @@ export function buildCrewMaterialsList(
     }
   }
 
-  if (!Array.isArray(lineItems)) return lines.join("\n")
-
-  for (const raw of lineItems) {
-    const item =
-      raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {}
-
-    const category = inferQuoteLineCategory({
-      category: typeof item.category === "string" ? item.category : null,
-      account_code:
-        typeof item.account_code === "string" ? item.account_code : null,
-      item_code: typeof item.item_code === "string" ? item.item_code : null,
-    })
-
-    if (!CREW_MATERIAL_CATEGORIES.has(category)) continue
+  for (const item of parseStoredLineItems(lineItems)) {
+    if (!CREW_MATERIAL_CATEGORIES.has(categoryOf(item))) continue
 
     const description =
       typeof item.description === "string" ? item.description.trim() : ""
@@ -71,4 +96,29 @@ export function buildCrewMaterialsList(
   }
 
   return lines.join("\n")
+}
+
+// Duration prefill (Joe's mapping, 20 Jul 2026): maintenance quotes carry
+// hours in the pricing panel (labour_hours, per visit); one-off/landscaping
+// quotes carry them as the single labour line's quantity. More than one
+// labour line means ambiguity — return null and leave Duration for Joe
+// rather than summing incorrectly.
+export function getQuoteLabourHours(quote: {
+  quote_type?: string | null
+  labour_hours?: number | string | null
+  line_items?: unknown
+}): number | null {
+  if (quote.quote_type === "maintenance") {
+    const hours = Number(quote.labour_hours || 0)
+    return hours > 0 ? hours : null
+  }
+
+  const labourLines = parseStoredLineItems(quote.line_items).filter(
+    (item) => categoryOf(item) === "labour"
+  )
+
+  if (labourLines.length !== 1) return null
+
+  const hours = Number(labourLines[0].quantity || 0)
+  return hours > 0 ? hours : null
 }
