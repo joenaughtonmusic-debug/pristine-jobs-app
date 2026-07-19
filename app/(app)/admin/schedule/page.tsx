@@ -34,7 +34,7 @@ export default async function AdminSchedulePage({
     const { data: quoteDraft } = await supabase
       .from("quote_drafts")
       .select(
-        "id, customer_name, property_id, quote_type, customer_scope, total, first_scheduled_job_id"
+        "id, customer_name, property_id, quote_type, customer_scope, line_items, sprays_size, fertiliser_size, stump_paste_size, total, first_scheduled_job_id"
       )
       .eq("id", params.quote)
       .maybeSingle()

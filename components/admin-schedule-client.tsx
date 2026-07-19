@@ -6,6 +6,7 @@ import Link from "next/link"
 import { createClient } from "@/lib/supabase/client"
 import { NewPropertyModal } from "@/components/new-property-modal"
 import { markJobScheduledForDraftAction } from "@/app/(app)/sales-pipeline/actions"
+import { buildCrewMaterialsList } from "@/lib/quote-materials"
 import {
   formatServiceFrequency,
   formatServiceValue,
@@ -172,6 +173,10 @@ export type QuotePrefill = {
   property_id: string | null
   quote_type: string | null
   customer_scope: string | null
+  line_items: unknown
+  sprays_size?: string | null
+  fertiliser_size?: string | null
+  stump_paste_size?: string | null
   total: number | string | null
   first_scheduled_job_id: string | null
 }
@@ -766,6 +771,18 @@ setInvoiceMethod(getDefaultInvoiceMethod(property))
 
     if (activeQuotePrefill.customer_scope) {
       setQuotedScope(activeQuotePrefill.customer_scope)
+    }
+
+    // Crew Brief: the quote's materials-ish line items (materials, plants,
+    // tool hire, sprays) become the job's "Included Materials" — visible and
+    // editable here before saving, rendered on the crew's job view after.
+    const materials = buildCrewMaterialsList(
+      activeQuotePrefill.line_items,
+      activeQuotePrefill
+    )
+
+    if (materials) {
+      setQuotedMaterials(materials)
     }
     // Run once per arriving quote; everything else it reads is page-load data.
     // eslint-disable-next-line react-hooks/exhaustive-deps

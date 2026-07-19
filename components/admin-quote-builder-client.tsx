@@ -11,6 +11,7 @@ import {
 } from "@/app/(app)/sales-pipeline/actions"
 import { getTemplateQuoteType } from "@/lib/sales-leads"
 import { getPublicQuoteUrl } from "@/lib/public-quote-url"
+import { buildCrewMaterialsList } from "@/lib/quote-materials"
 import {
   QUOTE_LINE_CATEGORIES,
   QUOTE_LINE_TAX_TYPE,
@@ -109,6 +110,9 @@ type QuoteDraftSummary = {
   labour_hours: number | null
   labour_rate: number | null
   greenwaste_rate: number | null
+  sprays_size: string | null
+  fertiliser_size: string | null
+  stump_paste_size: string | null
   customer_scope: string | null
   first_scheduled_job_id: string | null
   total: number | null
@@ -1221,6 +1225,9 @@ export function AdminQuoteBuilderClient({
         labour_hours,
         labour_rate,
         greenwaste_rate,
+        sprays_size,
+        fertiliser_size,
+        stump_paste_size,
         customer_scope,
         first_scheduled_job_id,
         total,
@@ -1906,6 +1913,10 @@ Pristine Gardens`)
         invoice_method: quoteType === "maintenance" ? "charge_up" : "quoted",
         billing_mode: quoteType === "maintenance" ? "charge_up" : "quoted",
         quoted_scope: firstVisitNotes.trim() || scheduleDraft.customer_scope || null,
+        // Crew Brief: materials-ish line items become the crew's
+        // "Included Materials" list (same helper as the schedule page).
+        quoted_materials:
+          buildCrewMaterialsList(scheduleDraft.line_items, scheduleDraft) || null,
         quoted_amount:
           quoteType === "maintenance" ? null : Number(scheduleDraft.total || 0),
         status: "scheduled",
