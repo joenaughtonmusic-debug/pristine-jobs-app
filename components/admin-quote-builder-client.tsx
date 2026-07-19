@@ -1928,7 +1928,10 @@ Pristine Gardens`)
       .update({
         first_scheduled_job_id: scheduledJob.id,
         recurring_invoice_required: false,
-        recurring_invoice_setup_status: null,
+        // NOT NULL + CHECK ('not_required' | 'required' | 'completed') —
+        // 'not_required' is the column's own default and the honest state
+        // for a charge_up/quoted job.
+        recurring_invoice_setup_status: "not_required",
         updated_at: new Date().toISOString(),
       })
       .eq("id", scheduleDraft.id)
