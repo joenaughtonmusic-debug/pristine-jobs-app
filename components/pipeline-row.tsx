@@ -224,12 +224,31 @@ export function PipelineRow({
                 onClick={() => run(() => markQuoteAcceptedAction(lead.id))}
               />
             )}
-            <ActionButton
-              label="Schedule job"
-              disabled={!accepted || pending}
-              title={accepted ? undefined : "Enabled once the quote is accepted"}
-              onClick={() => openModal("schedule_job")}
-            />
+            {/* Sold→scheduled seam: with a linked quote this goes STRAIGHT
+                to the schedule, pre-filled from the quote — no builder
+                detour, and scheduling advances this card automatically.
+                The dialog remains only for leads with no linked draft. */}
+            {accepted && lead.quote_draft_id ? (
+              <Button
+                asChild
+                size="sm"
+                variant="outline"
+                className="mt-2 h-8 w-full text-xs"
+              >
+                <Link href={`/admin/schedule?quote=${lead.quote_draft_id}`}>
+                  Schedule job
+                </Link>
+              </Button>
+            ) : (
+              <ActionButton
+                label="Schedule job"
+                disabled={!accepted || pending}
+                title={
+                  accepted ? undefined : "Enabled once the quote is accepted"
+                }
+                onClick={() => openModal("schedule_job")}
+              />
+            )}
           </>
         )
       default:

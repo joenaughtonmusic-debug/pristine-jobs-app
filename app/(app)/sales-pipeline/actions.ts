@@ -14,6 +14,7 @@ import {
   confirmVisit,
   linkQuoteDraft,
   markJobScheduled,
+  markJobScheduledForDraft,
   markLost,
   markQuoteAccepted,
   markQuoteSent,
@@ -175,6 +176,16 @@ export async function markJobScheduledAction(
   leadId: string
 ): Promise<TransitionResult> {
   return runTransition((supabase) => markJobScheduled(supabase, leadId))
+}
+
+// Sold→scheduled seam: scheduling a job from an accepted quote advances the
+// linked lead's card automatically (quiet no-op when there's no lead).
+export async function markJobScheduledForDraftAction(
+  quoteDraftId: string
+): Promise<TransitionResult> {
+  return runTransition((supabase) =>
+    markJobScheduledForDraft(supabase, quoteDraftId)
+  )
 }
 
 export async function advanceStageAction(

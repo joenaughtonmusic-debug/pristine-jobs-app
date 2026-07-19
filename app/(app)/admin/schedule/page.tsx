@@ -21,10 +21,26 @@ function getMonday(date: Date) {
 export default async function AdminSchedulePage({
   searchParams,
 }: {
-  searchParams: Promise<{ week?: string }>
+  searchParams: Promise<{ week?: string; quote?: string }>
 }) {
   const supabase = await createClient()
   const params = await searchParams
+
+  // Sold→scheduled seam: ?quote=<draft id> arrives from an accepted quote's
+  // pipeline card. The client pre-fills the Quick Add modal from this draft
+  // and, on create, stamps the draft + advances the lead's card.
+  let quotePrefill = null
+  if (params?.quote) {
+    const { data: quoteDraft } = await supabase
+      .from("quote_drafts")
+      .select(
+        "id, customer_name, property_id, quote_type, customer_scope, total, first_scheduled_job_id"
+      )
+      .eq("id", params.quote)
+      .maybeSingle()
+
+    quotePrefill = quoteDraft || null
+  }
 
   const today = toZonedTime(new Date(), "Pacific/Auckland")
 
@@ -196,6 +212,7 @@ export default async function AdminSchedulePage({
       serviceTemplates={serviceTemplates || []}
       schedulingQueue={schedulingQueue || []}
       clientAdjustments={clientAdjustments || []}
+      quotePrefill={quotePrefill}
     />
   )
 }
