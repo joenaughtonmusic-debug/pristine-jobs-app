@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react"
 import { createClient } from "@/lib/supabase/client"
 import {
   linkQuoteDraftAction,
+  markJobScheduledForDraftAction,
   markQuoteSentForDraftAction,
   setLeadPropertyAction,
   setLeadPropertyForDraftAction,
@@ -1922,22 +1923,46 @@ Pristine Gardens`)
     // (quoted) — neither uses a Xero repeating invoice, so clear the
     // recurring-invoice reminder set at acceptance. Leaving it would queue
     // the VA to create a repeating invoice on top of per-visit invoices.
-    const { error: quoteUpdateError } = await supabase
+    const { data: stamped, error: quoteUpdateError } = await supabase
       .from("quote_drafts")
       .update({
         first_scheduled_job_id: scheduledJob.id,
         recurring_invoice_required: false,
-        recurring_invoice_setup_status: null,
+        // NOT NULL + CHECK ('not_required' | 'required' | 'completed') —
+        // 'not_required' is the column's own default and the honest state
+        // for a charge_up/quoted job.
+        recurring_invoice_setup_status: "not_required",
         updated_at: new Date().toISOString(),
       })
       .eq("id", scheduleDraft.id)
       .is("first_scheduled_job_id", null)
+      .select("id")
 
     setCreatingMaintenanceSchedule(false)
 
     if (quoteUpdateError) {
       setError(quoteUpdateError.message)
       return
+    }
+
+    if (!stamped || stamped.length === 0) {
+      // Write-once guard matched nothing: a concurrent schedule linked this
+      // quote first, and the job created above may be a duplicate.
+      setError(
+        "This quote was already linked to a scheduled job — the job just created may be a duplicate. Check the schedule before continuing."
+      )
+      return
+    }
+
+    // Sold→scheduled seam: scheduling advances the pipeline card itself
+    // (quiet no-op when no lead is linked) — same as the schedule page.
+    const advanceResult = await markJobScheduledForDraftAction(scheduleDraft.id)
+
+    if ("error" in advanceResult) {
+      console.error("[quote-builder] pipeline card advance failed", {
+        quoteDraftId: scheduleDraft.id,
+        message: advanceResult.error,
+      })
     }
 
     setScheduleDraft(null)

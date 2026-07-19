@@ -530,11 +530,39 @@ export async function markJobScheduled(
     supabase,
     found.lead,
     { status: "scheduled" },
-    createActivity(
-      "status_change",
-      "Quote → Job scheduled (booked via the quote builder)."
-    )
+    createActivity("status_change", "Quote → Job scheduled (job booked).")
   )
+}
+
+// Sold→scheduled seam: called when a scheduled job is created from an
+// accepted quote (schedule-page prefill or the builder's Schedule action) —
+// the act of scheduling advances the board itself, no second click. No
+// linked lead, quote not accepted, or already at/past scheduled: quiet
+// no-op — a lead-side miss must never break the scheduling flow.
+export async function markJobScheduledForDraft(
+  supabase: SupabaseClient,
+  quoteDraftId: string
+): Promise<TransitionResult> {
+  const { data: lead, error } = await supabase
+    .from("sales_leads")
+    .select("id, status, quote_accepted_at")
+    .eq("quote_draft_id", quoteDraftId)
+    .maybeSingle()
+
+  if (error) {
+    return { error: error.message }
+  }
+
+  if (
+    !lead ||
+    !lead.quote_accepted_at ||
+    lead.status === "scheduled" ||
+    lead.status === "completed"
+  ) {
+    return { ok: true }
+  }
+
+  return markJobScheduled(supabase, lead.id)
 }
 
 // The canonical status a lead lands on when advanced from each board stage

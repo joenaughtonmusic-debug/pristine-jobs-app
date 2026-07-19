@@ -1,10 +1,11 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { createClient } from "@/lib/supabase/client"
 import { NewPropertyModal } from "@/components/new-property-modal"
+import { markJobScheduledForDraftAction } from "@/app/(app)/sales-pipeline/actions"
 import {
   formatServiceFrequency,
   formatServiceValue,
@@ -162,6 +163,19 @@ type ClientAdjustment = {
   created_at: string | null
 }
 
+// Sold→scheduled seam: an accepted quote arriving via ?quote=<draft id>.
+// Pre-fills the existing Quick Add modal; on create the draft is stamped
+// (first_scheduled_job_id, write-once) and the pipeline card auto-advances.
+export type QuotePrefill = {
+  id: string
+  customer_name: string | null
+  property_id: string | null
+  quote_type: string | null
+  customer_scope: string | null
+  total: number | string | null
+  first_scheduled_job_id: string | null
+}
+
 type Props = {
   thisWeekStart: string
   nextWeekStart: string
@@ -171,6 +185,7 @@ type Props = {
   serviceTemplates: ServiceTemplate[]
   schedulingQueue: SchedulingQueueItem[]
   clientAdjustments: ClientAdjustment[]
+  quotePrefill?: QuotePrefill | null
 }
 
 function parseLocalDate(dateString: string) {
@@ -288,6 +303,7 @@ export function AdminScheduleClient({
   serviceTemplates,
   schedulingQueue = [],
   clientAdjustments = [],
+  quotePrefill = null,
 }: Props) {
   const router = useRouter()
   const supabase = createClient()
@@ -296,6 +312,19 @@ export function AdminScheduleClient({
     useState(clientAdjustments)
   const [savingClientAdjustmentId, setSavingClientAdjustmentId] =
     useState<string | null>(null)
+
+  // Sold→scheduled seam: the accepted quote being scheduled (null once the
+  // job is created or the modal is dismissed). Already-scheduled quotes
+  // never activate — the write-once stamp must not be raced.
+  const [activeQuotePrefill, setActiveQuotePrefill] = useState(
+    quotePrefill && !quotePrefill.first_scheduled_job_id ? quotePrefill : null
+  )
+  const quoteAlreadyScheduled = Boolean(quotePrefill?.first_scheduled_job_id)
+  const prefillProperty = activeQuotePrefill?.property_id
+    ? properties.find(
+        (property) => property.id === activeQuotePrefill.property_id
+      ) || null
+    : null
 
   const [quickAddOpen, setQuickAddOpen] = useState(true)
   const [selectedSuburb, setSelectedSuburb] = useState("All")
@@ -720,6 +749,28 @@ setInvoiceMethod(getDefaultInvoiceMethod(property))
     setModalOpen(true)
   }
 
+  // Sold→scheduled seam: arriving with an accepted quote auto-opens the SAME
+  // Quick Add modal a manual property click uses, then lays the quote's
+  // specifics over the property/template defaults. Nothing is re-typed:
+  // property preselected, scope from the quote, invoice method by the same
+  // rule as the builder's schedule path (maintenance → charge_up, else
+  // quoted — the accepted quote is the price).
+  useEffect(() => {
+    if (!activeQuotePrefill || !prefillProperty) return
+
+    openAddModal(prefillProperty)
+
+    setInvoiceMethod(
+      activeQuotePrefill.quote_type === "maintenance" ? "charge_up" : "quoted"
+    )
+
+    if (activeQuotePrefill.customer_scope) {
+      setQuotedScope(activeQuotePrefill.customer_scope)
+    }
+    // Run once per arriving quote; everything else it reads is page-load data.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeQuotePrefill?.id])
+
   const openEditModal = (job: Job) => {
     const property = properties.find((p) => p.id === job.property_id)
 
@@ -941,6 +992,13 @@ setInvoiceMethod(job.invoice_method || "")
 
     const leadStaffId = assignedStaffId || finalStaffIds[0] || null
 
+    // When scheduling from an accepted quote, carry the fields the builder's
+    // schedule path writes (parity — see createAcceptedQuoteSchedule): the
+    // job's type from the quote type, the accepted total on quoted jobs, and
+    // a billing_mode that matches the chosen invoice method.
+    const schedulingFromQuote = Boolean(activeQuotePrefill && !selectedJob)
+    const prefillQuoteType = activeQuotePrefill?.quote_type || null
+
     const jobPayload = {
       property_id: selectedProperty.id,
       scheduled_date: jobDate,
@@ -953,11 +1011,29 @@ setInvoiceMethod(job.invoice_method || "")
         ? parseFloat(plannedDuration)
         : null,
       planned_start_time: plannedStartTime || null,
-      billing_mode: selectedTemplate?.billing_mode || "charge_up",
+      billing_mode: schedulingFromQuote
+        ? invoiceMethod === "quoted" || invoiceMethod === "subscription"
+          ? invoiceMethod
+          : "charge_up"
+        : selectedTemplate?.billing_mode || "charge_up",
       time_limit_type: selectedTemplate?.time_limit_type || "flexible",
       quoted_scope: quotedScope || null,
 quoted_materials: quotedMaterials || null,
 admin_note: adminNote || null,
+      ...(schedulingFromQuote
+        ? {
+            job_type:
+              prefillQuoteType === "maintenance"
+                ? "maintenance"
+                : prefillQuoteType === "landscaping"
+                  ? "landscaping"
+                  : "job",
+            quoted_amount:
+              prefillQuoteType === "maintenance"
+                ? null
+                : Number(activeQuotePrefill?.total || 0),
+          }
+        : {}),
     }
 
     let savedJobId = selectedJob?.id || ""
@@ -998,6 +1074,65 @@ admin_note: adminNote || null,
       setError(staffSyncError.message)
       setSaving(false)
       return
+    }
+
+    if (schedulingFromQuote && activeQuotePrefill) {
+      // Same writes as the builder's schedule path: link the quote to its
+      // job (write-once — .is null means a concurrent schedule can't
+      // relink) and clear the recurring-invoice reminder (charge_up/quoted
+      // jobs never use a Xero repeating invoice). Then the act of
+      // scheduling advances the pipeline card itself — no second click.
+      const { data: stamped, error: stampError } = await supabase
+        .from("quote_drafts")
+        .update({
+          first_scheduled_job_id: savedJobId,
+          recurring_invoice_required: false,
+          // NOT NULL + CHECK ('not_required' | 'required' | 'completed') —
+          // 'not_required' is the column's own default and the honest state
+          // for a charge_up/quoted job.
+          recurring_invoice_setup_status: "not_required",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", activeQuotePrefill.id)
+        .is("first_scheduled_job_id", null)
+        .select("id")
+
+      if (stampError) {
+        // Stop here: do NOT advance the card or close the modal — the quote
+        // is unlinked and the recurring-invoice reminder still stands, so
+        // advancing would hide a job that isn't wired up. The job row DOES
+        // exist — don't save again.
+        setError(
+          `The job was created, but linking it to the quote failed: ${stampError.message}. Do not save again — link the quote from the builder, then advance the card manually.`
+        )
+        setSaving(false)
+        return
+      }
+
+      if (!stamped || stamped.length === 0) {
+        // The write-once guard matched nothing: another schedule beat this
+        // one to the quote. This save still created a job — surface the
+        // likely duplicate instead of reporting clean success.
+        setError(
+          "This quote was already linked to a scheduled job — the job just saved may be a duplicate. Check the schedule before continuing."
+        )
+        setSaving(false)
+        setActiveQuotePrefill(null)
+        return
+      }
+
+      const advanceResult = await markJobScheduledForDraftAction(
+        activeQuotePrefill.id
+      )
+
+      if ("error" in advanceResult) {
+        console.error("[schedule] pipeline card advance failed", {
+          quoteDraftId: activeQuotePrefill.id,
+          message: advanceResult.error,
+        })
+      }
+
+      setActiveQuotePrefill(null)
     }
 
     setSaving(false)
@@ -1778,6 +1913,21 @@ const handleSendClientEmail = async () => {
         </div>
       </section>
 
+      {quoteAlreadyScheduled && (
+        <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+          That quote already has its job scheduled — nothing to rebook. The
+          schedule below shows current work.
+        </div>
+      )}
+
+      {activeQuotePrefill && !prefillProperty && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          This quote isn&apos;t linked to an active property yet, so there&apos;s
+          nothing to schedule against. Convert it to a property in the quote
+          builder first, then come back via Schedule job.
+        </div>
+      )}
+
       <section className="rounded-xl border bg-white p-4 shadow-sm">
         <button
           type="button"
@@ -1887,6 +2037,27 @@ const handleSendClientEmail = async () => {
             <p className="mb-4 text-sm text-gray-500">
               {selectedProperty.client_name}
             </p>
+
+            {activeQuotePrefill && !selectedJob && (
+              <div className="mb-4 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+                Scheduling from accepted quote:{" "}
+                <span className="font-medium">
+                  {[
+                    activeQuotePrefill.customer_name,
+                    selectedProperty.suburb,
+                    activeQuotePrefill.quote_type === "maintenance"
+                      ? "Maintenance"
+                      : activeQuotePrefill.quote_type === "landscaping"
+                        ? "Landscaping"
+                        : "One-off",
+                  ]
+                    .filter(Boolean)
+                    .join(" — ")}
+                </span>
+                . Saving links the job to the quote and moves the pipeline
+                card to Job scheduled.
+              </div>
+            )}
 
             {!selectedJob && (
               <div className="mb-4">
@@ -2146,6 +2317,7 @@ const handleSendClientEmail = async () => {
                     setQuotedMaterials("")
                     setInvoiceMethod("")
                     setXeroQuoteNumber("")
+                    setActiveQuotePrefill(null)
                   }}
                   className="h-11 flex-1 rounded-md border"
                   disabled={saving}
