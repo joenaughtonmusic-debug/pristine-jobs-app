@@ -6,7 +6,10 @@ import {
   getActionDueDate,
 } from "@/lib/admin-actions"
 import { getCostCaptureFlags } from "@/lib/cost-capture"
-import { readyInvoiceStatusForVisit } from "@/lib/quoted-invoicing"
+import {
+  readyInvoiceStatusForVisit,
+  zeroLineRefusalForVisit,
+} from "@/lib/quoted-invoicing"
 
 export const dynamic = "force-dynamic"
 
@@ -37,6 +40,7 @@ type ScheduledJobSummary = {
 type InvoiceVisit = {
   id: string
   scheduled_job_id?: string | null
+  updated_at?: string | null
   visit_date?: string | null
   hours_worked?: number | null
   greenwaste_bags?: number | null
@@ -150,6 +154,25 @@ async function resetInvoiceStatusToReady(formData: FormData) {
 
   // Quoted jobs are invoiced once from the quote, never per visit — exclude instead.
   const invoiceStatus = await readyInvoiceStatusForVisit(supabase, visitId)
+
+  // Guard 2: never queue a visit Make can't price — refuse loudly instead.
+  if (invoiceStatus === "ready") {
+    const refusal = await zeroLineRefusalForVisit(supabase, visitId)
+
+    if (refusal) {
+      await supabase
+        .from("visits")
+        .update({
+          ready_for_invoice: false,
+          invoice_status: "error",
+          invoice_error: refusal,
+        })
+        .eq("id", visitId)
+
+      revalidatePath("/admin/invoices")
+      return
+    }
+  }
 
   await supabase
     .from("visits")
@@ -293,6 +316,24 @@ function normalizeInvoiceStatus(status?: string | null) {
   return status || "ready"
 }
 
+// Guard 3: 'processing' is Make's promise of a write-back. If no Xero invoice
+// has appeared after an hour, the promise is broken and the visit would
+// otherwise dead-end silently (Make only re-polls 'ready'). Approximate
+// visibility by design — display and VA action only, never mutates the visit.
+const STUCK_PROCESSING_MS = 60 * 60 * 1000
+
+function isStuckProcessing(visit: InvoiceVisit) {
+  if (normalizeInvoiceStatus(visit.invoice_status) !== "processing") return false
+  if (visit.xero_invoice_id || visit.xero_invoice_number) return false
+
+  const updatedAt = Date.parse(visit.updated_at || "")
+
+  // No parseable timestamp: it has certainly been more than an hour.
+  if (!Number.isFinite(updatedAt)) return true
+
+  return Date.now() - updatedAt > STUCK_PROCESSING_MS
+}
+
 function isInvoiceRelevantVisit(visit: InvoiceVisit) {
   const status = normalizeInvoiceStatus(visit.invoice_status)
   const invoiceStatuses = new Set([
@@ -387,6 +428,7 @@ export default async function AdminInvoicesPage({
   const visitSelect = `
     id,
     scheduled_job_id,
+    updated_at,
     visit_date,
     hours_worked,
     greenwaste_bags,
@@ -574,8 +616,10 @@ export default async function AdminInvoicesPage({
         Number.isFinite(actualXeroAmount) &&
         invoiceTotalPreview !== null &&
         Math.abs(actualXeroAmount - invoiceTotalPreview) > 0.01
+      const stuckProcessing = isStuckProcessing(visit)
       const hasException =
         normalizedInvoiceStatus === "error" ||
+        stuckProcessing ||
         missingProperty ||
         missingInvoiceMethod ||
         missingLabourRate ||
@@ -611,6 +655,9 @@ export default async function AdminInvoicesPage({
             `Invoice status: ${normalizedInvoiceStatus}`,
             visit.invoice_error || visit.invoice_error_message
               ? `Error: ${visit.invoice_error || visit.invoice_error_message}`
+              : null,
+            stuckProcessing
+              ? "Stuck in processing for over an hour — Make never wrote back a Xero invoice."
               : null,
             missingProperty ? "Missing linked property." : null,
             missingInvoiceMethod ? "Missing invoice method." : null,
@@ -825,6 +872,11 @@ export default async function AdminInvoicesPage({
                         active={processing}
                         tone={invoiceStatusClasses("processing")}
                       />
+                      {isStuckProcessing(visit) && (
+                        <span className="rounded-full border border-red-300 bg-red-100 px-2 py-1 text-xs font-medium text-red-900">
+                          Stuck — no Xero response
+                        </span>
+                      )}
                       <StageChip
                         label="Draft Created"
                         active={draftCreated}

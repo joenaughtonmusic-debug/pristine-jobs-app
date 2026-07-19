@@ -61,6 +61,35 @@ export async function readyInvoiceStatusForJob(
     : "ready"
 }
 
+// Guard 2 (Brief 05): a visit must never reach Make with zero invoice lines —
+// Make stamps 'processing', creates nothing, and the visit dead-ends silently
+// (the 5 stuck legacy visits of 18 July are this exact shape). Returns null
+// when the visit prices, or a 'Not queued:' message for visits.invoice_error.
+// The prefix keeps app-side refusals distinguishable from Make write-backs.
+export async function zeroLineRefusalForVisit(
+  supabase: SupabaseClient,
+  visitId: string,
+): Promise<string | null> {
+  const { count, error } = await supabase
+    .from("invoice_line_items_for_make")
+    .select("visit_id", { count: "exact", head: true })
+    .eq("visit_id", visitId)
+
+  // A failed count must not wave the visit through — refuse and say why.
+  if (error) {
+    return `Not queued: could not confirm invoice lines (${error.message}). Try again.`
+  }
+
+  if (count && count > 0) return null
+
+  return (
+    "Not queued: this visit would produce 0 invoice lines, so Make would " +
+    "create an empty invoice and the visit would stick at 'processing'. " +
+    "Check the linked quote's line items (quoted jobs) or the visit's hours, " +
+    "greenwaste and extra charges, then mark it ready again."
+  )
+}
+
 export async function readyInvoiceStatusForVisit(
   supabase: SupabaseClient,
   visitId: string | null | undefined,
