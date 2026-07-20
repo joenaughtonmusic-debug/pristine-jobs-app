@@ -175,12 +175,6 @@ function getWorkTypeLabel(value?: string | null) {
   )
 }
 
-function getBillableStatusLabel(value?: string | null, billable?: boolean | null) {
-  if (value === "needs_review") return "Needs review"
-  if (value === "non_billable") return "Non-billable"
-  if (value === "billable") return "Billable"
-  return billable ? "Billable" : "Non-billable"
-}
 
 function firstOrValue<T>(value: T | T[] | null | undefined) {
   return Array.isArray(value) ? value[0] : value
@@ -243,12 +237,10 @@ export function LabourEntryClient({
   const [selectedJobByDay, setSelectedJobByDay] = useState<Record<string, string>>({})
   const [hoursByDay, setHoursByDay] = useState<Record<string, string>>({})
   const [notesByDay, setNotesByDay] = useState<Record<string, string>>({})
-  const [billableByDay, setBillableByDay] = useState<Record<string, boolean>>({})
   const [miscWorkTypeByDay, setMiscWorkTypeByDay] = useState<Record<string, string>>({})
   const [miscPropertyIdByDay, setMiscPropertyIdByDay] = useState<Record<string, string>>({})
   const [miscFreeTextByDay, setMiscFreeTextByDay] = useState<Record<string, string>>({})
   const [miscHoursByDay, setMiscHoursByDay] = useState<Record<string, string>>({})
-  const [miscBillableStatusByDay, setMiscBillableStatusByDay] = useState<Record<string, string>>({})
   const [miscNotesByDay, setMiscNotesByDay] = useState<Record<string, string>>({})
 
   const [totalHoursByDay, setTotalHoursByDay] = useState<Record<string, string>>({})
@@ -336,7 +328,6 @@ const [editEntryNotes, setEditEntryNotes] = useState("")
       return
     }
 
-    const billable = billableByDay[day] ?? true
     const notes = notesByDay[day]?.trim() || null
     const scheduledJobsForDay =
       selectedJob.scheduled_jobs?.filter(
@@ -357,7 +348,6 @@ const [editEntryNotes, setEditEntryNotes] = useState("")
         staff_name: staffMember.name,
         work_date: day,
         hours_worked: calculatedHours,
-        billable,
         notes,
       })
 
@@ -383,7 +373,6 @@ const [editEntryNotes, setEditEntryNotes] = useState("")
     const propertyId = miscPropertyIdByDay[day] || null
     const freeText = miscFreeTextByDay[day]?.trim() || null
     const parsedHours = parseFloat(miscHoursByDay[day] || "")
-    const billableStatus = miscBillableStatusByDay[day] || "needs_review"
     const notes = miscNotesByDay[day]?.trim() || null
     const property = properties.find((item) => item.id === propertyId)
 
@@ -416,8 +405,6 @@ const [editEntryNotes, setEditEntryNotes] = useState("")
       staff_name: staffMember.name,
       work_date: day,
       hours_worked: parsedHours,
-      billable: billableStatus === "billable",
-      billable_status: billableStatus,
       notes,
     })
 
@@ -432,7 +419,6 @@ const [editEntryNotes, setEditEntryNotes] = useState("")
     setMiscPropertyIdByDay((prev) => ({ ...prev, [day]: "" }))
     setMiscFreeTextByDay((prev) => ({ ...prev, [day]: "" }))
     setMiscHoursByDay((prev) => ({ ...prev, [day]: "" }))
-    setMiscBillableStatusByDay((prev) => ({ ...prev, [day]: "" }))
     setMiscNotesByDay((prev) => ({ ...prev, [day]: "" }))
     setSavingDay(null)
     router.refresh()
@@ -839,7 +825,7 @@ const handleDeleteEntry = async (entryId: string) => {
         </p>
 
         <p className="text-muted-foreground">
-          {entry.hours_worked}h {getBillableStatusLabel(entry.billable_status, entry.billable)}
+          {entry.hours_worked}h
         </p>
 
         {entry.notes && (
@@ -945,20 +931,6 @@ const handleDeleteEntry = async (entryId: string) => {
                       />
                     </div>
 
-                    <label className="flex items-center gap-2 text-sm">
-                      <input
-                        type="checkbox"
-                        checked={billableByDay[day] ?? true}
-                        onChange={(e) =>
-                          setBillableByDay((prev) => ({
-                            ...prev,
-                            [day]: e.target.checked,
-                          }))
-                        }
-                      />
-                      Billable
-                    </label>
-
                     <button
                       type="button"
                       onClick={() => handleSaveDay(day)}
@@ -1062,25 +1034,6 @@ const handleDeleteEntry = async (entryId: string) => {
                             />
                           </label>
 
-                          <label className="block">
-                            <span className="mb-1 block text-sm font-medium">
-                              Billable status
-                            </span>
-                            <select
-                              className="h-10 w-full rounded-md border bg-white px-3 text-sm"
-                              value={miscBillableStatusByDay[day] || "needs_review"}
-                              onChange={(event) =>
-                                setMiscBillableStatusByDay((prev) => ({
-                                  ...prev,
-                                  [day]: event.target.value,
-                                }))
-                              }
-                            >
-                              <option value="needs_review">Needs review</option>
-                              <option value="billable">Billable</option>
-                              <option value="non_billable">Non-billable</option>
-                            </select>
-                          </label>
                         </div>
 
                         <label className="block">

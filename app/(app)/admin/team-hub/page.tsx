@@ -290,7 +290,6 @@ export default async function AdminTeamHubPage() {
     `)
     .eq("job_type", "misc")
     .is("scheduled_job_id", null)
-    .in("billable_status", ["needs_review", "billable"])
     .order("work_date", { ascending: false })
     .limit(10)
 
@@ -511,9 +510,6 @@ export default async function AdminTeamHubPage() {
                     </p>
                   </div>
 
-                  <span className={`rounded-full border px-2 py-1 text-xs font-medium ${badgeClasses(entry.billable_status)}`}>
-                    {formatLabel(entry.billable_status || (entry.billable ? "billable" : "non_billable"))}
-                  </span>
                 </div>
 
                 <div className="mt-3 grid gap-1 text-sm text-gray-600">
