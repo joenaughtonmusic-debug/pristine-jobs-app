@@ -366,6 +366,29 @@ function isNeverQueued(visit: InvoiceVisit) {
   return age !== null && age > NEVER_QUEUED_DAYS
 }
 
+// Reconciliation: job_labour_entries is the source of truth for hours worked
+// (costed hours). The invoice bills visits.hours_worked. They are written
+// together for a maintenance visit but drift on later edits — so when both
+// exist and disagree, we're about to bill a different number of hours than we
+// costed. Surface it; never auto-correct. Returns the two figures when they
+// diverge, else null (including when there are no costed hours to compare).
+function billedVsCostedHours(
+  visit: InvoiceVisit,
+  costedHoursByJobDate: Record<string, number>,
+) {
+  const job = firstOrValue(visit.scheduled_jobs)
+  if (!job?.id || !visit.visit_date) return null
+
+  const key = `${job.id}|${visit.visit_date}`
+  if (!(key in costedHoursByJobDate)) return null
+
+  const billed = Number(visit.hours_worked || 0)
+  const costed = costedHoursByJobDate[key]
+  if (Math.abs(billed - costed) < 0.01) return null
+
+  return { billed, costed }
+}
+
 function isInvoiceRelevantVisit(visit: InvoiceVisit) {
   const status = normalizeInvoiceStatus(visit.invoice_status)
   const invoiceStatuses = new Set([
@@ -550,6 +573,36 @@ export default async function AdminInvoicesPage({
           .in("visit_id", activeVisitIds)
       : { data: [], error: null }
 
+  // job_labour_entries is the source of truth for hours worked (costed hours).
+  // Fetch the entries for these visits' jobs so we can reconcile the billed
+  // quantity (visits.hours_worked) against the costed quantity per visit/date.
+  const activeJobIds = Array.from(
+    new Set(
+      invoiceQueueVisits
+        .map((visit) => firstOrValue(visit.scheduled_jobs)?.id)
+        .filter((id): id is string => Boolean(id))
+    )
+  )
+  const { data: jobLabourEntries } =
+    activeJobIds.length > 0
+      ? await supabase
+          .from("job_labour_entries")
+          .select("scheduled_job_id, work_date, hours_worked")
+          .in("scheduled_job_id", activeJobIds)
+      : { data: [] }
+
+  // Keyed by `${scheduled_job_id}|${work_date}` → summed costed hours.
+  const costedHoursByJobDate = ((jobLabourEntries || []) as {
+    scheduled_job_id: string | null
+    work_date: string | null
+    hours_worked: number | null
+  }[]).reduce<Record<string, number>>((grouped, entry) => {
+    if (!entry.scheduled_job_id || !entry.work_date) return grouped
+    const key = `${entry.scheduled_job_id}|${entry.work_date}`
+    grouped[key] = (grouped[key] || 0) + Number(entry.hours_worked || 0)
+    return grouped
+  }, {})
+
   const { data: extraCharges, error: extraChargesError } =
     activeVisitIds.length > 0
       ? await supabase
@@ -650,10 +703,12 @@ export default async function AdminInvoicesPage({
         Math.abs(actualXeroAmount - invoiceTotalPreview) > 0.01
       const stuckProcessing = isStuckProcessing(visit)
       const neverQueued = isNeverQueued(visit)
+      const hoursMismatch = billedVsCostedHours(visit, costedHoursByJobDate)
       const hasException =
         normalizedInvoiceStatus === "error" ||
         stuckProcessing ||
         neverQueued ||
+        Boolean(hoursMismatch) ||
         missingProperty ||
         missingInvoiceMethod ||
         missingLabourRate ||
@@ -695,6 +750,9 @@ export default async function AdminInvoicesPage({
               : null,
             neverQueued
               ? `Completed ${daysSinceVisit(visit)} days ago but never queued for invoicing — mark ready or exclude.`
+              : null,
+            hoursMismatch
+              ? `Billing/cost mismatch: billing ${hoursMismatch.billed}h but ${hoursMismatch.costed}h logged against the job — reconcile before invoicing.`
               : null,
             missingProperty ? "Missing linked property." : null,
             missingInvoiceMethod ? "Missing invoice method." : null,
@@ -919,6 +977,14 @@ export default async function AdminInvoicesPage({
                           Not invoiced — {daysSinceVisit(visit)}d since visit
                         </span>
                       )}
+                      {(() => {
+                        const hm = billedVsCostedHours(visit, costedHoursByJobDate)
+                        return hm ? (
+                          <span className="rounded-full border border-orange-300 bg-orange-100 px-2 py-1 text-xs font-medium text-orange-900">
+                            Billing {hm.billed}h ≠ costed {hm.costed}h
+                          </span>
+                        ) : null
+                      })()}
                       <StageChip
                         label="Draft Created"
                         active={draftCreated}
