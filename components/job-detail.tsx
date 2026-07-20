@@ -593,8 +593,7 @@ const photoInputRef = useRef<HTMLInputElement | null>(null)
                         day: "numeric",
                         month: "short",
                         year: "numeric",
-                      })}{" "}
-                      · {entry.billable ? "Billable" : "Non-billable"}
+                      })}
                     </p>
 
                     {entry.notes && (

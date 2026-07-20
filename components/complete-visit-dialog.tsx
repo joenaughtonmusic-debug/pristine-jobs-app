@@ -318,7 +318,6 @@ if (existingVisit) {
           staff_name: primaryStaff.name,
           work_date: visitDate,
           hours_worked: primaryHours,
-          billable: true,
           notes: workNotes.trim() || null,
         })
 
@@ -396,7 +395,6 @@ if (existingVisit) {
       staff_name: helper.staff_name,
       work_date: visitDate,
       hours_worked: helperHours,
-      billable: true,
       notes: workNotes.trim() || null,
     })
 

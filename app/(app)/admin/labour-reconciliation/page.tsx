@@ -163,12 +163,6 @@ function formatWorkType(value?: string | null) {
     .join(" ")
 }
 
-function formatBillableStatus(value?: string | null, billable?: boolean | null) {
-  if (value === "needs_review") return "Needs Review"
-  if (value === "billable") return "Billable"
-  if (value === "non_billable") return "Non-billable"
-  return billable ? "Billable" : "Non-billable"
-}
 
 function getLabourEntryLabel(entry: LabourEntryRow) {
   const property = firstOrValue(entry.properties)
@@ -339,28 +333,14 @@ export default async function AdminLabourReconciliationPage({
           .join("\n"),
         })),
       ...((labourEntries || []) as LabourEntryRow[])
-        .filter((entry) => {
-          const status =
-            entry.billable_status || (entry.billable ? "billable" : "non_billable")
-
-          return (
-            entry.job_type === "misc" &&
-            !entry.scheduled_job_id &&
-            (status === "needs_review" || status === "billable")
-          )
-        })
+        .filter(
+          (entry) => entry.job_type === "misc" && !entry.scheduled_job_id
+        )
         .map((entry): WorkflowAdminActionInput => {
-          const status =
-            entry.billable_status || (entry.billable ? "billable" : "non_billable")
-          const title =
-            status === "needs_review"
-              ? "Review misc work for invoicing"
-              : "Link extra work to property/job"
-
           return {
-            title: `${title}: ${entry.staff_name}`,
+            title: `Link extra work to property/job: ${entry.staff_name}`,
             actionType: "misc_work_review",
-            priority: status === "needs_review" ? "high" : "normal",
+            priority: "normal",
             owner: "VA",
             dueDate: getActionDueDate(0),
             propertyId: entry.property_id || null,
@@ -372,7 +352,6 @@ export default async function AdminLabourReconciliationPage({
               `Date: ${formatDate(entry.work_date)}`,
               `Work: ${formatWorkType(entry.work_type || entry.job_code)}`,
               `Hours: ${formatHours(Number(entry.hours_worked || 0))}`,
-              `Billable status: ${formatBillableStatus(status, entry.billable)}`,
               entry.property_id ? "Linked property exists." : "No linked property.",
               entry.job_name ? `Label: ${entry.job_name}` : null,
               entry.notes ? `Notes: ${entry.notes}` : null,
@@ -564,12 +543,6 @@ export default async function AdminLabourReconciliationPage({
                                     Open job
                                   </Link>
                                 )}
-                                <span>
-                                  {formatBillableStatus(
-                                    entry.billable_status,
-                                    entry.billable
-                                  )}
-                                </span>
                                 {entry.job_type && <span>{entry.job_type}</span>}
                                 {entry.job_type === "misc" && (
                                   <span className="font-medium text-amber-700">
