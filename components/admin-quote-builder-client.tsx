@@ -484,17 +484,18 @@ async function createCustomerProperty(
           : null,
       // Invoicing bills actuals at the PROPERTY's rates (hours ×
       // hourly_rate, bags × greenwaste_rate) — copy the quoted rates on so
-      // what was quoted is what Make bills. Creation only; existing
-      // properties' rates are never touched (idempotent-reuse path above
-      // returns before this insert).
+      // what was quoted is what Make bills. Every new customer gets the
+      // standard $80/$26.50 default; maintenance quotes override with their
+      // pricing-panel values. Creation only; existing properties' rates are
+      // never touched (idempotent-reuse path above returns before this insert).
       hourly_rate:
         getNormalisedQuoteType(quote.quote_type) === "maintenance"
-          ? quote.labour_rate ?? null
-          : null,
+          ? quote.labour_rate ?? 80
+          : 80,
       greenwaste_rate:
         getNormalisedQuoteType(quote.quote_type) === "maintenance"
-          ? quote.greenwaste_rate ?? null
-          : null,
+          ? quote.greenwaste_rate ?? 26.5
+          : 26.5,
       is_active: true,
     })
     .select("id")

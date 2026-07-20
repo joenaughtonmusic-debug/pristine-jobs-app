@@ -28,6 +28,8 @@ export function NewPropertyModal({ open, onOpenChange }: Props) {
   const [category, setCategory] = useState("maintenance")
   const [billingType, setBillingType] = useState("charge_up")
   const [xeroContactId, setXeroContactId] = useState("")
+  const [hourlyRate, setHourlyRate] = useState("80")
+  const [greenwasteRate, setGreenwasteRate] = useState("26.5")
   const [defaultDuration, setDefaultDuration] = useState("")
   const [timeLimitType, setTimeLimitType] = useState("fixed_time")
   const [saving, setSaving] = useState(false)
@@ -53,6 +55,16 @@ export function NewPropertyModal({ open, onOpenChange }: Props) {
       return
     }
 
+    // Rates apply only when this is a genuine new property. Re-adding an
+    // existing property_code hits the onConflict UPDATE path, and must not
+    // overwrite a rate someone has already set — so we look first and omit the
+    // rate keys entirely when the row already exists.
+    const { data: existingProperty } = await supabase
+      .from("properties")
+      .select("id")
+      .eq("property_code", finalCode)
+      .maybeSingle()
+
     const { data: property, error: propertyError } = await supabase
       .from("properties")
       .upsert(
@@ -66,6 +78,12 @@ export function NewPropertyModal({ open, onOpenChange }: Props) {
           billing_type: billingType,
           xero_contact_id: xeroContactId.trim() || null,
           is_active: true,
+          ...(existingProperty
+            ? {}
+            : {
+                hourly_rate: Number(hourlyRate) || 80,
+                greenwaste_rate: Number(greenwasteRate) || 26.5,
+              }),
         },
         {
           onConflict: "property_code",
@@ -139,6 +157,17 @@ export function NewPropertyModal({ open, onOpenChange }: Props) {
           )}
 
           <input className="h-11 w-full rounded-md border px-3" placeholder="Xero contact ID optional" value={xeroContactId} onChange={(e) => setXeroContactId(e.target.value)} />
+
+          <div className="flex gap-3">
+            <label className="flex-1 text-sm">
+              <span className="mb-1 block text-gray-600">Labour rate $/hr</span>
+              <input className="h-11 w-full rounded-md border px-3" type="number" step="0.5" value={hourlyRate} onChange={(e) => setHourlyRate(e.target.value)} />
+            </label>
+            <label className="flex-1 text-sm">
+              <span className="mb-1 block text-gray-600">Greenwaste $/bag</span>
+              <input className="h-11 w-full rounded-md border px-3" type="number" step="0.5" value={greenwasteRate} onChange={(e) => setGreenwasteRate(e.target.value)} />
+            </label>
+          </div>
 
           <input className="h-11 w-full rounded-md border px-3" type="number" step="0.25" placeholder="Default duration e.g. 2.5" value={defaultDuration} onChange={(e) => setDefaultDuration(e.target.value)} />
 

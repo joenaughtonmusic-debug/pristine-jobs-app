@@ -26,6 +26,13 @@ interface PropertyDialogProps {
   onSuccess: (property: Property, isNew: boolean) => void
 }
 
+function makePropertyCode(value: string) {
+  return value
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "")
+    .slice(0, 20)
+}
+
 export function PropertyDialog({
   open,
   onOpenChange,
@@ -40,6 +47,8 @@ export function PropertyDialog({
   const [invoiceHandlingNote, setInvoiceHandlingNote] = useState("")
   const [serviceType, setServiceType] = useState("")
   const [serviceFrequency, setServiceFrequency] = useState("")
+  const [hourlyRate, setHourlyRate] = useState("80")
+  const [greenwasteRate, setGreenwasteRate] = useState("26.5")
   const [error, setError] = useState<string | null>(null)
 
   const isEditing = !!property
@@ -78,6 +87,7 @@ export function PropertyDialog({
       setLoading(false)
       return
     }
+    void user
 
     const propertyData = {
   client_name: clientName.trim(),
@@ -107,11 +117,17 @@ export function PropertyDialog({
 
       onSuccess(data as Property, false)
     } else {
+      // Add path: generate the required property_code (NOT NULL, no default)
+      // and default this new customer to the standard $80/$26.50 charge_up
+      // rates. `user_id` is intentionally NOT written — no such column exists
+      // on properties, and including it made every add fail.
       const { data, error: insertError } = await supabase
         .from("properties")
         .insert({
           ...propertyData,
-          user_id: user.id,
+          property_code: makePropertyCode(address),
+          hourly_rate: Number(hourlyRate) || 80,
+          greenwaste_rate: Number(greenwasteRate) || 26.5,
         })
         .select()
         .single()
@@ -183,6 +199,35 @@ export function PropertyDialog({
                 rows={3}
               />
             </Field>
+
+            {!isEditing && (
+              <div className="flex gap-3">
+                <Field className="flex-1">
+                  <FieldLabel htmlFor="hourlyRate">Labour rate $/hr</FieldLabel>
+                  <Input
+                    id="hourlyRate"
+                    type="number"
+                    step="0.5"
+                    value={hourlyRate}
+                    onChange={(e) => setHourlyRate(e.target.value)}
+                    className="h-12"
+                  />
+                </Field>
+                <Field className="flex-1">
+                  <FieldLabel htmlFor="greenwasteRate">
+                    Greenwaste $/bag
+                  </FieldLabel>
+                  <Input
+                    id="greenwasteRate"
+                    type="number"
+                    step="0.5"
+                    value={greenwasteRate}
+                    onChange={(e) => setGreenwasteRate(e.target.value)}
+                    className="h-12"
+                  />
+                </Field>
+              </div>
+            )}
 
             <Field>
               <FieldLabel htmlFor="serviceType">Service Type</FieldLabel>
