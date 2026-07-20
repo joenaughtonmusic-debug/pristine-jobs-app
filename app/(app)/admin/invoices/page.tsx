@@ -334,6 +334,38 @@ function isStuckProcessing(visit: InvoiceVisit) {
   return Date.now() - updatedAt > STUCK_PROCESSING_MS
 }
 
+function daysSinceVisit(visit: InvoiceVisit) {
+  const visitDate = Date.parse(visit.visit_date || "")
+  if (!Number.isFinite(visitDate)) return null
+  return Math.floor((Date.now() - visitDate) / (24 * 60 * 60 * 1000))
+}
+
+// Guard 4: a charge_up visit with work logged that has sat 'not_ready' for
+// weeks never entered the invoice queue — invisible to Guard 3 (which only
+// watches stuck 'processing'). This is the Michael Cave pattern: completed
+// work quietly never billed. Approximate visibility by design — display and VA
+// action only, never mutates the visit.
+const NEVER_QUEUED_DAYS = 21
+
+function isNeverQueued(visit: InvoiceVisit) {
+  const job = firstOrValue(visit.scheduled_jobs)
+  // Only per-visit charge_up billing has a "should have been queued" state.
+  // Quoted/subscription/unset are handled by other guards (branch 4, Guard 1,
+  // the missing-invoice-method exception).
+  if (job?.invoice_method !== "charge_up") return false
+  if (normalizeInvoiceStatus(visit.invoice_status) !== "not_ready") return false
+  if (visit.ready_for_invoice) return false
+  if (visit.xero_invoice_id || visit.xero_invoice_number) return false
+  if (visit.invoice_amount !== null && visit.invoice_amount !== undefined) {
+    return false
+  }
+  // Work was actually done (the signal available here for "completed").
+  if (Number(visit.hours_worked || 0) <= 0) return false
+
+  const age = daysSinceVisit(visit)
+  return age !== null && age > NEVER_QUEUED_DAYS
+}
+
 function isInvoiceRelevantVisit(visit: InvoiceVisit) {
   const status = normalizeInvoiceStatus(visit.invoice_status)
   const invoiceStatuses = new Set([
@@ -617,9 +649,11 @@ export default async function AdminInvoicesPage({
         invoiceTotalPreview !== null &&
         Math.abs(actualXeroAmount - invoiceTotalPreview) > 0.01
       const stuckProcessing = isStuckProcessing(visit)
+      const neverQueued = isNeverQueued(visit)
       const hasException =
         normalizedInvoiceStatus === "error" ||
         stuckProcessing ||
+        neverQueued ||
         missingProperty ||
         missingInvoiceMethod ||
         missingLabourRate ||
@@ -658,6 +692,9 @@ export default async function AdminInvoicesPage({
               : null,
             stuckProcessing
               ? "Stuck in processing for over an hour — Make never wrote back a Xero invoice."
+              : null,
+            neverQueued
+              ? `Completed ${daysSinceVisit(visit)} days ago but never queued for invoicing — mark ready or exclude.`
               : null,
             missingProperty ? "Missing linked property." : null,
             missingInvoiceMethod ? "Missing invoice method." : null,
@@ -875,6 +912,11 @@ export default async function AdminInvoicesPage({
                       {isStuckProcessing(visit) && (
                         <span className="rounded-full border border-red-300 bg-red-100 px-2 py-1 text-xs font-medium text-red-900">
                           Stuck — no Xero response
+                        </span>
+                      )}
+                      {isNeverQueued(visit) && (
+                        <span className="rounded-full border border-amber-300 bg-amber-100 px-2 py-1 text-xs font-medium text-amber-900">
+                          Not invoiced — {daysSinceVisit(visit)}d since visit
                         </span>
                       )}
                       <StageChip
