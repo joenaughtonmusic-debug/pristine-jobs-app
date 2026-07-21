@@ -14,6 +14,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { FieldGroup, Field, FieldLabel } from "@/components/ui/field"
 import { Spinner } from "@/components/ui/spinner"
 import type { Property } from "@/lib/types"
+import { isSubscriptionUnconfirmed } from "@/lib/subscription-billing"
 import {
   getServiceIntervalWeeks,
   serviceFrequencyOptions,
@@ -49,9 +50,14 @@ export function PropertyDialog({
   const [serviceFrequency, setServiceFrequency] = useState("")
   const [hourlyRate, setHourlyRate] = useState("80")
   const [greenwasteRate, setGreenwasteRate] = useState("26.5")
+  const [subscriptionAmount, setSubscriptionAmount] = useState("")
+  const [subscriptionConfirmed, setSubscriptionConfirmed] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const isEditing = !!property
+  // The subscription confirm control only applies to an existing subscription
+  // property (billing_type isn't set/edited here on the add path).
+  const isSubscription = isEditing && property?.billing_type === "subscription"
 
   useEffect(() => {
     if (property) {
@@ -62,6 +68,15 @@ export function PropertyDialog({
       setInvoiceHandlingNote(property.invoice_handling_note || "")
       setServiceType(property.service_type || "")
       setServiceFrequency(property.service_frequency || "")
+      setSubscriptionAmount(
+        property.subscription_amount != null
+          ? String(property.subscription_amount)
+          : ""
+      )
+      // Ticked only when the property is currently, validly confirmed — a
+      // stale or unconfirmed subscription starts unticked so it requires an
+      // active re-confirmation.
+      setSubscriptionConfirmed(!isSubscriptionUnconfirmed(property))
     } else {
       setClientName("")
       setAddress("")
@@ -70,6 +85,8 @@ export function PropertyDialog({
       setInvoiceHandlingNote("")
       setServiceType("")
       setServiceFrequency("")
+      setSubscriptionAmount("")
+      setSubscriptionConfirmed(false)
     }
     setError(null)
   }, [property, open])
@@ -87,7 +104,6 @@ export function PropertyDialog({
       setLoading(false)
       return
     }
-    void user
 
     const propertyData = {
   client_name: clientName.trim(),
@@ -102,9 +118,26 @@ export function PropertyDialog({
 }
 
     if (isEditing) {
+      // Subscription confirmation: ticking stamps a fresh confirmed_at (which
+      // also clears staleness); unticking un-confirms. Only added for
+      // subscription properties, so no other billing type is affected.
+      const subscriptionData = isSubscription
+        ? {
+            subscription_amount: subscriptionAmount
+              ? Number(subscriptionAmount)
+              : null,
+            subscription_invoice_confirmed_at: subscriptionConfirmed
+              ? new Date().toISOString()
+              : null,
+            subscription_invoice_confirmed_by: subscriptionConfirmed
+              ? user.email || "admin"
+              : null,
+          }
+        : {}
+
       const { data, error: updateError } = await supabase
         .from("properties")
-        .update(propertyData)
+        .update({ ...propertyData, ...subscriptionData })
         .eq("id", property.id)
         .select()
         .single()
@@ -270,6 +303,40 @@ export function PropertyDialog({
                 rows={3}
               />
             </Field>
+
+            {isSubscription && (
+              <div className="rounded-md border border-blue-200 bg-blue-50 p-3">
+                <p className="mb-2 text-sm font-medium text-blue-900">
+                  Subscription billing (Xero repeating invoice)
+                </p>
+                <Field>
+                  <FieldLabel htmlFor="subscriptionAmount">
+                    Repeating invoice amount ($ per period)
+                  </FieldLabel>
+                  <Input
+                    id="subscriptionAmount"
+                    type="number"
+                    step="0.01"
+                    placeholder="e.g. 544"
+                    value={subscriptionAmount}
+                    onChange={(e) => setSubscriptionAmount(e.target.value)}
+                    className="h-12"
+                  />
+                </Field>
+                <label className="mt-2 flex items-start gap-2 text-sm text-blue-900">
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={subscriptionConfirmed}
+                    onChange={(e) =>
+                      setSubscriptionConfirmed(e.target.checked)
+                    }
+                  />
+                  I&apos;ve confirmed a live Xero repeating invoice exists for
+                  this customer.
+                </label>
+              </div>
+            )}
           </FieldGroup>
 
           {error && (

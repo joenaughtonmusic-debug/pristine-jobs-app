@@ -19,6 +19,9 @@ export interface Property {
   service_type?: string | null
   service_frequency?: string | null
   service_interval_weeks?: number | null
+  subscription_amount?: number | null
+  subscription_invoice_confirmed_at?: string | null
+  subscription_invoice_confirmed_by?: string | null
 }
 
 export interface ScheduledJob {
