@@ -28,6 +28,9 @@ run -f "$DIR/050_create_captures.sql"
 echo "== APPLY 051 (storage bucket) =="
 run -f "$DIR/051_captures_storage_bucket.sql"
 
+echo "== APPLY 052 (authenticated grants) =="
+run -f "$DIR/052_captures_grants.sql"
+
 echo "== AFTER: columns + constraints =="
 run -c "select column_name, data_type, is_nullable, column_default
         from information_schema.columns
@@ -40,6 +43,11 @@ run -c "select id, name, public from storage.buckets where id = 'captures';"
 run -c "select policyname from pg_policies
         where schemaname = 'storage' and tablename = 'objects'
           and policyname like 'captures_bucket_%';"
+
+echo "== AFTER: authenticated grants =="
+run -c "select grantee, privilege_type from information_schema.role_table_grants
+        where table_name = 'captures' and grantee = 'authenticated'
+        order by privilege_type;"
 
 echo "== SMOKE: insert defaults + bad-type reject =="
 run -c "insert into public.captures (transcript) values ('__smoke__ staging rehearsal')
