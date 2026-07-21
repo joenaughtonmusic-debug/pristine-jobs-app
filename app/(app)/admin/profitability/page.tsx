@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server"
+import { isSubscriptionUnconfirmed } from "@/lib/subscription-billing"
 import {
   formatServiceFrequency,
   formatServiceValue,
@@ -36,6 +37,8 @@ type PropertyServiceRow = {
   service_type: string | null
   service_frequency: string | null
   service_interval_weeks: number | string | null
+  billing_type: string | null
+  subscription_invoice_confirmed_at: string | null
 }
 
 type UnlinkedLandscapingLabourRow = {
@@ -103,7 +106,7 @@ export default async function AdminProfitabilityPage() {
       ? await supabase
           .from("properties")
           .select(
-            "id, address_line_1, suburb, service_type, service_frequency, service_interval_weeks"
+            "id, address_line_1, suburb, service_type, service_frequency, service_interval_weeks, billing_type, subscription_invoice_confirmed_at"
           )
           .in("id", propertyIds)
       : { data: [] }
@@ -220,10 +223,19 @@ export default async function AdminProfitabilityPage() {
                 .filter(Boolean)
                 .join(", ")
 
+              const subscriptionUnconfirmed = propertyService
+                ? isSubscriptionUnconfirmed(propertyService)
+                : false
+
               return (
                 <tr key={row.property_id} className="hover:bg-gray-50">
                   <td className="border-b px-4 py-3 font-medium">
                     {row.property_code || "No code"}
+                    {subscriptionUnconfirmed && (
+                      <span className="mt-1 block w-fit rounded-full border border-red-300 bg-red-100 px-2 py-0.5 text-xs font-medium text-red-900">
+                        Repeating invoice unconfirmed
+                      </span>
+                    )}
                   </td>
                   <td className="border-b px-4 py-3">
                     {propertyAddress || "No address"}

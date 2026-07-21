@@ -4,6 +4,11 @@ import {
   classifyCommunication,
   isClosedCommunication,
 } from "@/lib/communication-classification"
+import {
+  ensureWorkflowAdminActions,
+  getActionDueDate,
+} from "@/lib/admin-actions"
+import { isSubscriptionUnconfirmed } from "@/lib/subscription-billing"
 
 export const dynamic = "force-dynamic"
 
@@ -40,6 +45,14 @@ type LabourEntryRow = {
   staff_member_id: string
   work_date: string
   hours_worked: number | string | null
+}
+
+type SubscriptionPropertyRow = {
+  id: string
+  property_code: string | null
+  client_name: string | null
+  billing_type: string | null
+  subscription_invoice_confirmed_at: string | null
 }
 
 type CommunicationCountRow = {
@@ -199,6 +212,7 @@ export default async function AdminDashboardPage() {
     communicationsResult,
     timesheetsResult,
     labourEntriesResult,
+    subscriptionPropertiesResult,
   ] = await Promise.all([
     supabase
       .from("admin_enquiries")
@@ -271,7 +285,63 @@ export default async function AdminDashboardPage() {
       .gte("work_date", startDate)
       .lte("work_date", endDate)
       .limit(1000),
+    supabase
+      .from("properties")
+      .select(
+        "id, property_code, client_name, billing_type, subscription_invoice_confirmed_at"
+      )
+      .eq("billing_type", "subscription")
+      .eq("is_active", true),
   ])
+
+  // Build A: subscription properties with no confirmed (or stale) Xero
+  // repeating invoice can bill nothing invisibly. Surface each as a VA action,
+  // and close actions for any that have since been confirmed.
+  const subscriptionProperties = (subscriptionPropertiesResult.data ||
+    []) as SubscriptionPropertyRow[]
+  const unconfirmedSubscriptions = subscriptionProperties.filter((property) =>
+    isSubscriptionUnconfirmed(property)
+  )
+
+  await ensureWorkflowAdminActions(
+    supabase,
+    unconfirmedSubscriptions.map((property) => ({
+      title: `Confirm Xero repeating invoice: ${property.client_name || property.property_code || "subscription property"}`,
+      actionType: "subscription_billing_unconfirmed",
+      priority: "high" as const,
+      owner: "VA",
+      dueDate: getActionDueDate(1),
+      propertyId: property.id,
+      sourceRecordType: "property",
+      sourceRecordId: property.id,
+      sourceUrl: "/admin/properties",
+      notes:
+        "No confirmed (or a >12-month-old) Xero repeating invoice for this " +
+        "subscription property. Confirm the repeating invoice in Xero, then " +
+        "record it on the property so it stops flagging.",
+    }))
+  )
+
+  // Resolve actions for properties that are now confirmed (or no longer
+  // subscription) — the "confirm clears the action" behaviour.
+  const unconfirmedIds = new Set(unconfirmedSubscriptions.map((p) => p.id))
+  const { data: openSubscriptionActions } = await supabase
+    .from("admin_actions")
+    .select("id, source_record_id")
+    .eq("action_type", "subscription_billing_unconfirmed")
+    .neq("status", "done")
+  const staleActionIds = ((openSubscriptionActions || []) as {
+    id: string
+    source_record_id: string | null
+  }[])
+    .filter((action) => !unconfirmedIds.has(action.source_record_id || ""))
+    .map((action) => action.id)
+  if (staleActionIds.length > 0) {
+    await supabase
+      .from("admin_actions")
+      .update({ status: "done" })
+      .in("id", staleActionIds)
+  }
 
   const visitsReadyForInvoice = ((visitsReadyResult.data || []) as VisitCountRow[])
     .filter((visit) => {
@@ -382,6 +452,18 @@ export default async function AdminDashboardPage() {
       nextAction:
         "Reconcile the week, then use the team board for overflow or quick jobs.",
       opens: "Labour Reconciliation",
+      urgent: true,
+    },
+    {
+      stage: "Subscription Billing",
+      title: "Confirm subscription customers are billable",
+      count: unconfirmedSubscriptions.length,
+      href: "/admin/actions",
+      purpose:
+        "Subscription customers bill from a Xero repeating invoice the app can't see. Any without a confirmed (or with a stale) one bill nothing until confirmed.",
+      nextAction:
+        "Confirm each subscription's repeating invoice in Xero, then record it on the property so it stops flagging.",
+      opens: "Actions",
       urgent: true,
     },
   ]

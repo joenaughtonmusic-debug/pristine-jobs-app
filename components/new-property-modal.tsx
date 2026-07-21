@@ -30,6 +30,8 @@ export function NewPropertyModal({ open, onOpenChange }: Props) {
   const [xeroContactId, setXeroContactId] = useState("")
   const [hourlyRate, setHourlyRate] = useState("80")
   const [greenwasteRate, setGreenwasteRate] = useState("26.5")
+  const [subscriptionAmount, setSubscriptionAmount] = useState("")
+  const [subscriptionConfirmed, setSubscriptionConfirmed] = useState(false)
   const [defaultDuration, setDefaultDuration] = useState("")
   const [timeLimitType, setTimeLimitType] = useState("fixed_time")
   const [saving, setSaving] = useState(false)
@@ -83,6 +85,19 @@ export function NewPropertyModal({ open, onOpenChange }: Props) {
             : {
                 hourly_rate: Number(hourlyRate) || 80,
                 greenwaste_rate: Number(greenwasteRate) || 26.5,
+                // Subscription confirmation captured at creation (genuine
+                // inserts only, like the rates) so a new subscription starts
+                // confirmed rather than immediately flagging.
+                ...(billingType === "subscription"
+                  ? {
+                      subscription_amount: subscriptionAmount
+                        ? Number(subscriptionAmount)
+                        : null,
+                      subscription_invoice_confirmed_at: subscriptionConfirmed
+                        ? new Date().toISOString()
+                        : null,
+                    }
+                  : {}),
               }),
         },
         {
@@ -147,13 +162,33 @@ export function NewPropertyModal({ open, onOpenChange }: Props) {
           </select>
 
           {billingType === "subscription" && (
-            <p className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
-              Subscription billing is manual: the app never creates the
-              recurring invoice, and visits on subscription jobs are not
-              invoiced per visit. Set up the repeating invoice in Xero
-              (Business → Invoices → Repeating) or this customer will not be
-              billed.
-            </p>
+            <div className="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              <p>
+                Subscription billing is manual: the app never creates the
+                recurring invoice, and visits on subscription jobs are not
+                invoiced per visit. Set up the repeating invoice in Xero
+                (Business → Invoices → Repeating) or this customer will not be
+                billed.
+              </p>
+              <input
+                className="mt-2 h-11 w-full rounded-md border px-3"
+                type="number"
+                step="0.01"
+                placeholder="Repeating invoice amount ($ per period)"
+                value={subscriptionAmount}
+                onChange={(e) => setSubscriptionAmount(e.target.value)}
+              />
+              <label className="mt-2 flex items-start gap-2 font-medium">
+                <input
+                  type="checkbox"
+                  className="mt-1"
+                  checked={subscriptionConfirmed}
+                  onChange={(e) => setSubscriptionConfirmed(e.target.checked)}
+                />
+                I&apos;ve confirmed a live Xero repeating invoice exists for this
+                customer.
+              </label>
+            </div>
           )}
 
           <input className="h-11 w-full rounded-md border px-3" placeholder="Xero contact ID optional" value={xeroContactId} onChange={(e) => setXeroContactId(e.target.value)} />
