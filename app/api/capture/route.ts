@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
-import { createAdminClient } from "@/lib/supabase/admin"
+import { createServiceClient } from "@/lib/supabase/service"
 import {
   transcribeAudio,
   triageTranscript,
@@ -33,7 +33,24 @@ export async function POST(request: Request) {
   // Privileged server-side ops (storage upload + insert) run as service-role so
   // they don't depend on table/bucket grants for the authenticated role. The
   // user check above is what actually gates access.
-  const db = await createAdminClient()
+  //
+  // Fail loud, don't fall back: if the key is missing the insert would silently
+  // run as `authenticated` and be denied by RLS (looks like a permissions bug,
+  // is really a config bug). Surface it as a clear 500 instead.
+  let db
+  try {
+    db = createServiceClient()
+  } catch (err) {
+    console.error("[capture] service-role client unavailable", {
+      hasServiceKey: Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY),
+      hasUrl: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
+      message: err instanceof Error ? err.message : String(err),
+    })
+    return NextResponse.json(
+      { error: "Server not configured for captures" },
+      { status: 500 }
+    )
+  }
 
   let transcript = ""
   let audioUrl: string | null = null
