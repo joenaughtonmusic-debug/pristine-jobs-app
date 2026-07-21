@@ -42,38 +42,3 @@ export function createServiceClient() {
     },
   })
 }
-
-/**
- * Safe, non-secret diagnostics for SUPABASE_SERVICE_ROLE_KEY. Never returns the
- * key itself — only whether it's present, its length, its scheme, and (for a
- * JWT-style key) the decoded `role` claim. The role claim (anon | service_role)
- * is what actually determines RLS bypass, so this tells us whether the value in
- * the env var is genuinely the service-role key or the anon key by mistake.
- */
-export function describeServiceKey(): {
-  present: boolean
-  length: number
-  scheme: "jwt" | "sb_secret" | "sb_publishable" | "other" | "none"
-  jwtRole: string | null
-} {
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!key) return { present: false, length: 0, scheme: "none", jwtRole: null }
-
-  let scheme: "jwt" | "sb_secret" | "sb_publishable" | "other" = "other"
-  if (key.startsWith("eyJ")) scheme = "jwt"
-  else if (key.startsWith("sb_secret")) scheme = "sb_secret"
-  else if (key.startsWith("sb_publishable")) scheme = "sb_publishable"
-
-  let jwtRole: string | null = null
-  if (scheme === "jwt") {
-    try {
-      const payload = key.split(".")[1]
-      const json = Buffer.from(payload, "base64").toString("utf8")
-      jwtRole = (JSON.parse(json) as { role?: string }).role ?? null
-    } catch {
-      jwtRole = null
-    }
-  }
-
-  return { present: true, length: key.length, scheme, jwtRole }
-}
