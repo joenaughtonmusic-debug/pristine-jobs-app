@@ -23,12 +23,22 @@ export function createServiceClient() {
     throw new Error("SUPABASE_SERVICE_ROLE_KEY is not set in this runtime")
   }
 
+  // Force the service-role key onto every REST request. createServerClient does
+  // NOT reliably apply the key as the Authorization bearer (with empty cookies it
+  // left the insert authenticating as anon → RLS → 42501). Setting global headers
+  // explicitly makes PostgREST see a service_role JWT and bypass RLS.
   return createServerClient(url, serviceRoleKey, {
     cookies: {
       getAll() {
         return []
       },
       setAll() {},
+    },
+    global: {
+      headers: {
+        Authorization: `Bearer ${serviceRoleKey}`,
+        apikey: serviceRoleKey,
+      },
     },
   })
 }
