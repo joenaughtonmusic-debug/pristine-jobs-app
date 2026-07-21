@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
+import { createAdminClient } from "@/lib/supabase/admin"
 import {
   transcribeAudio,
   triageTranscript,
@@ -29,6 +30,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
   }
 
+  // Privileged server-side ops (storage upload + insert) run as service-role so
+  // they don't depend on table/bucket grants for the authenticated role. The
+  // user check above is what actually gates access.
+  const db = await createAdminClient()
+
   let transcript = ""
   let audioUrl: string | null = null
   let lat: number | null = null
@@ -56,7 +62,7 @@ export async function POST(request: Request) {
 
       // Upload is best-effort — never fail a capture because storage did.
       try {
-        const { data: uploaded, error: uploadError } = await supabase.storage
+        const { data: uploaded, error: uploadError } = await db.storage
           .from(CAPTURES_BUCKET)
           .upload(filename, audio, {
             contentType: audio.type || "audio/webm",
@@ -107,7 +113,7 @@ export async function POST(request: Request) {
     console.error("[capture] triage failed, saving as unsorted", err)
   }
 
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("captures")
     .insert({
       type,
