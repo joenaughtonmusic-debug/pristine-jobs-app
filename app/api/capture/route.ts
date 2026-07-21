@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
-import { createServiceClient } from "@/lib/supabase/service"
+import { createServiceClient, describeServiceKey } from "@/lib/supabase/service"
 import {
   transcribeAudio,
   triageTranscript,
@@ -20,6 +20,15 @@ function parseCoord(
 }
 
 export async function POST(request: Request) {
+  // Runtime env diagnostic — does the deployed function have a real service-role
+  // key? Logs presence + scheme + decoded JWT role (anon vs service_role); never
+  // the key itself. A REST insert that 42501s means the client isn't service-role.
+  console.info("[capture] service key check", {
+    hasServiceKey: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+    hasUrl: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
+    key: describeServiceKey(),
+  })
+
   const supabase = await createClient()
 
   // Internal page — require a signed-in user (same gate as the (app) layout).
