@@ -34,6 +34,7 @@ export function NewPropertyModal({ open, onOpenChange }: Props) {
   const [subscriptionConfirmed, setSubscriptionConfirmed] = useState(false)
   const [defaultDuration, setDefaultDuration] = useState("")
   const [timeLimitType, setTimeLimitType] = useState("fixed_time")
+  const [isRental, setIsRental] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -80,6 +81,7 @@ export function NewPropertyModal({ open, onOpenChange }: Props) {
           billing_type: billingType,
           xero_contact_id: xeroContactId.trim() || null,
           is_active: true,
+          is_rental: isRental,
           ...(existingProperty
             ? {}
             : {
@@ -192,6 +194,15 @@ export function NewPropertyModal({ open, onOpenChange }: Props) {
           )}
 
           <input className="h-11 w-full rounded-md border px-3" placeholder="Xero contact ID optional" value={xeroContactId} onChange={(e) => setXeroContactId(e.target.value)} />
+
+          <label className="flex items-center gap-2 text-sm font-medium">
+            <input
+              type="checkbox"
+              checked={isRental}
+              onChange={(e) => setIsRental(e.target.checked)}
+            />
+            Rental / PM-managed property
+          </label>
 
           <div className="flex gap-3">
             <label className="flex-1 text-sm">

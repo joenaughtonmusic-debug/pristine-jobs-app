@@ -77,6 +77,14 @@ export function PropertiesList({ properties: initialProperties }: PropertiesList
                       <h3 className="font-semibold text-foreground truncate">
                         {property.client_name}
                       </h3>
+                      {property.is_rental && (
+                        <Badge
+                          variant="outline"
+                          className="shrink-0 border-amber-500/50 text-amber-600 dark:text-amber-400 text-xs"
+                        >
+                          Rental
+                        </Badge>
+                      )}
                       {property.xero_contact_id && (
                         <Badge variant="secondary" className="text-xs shrink-0">
                           Xero
