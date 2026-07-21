@@ -52,6 +52,7 @@ export function PropertyDialog({
   const [greenwasteRate, setGreenwasteRate] = useState("26.5")
   const [subscriptionAmount, setSubscriptionAmount] = useState("")
   const [subscriptionConfirmed, setSubscriptionConfirmed] = useState(false)
+  const [isRental, setIsRental] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const isEditing = !!property
@@ -77,6 +78,7 @@ export function PropertyDialog({
       // stale or unconfirmed subscription starts unticked so it requires an
       // active re-confirmation.
       setSubscriptionConfirmed(!isSubscriptionUnconfirmed(property))
+      setIsRental(property.is_rental ?? false)
     } else {
       setClientName("")
       setAddress("")
@@ -87,6 +89,7 @@ export function PropertyDialog({
       setServiceFrequency("")
       setSubscriptionAmount("")
       setSubscriptionConfirmed(false)
+      setIsRental(false)
     }
     setError(null)
   }, [property, open])
@@ -114,6 +117,7 @@ export function PropertyDialog({
   service_type: serviceType.trim() || null,
   service_frequency: serviceFrequency || null,
   service_interval_weeks: getServiceIntervalWeeks(serviceFrequency),
+  is_rental: isRental,
   updated_at: new Date().toISOString(),
 }
 
@@ -232,6 +236,15 @@ export function PropertyDialog({
                 rows={3}
               />
             </Field>
+
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={isRental}
+                onChange={(e) => setIsRental(e.target.checked)}
+              />
+              Rental / PM-managed property
+            </label>
 
             {!isEditing && (
               <div className="flex gap-3">
