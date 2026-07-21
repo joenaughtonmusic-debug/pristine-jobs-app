@@ -356,6 +356,11 @@ export function AdminScheduleClient({
 const [quotedMaterials, setQuotedMaterials] = useState("")
 const [adminNote, setAdminNote] = useState("")
 const [invoiceMethod, setInvoiceMethod] = useState("")
+  // Deliberate escape hatch: ticked to save a job whose invoice_method
+  // contradicts the property's billing type (a genuine one-off on a
+  // subscription/quoted customer). Resets on every method/property change so
+  // it can never silently carry over to a different mismatch.
+  const [overrideMethodMismatch, setOverrideMethodMismatch] = useState(false)
   const [xeroQuoteNumber, setXeroQuoteNumber] = useState("")
   const [saving, setSaving] = useState(false)
 const [error, setError] = useState<string | null>(null)
@@ -420,6 +425,18 @@ const [savingSchedulingNote, setSavingSchedulingNote] = useState(false)
     if (property.billing_type === "quoted") return "quoted"
 
     return ""
+  }
+
+  // A mismatch only exists when the property has a defined billing type
+  // (subscription/quoted/non_billable) and the chosen method contradicts it.
+  // charge_up properties have no default, so any explicit choice is valid.
+  const isMethodMismatch = (
+    property: Property | null | undefined,
+    method: string,
+  ) => {
+    if (!property || !method) return false
+    const expected = getDefaultInvoiceMethod(property)
+    return Boolean(expected) && method !== expected
   }
 
   const completeClientAdjustment = async (item: ClientAdjustment) => {
@@ -750,6 +767,7 @@ scheduling_notes: updateSchedulingNotes.trim() || null,
 setQuotedMaterials("")
 setAdminNote("")
 setInvoiceMethod(getDefaultInvoiceMethod(property))
+    setOverrideMethodMismatch(false)
     setXeroQuoteNumber("")
 
     applyTemplateDefaults(firstTemplate, property)
@@ -828,6 +846,7 @@ setInvoiceMethod(getDefaultInvoiceMethod(property))
 setQuotedMaterials(job.quoted_materials || "")
 setAdminNote(job.admin_note || "")
 setInvoiceMethod(job.invoice_method || "")
+    setOverrideMethodMismatch(false)
     setXeroQuoteNumber(job.xero_quote_number || "")
 
     setError(null)
@@ -1012,6 +1031,18 @@ setInvoiceMethod(job.invoice_method || "")
       return
     }
 
+    if (
+      isMethodMismatch(selectedProperty, invoiceMethod) &&
+      !overrideMethodMismatch
+    ) {
+      setError(
+        `This property is set to ${selectedProperty.billing_type} billing but the invoice method is ` +
+          `${INVOICE_METHOD_LABELS[invoiceMethod] || invoiceMethod}. Tick "intentional exception" ` +
+          `to save a genuine one-off, or change the method to match.`
+      )
+      return
+    }
+
     if (plannedDuration && parseFloat(plannedDuration) < 0) {
       setError("Duration can't be negative.")
       return
@@ -1179,6 +1210,7 @@ admin_note: adminNote || null,
     setQuotedScope("")
     setQuotedMaterials("")
     setInvoiceMethod("")
+    setOverrideMethodMismatch(false)
     setXeroQuoteNumber("")
 
     router.refresh()
@@ -2236,7 +2268,10 @@ const handleSendClientEmail = async () => {
                 <select
                   className="h-11 w-full rounded-md border px-3"
                   value={invoiceMethod}
-                  onChange={(e) => setInvoiceMethod(e.target.value)}
+                  onChange={(e) => {
+                    setInvoiceMethod(e.target.value)
+                    setOverrideMethodMismatch(false)
+                  }}
                 >
                   <option value="" disabled>
                     Select invoice method…
@@ -2256,24 +2291,34 @@ const handleSendClientEmail = async () => {
                   </p>
                 )}
 
-                {selectedProperty &&
-                invoiceMethod &&
-                getDefaultInvoiceMethod(selectedProperty) &&
-                invoiceMethod !== getDefaultInvoiceMethod(selectedProperty) ? (
-                  <p className="mt-1.5 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                    Heads up: this property is set to{" "}
-                    <span className="font-medium">
-                      {selectedProperty.billing_type}
-                    </span>{" "}
-                    billing, which normally invoices as{" "}
-                    {INVOICE_METHOD_LABELS[
-                      getDefaultInvoiceMethod(selectedProperty)
-                    ] || getDefaultInvoiceMethod(selectedProperty)}
-                    . Saving as{" "}
-                    {INVOICE_METHOD_LABELS[invoiceMethod] || invoiceMethod} —
-                    make sure that is deliberate (fine for one-off extra
-                    work).
-                  </p>
+                {isMethodMismatch(selectedProperty, invoiceMethod) ? (
+                  <div className="mt-1.5 rounded-md bg-red-50 px-3 py-2 text-sm text-red-800">
+                    <p>
+                      This property is set to{" "}
+                      <span className="font-medium">
+                        {selectedProperty?.billing_type}
+                      </span>{" "}
+                      billing, which invoices as{" "}
+                      {INVOICE_METHOD_LABELS[
+                        getDefaultInvoiceMethod(selectedProperty!)
+                      ] || getDefaultInvoiceMethod(selectedProperty!)}
+                      . Saving as{" "}
+                      {INVOICE_METHOD_LABELS[invoiceMethod] || invoiceMethod}{" "}
+                      contradicts that and is blocked unless it&apos;s a
+                      deliberate exception.
+                    </p>
+                    <label className="mt-2 flex items-center gap-2 font-medium">
+                      <input
+                        type="checkbox"
+                        checked={overrideMethodMismatch}
+                        onChange={(e) =>
+                          setOverrideMethodMismatch(e.target.checked)
+                        }
+                      />
+                      Yes — this is an intentional exception (one-off work for
+                      this customer)
+                    </label>
+                  </div>
                 ) : null}
               </div>
 
@@ -2351,6 +2396,7 @@ const handleSendClientEmail = async () => {
                     setQuotedScope("")
                     setQuotedMaterials("")
                     setInvoiceMethod("")
+                    setOverrideMethodMismatch(false)
                     setXeroQuoteNumber("")
                     setActiveQuotePrefill(null)
                   }}
