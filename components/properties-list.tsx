@@ -10,13 +10,24 @@ import {
   formatServiceFrequency,
   formatServiceValue,
 } from "@/lib/service-frequency"
+import {
+  SEVERITY_BADGE_CLASSES,
+  type WalkAroundSeverity,
+} from "@/lib/walk-around"
 import { PropertyDialog } from "./property-dialog"
 
 interface PropertiesListProps {
   properties: Property[]
+  issueSummaries?: Record<
+    string,
+    { count: number; worst: WalkAroundSeverity | null }
+  >
 }
 
-export function PropertiesList({ properties: initialProperties }: PropertiesListProps) {
+export function PropertiesList({
+  properties: initialProperties,
+  issueSummaries = {},
+}: PropertiesListProps) {
   const [properties, setProperties] = useState(initialProperties)
   const [showDialog, setShowDialog] = useState(false)
   const [editingProperty, setEditingProperty] = useState<Property | null>(null)
@@ -88,6 +99,20 @@ export function PropertiesList({ properties: initialProperties }: PropertiesList
                       {property.xero_contact_id && (
                         <Badge variant="secondary" className="text-xs shrink-0">
                           Xero
+                        </Badge>
+                      )}
+                      {(issueSummaries[property.id]?.count ?? 0) > 0 && (
+                        <Badge
+                          className={`shrink-0 border-transparent text-xs ${
+                            SEVERITY_BADGE_CLASSES[
+                              issueSummaries[property.id].worst ?? "cosmetic"
+                            ]
+                          }`}
+                        >
+                          {issueSummaries[property.id].count}{" "}
+                          {issueSummaries[property.id].count === 1
+                            ? "issue"
+                            : "issues"}
                         </Badge>
                       )}
                     </div>

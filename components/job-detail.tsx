@@ -122,6 +122,9 @@ const [photoMessage, setPhotoMessage] = useState<string | null>(null)
 const [photoError, setPhotoError] = useState<string | null>(null)
 const photoInputRef = useRef<HTMLInputElement | null>(null)
 
+  const [completionWarning, setCompletionWarning] = useState<string | null>(
+    null
+  )
   const [internalNote, setInternalNote] = useState("")
   const [savingInternalNote, setSavingInternalNote] = useState(false)
   const [internalNoteMessage, setInternalNoteMessage] =
@@ -545,6 +548,16 @@ const photoInputRef = useRef<HTMLInputElement | null>(null)
                 Planned guide: {plannedGuideHours} hours
               </p>
             )}
+          </CardContent>
+        </Card>
+      )}
+
+      {completionWarning && (
+        <Card className="mb-4 border-red-300 bg-red-50 shadow-sm">
+          <CardContent className="p-4">
+            <p className="text-sm font-semibold text-red-900">
+              {completionWarning}
+            </p>
           </CardContent>
         </Card>
       )}
@@ -1071,6 +1084,7 @@ const photoInputRef = useRef<HTMLInputElement | null>(null)
   assignedStaffId={job.assigned_staff_id || null}
   propertyIsRental={isRentalProperty}
   onSuccess={handleCompleteSuccess}
+  onIssueSaveWarning={setCompletionWarning}
 />
 
       {editVisitOpen && completedVisit && (

@@ -7,6 +7,11 @@ import {
   zeroLineRefusalForVisit,
 } from "@/lib/quoted-invoicing"
 import {
+  SEVERITY_LABELS,
+  WALK_AROUND_SEVERITIES,
+  type WalkAroundSeverity,
+} from "@/lib/walk-around"
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -26,6 +31,9 @@ interface CompleteVisitDialogProps {
   assignedStaffId: string | null
   propertyIsRental?: boolean
   onSuccess: () => void
+  // Called instead of blocking when the visit completed but walk-around
+  // issues failed to save — the parent surfaces it, completion stands.
+  onIssueSaveWarning?: (message: string) => void
 }
 
 export function CompleteVisitDialog({
@@ -36,6 +44,7 @@ export function CompleteVisitDialog({
   assignedStaffId,
   propertyIsRental = false,
   onSuccess,
+  onIssueSaveWarning,
 }: CompleteVisitDialogProps) {
   const [loading, setLoading] = useState(false)
   const [startTime, setStartTime] = useState("")
@@ -54,6 +63,19 @@ export function CompleteVisitDialog({
   const [helpers, setHelpers] = useState<
     { staff_member_id: string; staff_name: string; hours: string }[]
   >([])
+
+  // Walk-around report (rental jobs): zero or more optional issues, each a
+  // photo + severity + short note. A clean walk-around (no rows) is valid.
+  const [walkAroundIssues, setWalkAroundIssues] = useState<
+    { file: File | null; severity: "" | WalkAroundSeverity; note: string }[]
+  >([])
+
+  // Reset on reopen: the native file inputs lose their files when Radix
+  // unmounts the dialog DOM, so carrying the old File objects in state would
+  // silently upload photos the crew can no longer see.
+  useEffect(() => {
+    if (open) setWalkAroundIssues([])
+  }, [open])
 
   const [staffOptions, setStaffOptions] = useState<
     { id: string; name: string }[]
@@ -268,6 +290,84 @@ if (existingVisit) {
       }
     }
 
+    // Walk-around issues: ignore fully empty rows; a partially filled row
+    // blocks with a clear message rather than silently dropping crew input.
+    const filledIssues = walkAroundIssues.filter(
+      (issue) => issue.file || issue.severity || issue.note.trim()
+    )
+
+    if (filledIssues.some((issue) => !issue.file || !issue.severity)) {
+      setError(
+        "Each walk-around issue needs a photo and a severity. Fill them in or remove the row."
+      )
+      setLoading(false)
+      return
+    }
+
+    // Upload issue photos BEFORE any visit rows are written, so an upload
+    // failure blocks cleanly with nothing half-saved.
+    const uploadedIssues: {
+      objectPath: string
+      storagePath: string
+      publicUrl: string | null
+      severity: WalkAroundSeverity
+      note: string
+    }[] = []
+
+    if (filledIssues.length > 0) {
+      const issueTimestamp = Date.now()
+
+      for (const [index, issue] of filledIssues.entries()) {
+        const file = issue.file as File
+        const safeName = file.name
+          .toLowerCase()
+          .replace(/[^a-z0-9._-]+/g, "-")
+          .replace(/^-+|-+$/g, "")
+        const objectPath = `${jobId}/${issueTimestamp}-issue-${index}-${
+          safeName || "walk-around"
+        }`
+
+        const { error: uploadError } = await supabase.storage
+          .from("job-photos")
+          .upload(objectPath, file, { cacheControl: "3600", upsert: false })
+
+        if (uploadError) {
+          if (uploadedIssues.length > 0) {
+            await supabase.storage
+              .from("job-photos")
+              .remove(uploadedIssues.map((uploaded) => uploaded.objectPath))
+          }
+          setError(
+            "A walk-around photo failed to upload — nothing has been saved. Check your connection and try again."
+          )
+          setLoading(false)
+          return
+        }
+
+        const { data: publicUrlData } = supabase.storage
+          .from("job-photos")
+          .getPublicUrl(objectPath)
+
+        uploadedIssues.push({
+          objectPath,
+          storagePath: `job-photos/${objectPath}`,
+          publicUrl: publicUrlData.publicUrl || null,
+          severity: issue.severity as WalkAroundSeverity,
+          note: issue.note.trim(),
+        })
+      }
+    }
+
+    // If the submit fails after this point, the uploaded issue photos are
+    // unreferenced — remove them so they don't become storage orphans.
+    const removeIssueUploads = async () => {
+      if (uploadedIssues.length > 0) {
+        await supabase.storage
+          .from("job-photos")
+          .remove(uploadedIssues.map((uploaded) => uploaded.objectPath))
+      }
+    }
+
     const materialsReviewNote =
       extraMaterialsState === "needs_admin_review"
         ? extraMaterialsNote.trim() || "Extras/materials used - needs admin review"
@@ -330,6 +430,7 @@ if (existingVisit) {
     }
 
     if (visitError) {
+      await removeIssueUploads()
       setError(visitError.message)
       setLoading(false)
       return
@@ -352,6 +453,7 @@ if (existingVisit) {
         })
 
       if (primaryLabourError) {
+        await removeIssueUploads()
         setError(primaryLabourError.message)
         setLoading(false)
         return
@@ -385,6 +487,7 @@ if (existingVisit) {
         .insert(visitLabourRows)
 
       if (visitLabourError) {
+        await removeIssueUploads()
         setError(visitLabourError.message)
         setLoading(false)
         return
@@ -401,6 +504,7 @@ if (existingVisit) {
         .eq("id", createdVisit.id)
 
       if (hoursSyncError) {
+        await removeIssueUploads()
         setError(hoursSyncError.message)
         setLoading(false)
         return
@@ -429,6 +533,7 @@ if (existingVisit) {
     })
 
   if (helperLabourError) {
+    await removeIssueUploads()
     setError(helperLabourError.message)
     setLoading(false)
     return
@@ -464,9 +569,41 @@ if (existingVisit) {
         .eq("id", createdVisit.id)
 
       if (queueStampError) {
+        await removeIssueUploads()
         setError(queueStampError.message)
         setLoading(false)
         return
+      }
+    }
+
+    // Record walk-around issues against the visit. A failure here must not
+    // block completion (the visit is already recorded) — but it must be
+    // reported, never swallowed.
+    let issueSaveError: string | null = null
+
+    if (uploadedIssues.length > 0) {
+      const { data: userData } = await supabase.auth.getUser()
+
+      const { error: issueInsertError } = await supabase
+        .from("job_photos")
+        .insert(
+          uploadedIssues.map((issue) => ({
+            scheduled_job_id: jobId,
+            property_id: propertyId,
+            visit_id: createdVisit?.id || null,
+            uploaded_by: userData?.user?.id || null,
+            storage_path: issue.storagePath,
+            public_url: issue.publicUrl,
+            caption: issue.note || null,
+            photo_type: "issue",
+            severity: issue.severity,
+          }))
+        )
+
+      if (issueInsertError) {
+        issueSaveError = issueInsertError.message
+        // The rows never landed, so the uploaded objects are unreferenced.
+        await removeIssueUploads()
       }
     }
 
@@ -482,6 +619,14 @@ if (existingVisit) {
       setError(jobError.message)
       setLoading(false)
       return
+    }
+
+    if (issueSaveError) {
+      // Completion stands (the visit and status are already recorded) — close
+      // normally so the page reflects reality, and surface the warning there.
+      onIssueSaveWarning?.(
+        `The visit was completed, but the walk-around issues could not be saved (${issueSaveError}). Add the photos from the job page instead.`
+      )
     }
 
     setLoading(false)
@@ -718,6 +863,91 @@ if (existingVisit) {
                 placeholder="Example: used 6 stakes and ties, half bag fertiliser, extra spray, etc."
               />
             </Field>
+
+            {propertyIsRental && (
+              <div className="rounded-lg border bg-muted/30 p-3">
+                <p className="text-sm font-medium">Walk-around report</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Any issues to report? A clean walk-around is fine — just
+                  complete the visit. Each issue needs a photo and a severity.
+                </p>
+
+                {walkAroundIssues.map((issue, index) => (
+                  <div
+                    key={index}
+                    className="mt-3 grid gap-2 rounded-md border bg-background p-2"
+                  >
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="block w-full rounded-md border bg-background p-2 text-sm"
+                      onChange={(event) => {
+                        const updated = [...walkAroundIssues]
+                        updated[index].file = event.target.files?.[0] || null
+                        setWalkAroundIssues(updated)
+                      }}
+                    />
+
+                    <select
+                      className="h-11 rounded-md border bg-background px-3 text-sm"
+                      value={issue.severity}
+                      onChange={(event) => {
+                        const updated = [...walkAroundIssues]
+                        updated[index].severity = event.target.value as
+                          | ""
+                          | WalkAroundSeverity
+                        setWalkAroundIssues(updated)
+                      }}
+                    >
+                      <option value="">Select severity...</option>
+                      {WALK_AROUND_SEVERITIES.map((severity) => (
+                        <option key={severity} value={severity}>
+                          {SEVERITY_LABELS[severity]}
+                        </option>
+                      ))}
+                    </select>
+
+                    <Input
+                      value={issue.note}
+                      onChange={(event) => {
+                        const updated = [...walkAroundIssues]
+                        updated[index].note = event.target.value
+                        setWalkAroundIssues(updated)
+                      }}
+                      placeholder="Short note, e.g. broken fence paling by gate"
+                    />
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="justify-self-end"
+                      onClick={() =>
+                        setWalkAroundIssues(
+                          walkAroundIssues.filter((_, i) => i !== index)
+                        )
+                      }
+                    >
+                      Remove issue
+                    </Button>
+                  </div>
+                ))}
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="mt-3 h-11 w-full"
+                  onClick={() =>
+                    setWalkAroundIssues([
+                      ...walkAroundIssues,
+                      { file: null, severity: "", note: "" },
+                    ])
+                  }
+                >
+                  + Add issue
+                </Button>
+              </div>
+            )}
 
             {costCaptureWarnings.length > 0 && (
               <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">

@@ -19,6 +19,12 @@ import {
   getServiceIntervalWeeks,
   serviceFrequencyOptions,
 } from "@/lib/service-frequency"
+import {
+  SEVERITY_BADGE_CLASSES,
+  SEVERITY_LABELS,
+  severityRank,
+  type WalkAroundSeverity,
+} from "@/lib/walk-around"
 
 interface PropertyDialogProps {
   open: boolean
@@ -56,6 +62,15 @@ export function PropertyDialog({
     { id: string; amount: string; confirmed: boolean }[]
   >([])
   const [isRental, setIsRental] = useState(false)
+  const [walkAroundIssues, setWalkAroundIssues] = useState<
+    {
+      id: string
+      public_url: string | null
+      caption: string | null
+      severity: WalkAroundSeverity | null
+      created_at: string | null
+    }[]
+  >([])
   const [error, setError] = useState<string | null>(null)
 
   const isEditing = !!property
@@ -110,6 +125,31 @@ export function PropertyDialog({
             }))
           )
         })
+      // Walk-around issues logged by crew at rental visit completions —
+      // read-only here so the office/PM can see them at the property.
+      supabase
+        .from("job_photos")
+        .select("id, public_url, caption, severity, created_at")
+        .eq("property_id", property.id)
+        .eq("photo_type", "issue")
+        .not("severity", "is", null)
+        .order("created_at", { ascending: false })
+        .then(({ data }) => {
+          if (cancelled) return
+          const rows = (data || []) as {
+            id: string
+            public_url: string | null
+            caption: string | null
+            severity: WalkAroundSeverity | null
+            created_at: string | null
+          }[]
+          setWalkAroundIssues(
+            rows.sort(
+              (a, b) => severityRank(a.severity) - severityRank(b.severity)
+            )
+          )
+        })
+
       return () => {
         cancelled = true
       }
@@ -123,6 +163,7 @@ export function PropertyDialog({
       setServiceFrequency("")
       setSubscriptionLines([])
       setIsRental(false)
+      setWalkAroundIssues([])
       setError(null)
     }
   }, [property, open])
@@ -421,6 +462,57 @@ export function PropertyDialog({
                     </label>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {isEditing && walkAroundIssues.length > 0 && (
+              <div className="rounded-md border p-3">
+                <p className="mb-2 text-sm font-medium">
+                  Walk-around issues ({walkAroundIssues.length})
+                </p>
+                <div className="flex flex-col gap-2">
+                  {walkAroundIssues.map((issue) => (
+                    <div key={issue.id} className="flex items-start gap-3">
+                      {issue.public_url ? (
+                        <a
+                          href={issue.public_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="shrink-0"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={issue.public_url}
+                            alt={issue.caption || "Walk-around issue photo"}
+                            className="h-12 w-12 rounded-md border object-cover"
+                          />
+                        </a>
+                      ) : (
+                        <div className="h-12 w-12 shrink-0 rounded-md border bg-muted" />
+                      )}
+                      <div className="min-w-0">
+                        <span
+                          className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
+                            SEVERITY_BADGE_CLASSES[issue.severity ?? "cosmetic"]
+                          }`}
+                        >
+                          {SEVERITY_LABELS[issue.severity ?? "cosmetic"]}
+                        </span>
+                        <p className="mt-1 text-sm">
+                          {issue.caption || "No note"}
+                        </p>
+                        {issue.created_at && (
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(issue.created_at).toLocaleDateString(
+                              "en-NZ"
+                            )}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </FieldGroup>

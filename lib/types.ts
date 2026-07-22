@@ -80,6 +80,7 @@ export interface JobPhoto {
     | "issue"
     | "completion"
     | "other"
+  severity?: import("./walk-around").WalkAroundSeverity | null
   created_at?: string
 }
 
