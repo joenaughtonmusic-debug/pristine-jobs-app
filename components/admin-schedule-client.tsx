@@ -16,6 +16,10 @@ import {
   getServiceIntervalWeeks,
   serviceFrequencyOptions,
 } from "@/lib/service-frequency"
+import {
+  defaultInvoiceMethodFromModes,
+  isMethodMismatchForModes,
+} from "@/lib/subscription-billing"
 
 type StaffMember = {
   id: string
@@ -35,6 +39,9 @@ type Property = {
   default_start_time: string | null
   is_active: boolean
   billing_type?: string | null
+  // Phase B: active billing-line modes for this property (per-job-type model).
+  // Falls back to [billing_type] when absent.
+  billing_modes?: string[] | null
   client_email?: string | null
   scheduling_notes?: string | null
   service_type?: string | null
@@ -419,24 +426,28 @@ const [savingSchedulingNote, setSavingSchedulingNote] = useState(false)
   // Prefill from the property's billing type. Unknown or missing billing
   // types return "" so the operator must choose explicitly — the old silent
   // charge_up fallback let fixed-price jobs get invoiced per visit.
-  const getDefaultInvoiceMethod = (property: Property) => {
-    if (property.billing_type === "subscription") return "subscription"
-    if (property.billing_type === "non_billable") return "non_billable"
-    if (property.billing_type === "quoted") return "quoted"
+  // The property's active billing-line modes. Phase A backfilled one line per
+  // property, so this is [billing_type] until Pattern-2 second lines are seeded;
+  // the fallback keeps behaviour intact if billing_modes wasn't supplied.
+  const modesOf = (property: Property) =>
+    property.billing_modes ??
+    (property.billing_type ? [property.billing_type] : [])
 
-    return ""
-  }
+  // Single line → that method (charge_up keeps its deliberate no-default);
+  // multiple lines → no silent default, operator chooses.
+  const getDefaultInvoiceMethod = (property: Property) =>
+    defaultInvoiceMethodFromModes(modesOf(property))
 
-  // A mismatch only exists when the property has a defined billing type
-  // (subscription/quoted/non_billable) and the chosen method contradicts it.
-  // charge_up properties have no default, so any explicit choice is valid.
+  // Multi-method (#21): valid = the chosen method matches an active billing
+  // line's mode. Block only when it matches NONE — so a property with a
+  // legitimate second line (e.g. subscription + charge_up) doesn't trip on
+  // either, while a subscription-only property still blocks a charge_up job.
   const isMethodMismatch = (
     property: Property | null | undefined,
     method: string,
   ) => {
     if (!property || !method) return false
-    const expected = getDefaultInvoiceMethod(property)
-    return Boolean(expected) && method !== expected
+    return isMethodMismatchForModes(modesOf(property), method)
   }
 
   const completeClientAdjustment = async (item: ClientAdjustment) => {

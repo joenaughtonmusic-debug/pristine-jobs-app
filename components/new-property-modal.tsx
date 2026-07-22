@@ -87,19 +87,6 @@ export function NewPropertyModal({ open, onOpenChange }: Props) {
             : {
                 hourly_rate: Number(hourlyRate) || 80,
                 greenwaste_rate: Number(greenwasteRate) || 26.5,
-                // Subscription confirmation captured at creation (genuine
-                // inserts only, like the rates) so a new subscription starts
-                // confirmed rather than immediately flagging.
-                ...(billingType === "subscription"
-                  ? {
-                      subscription_amount: subscriptionAmount
-                        ? Number(subscriptionAmount)
-                        : null,
-                      subscription_invoice_confirmed_at: subscriptionConfirmed
-                        ? new Date().toISOString()
-                        : null,
-                    }
-                  : {}),
               }),
         },
         {
@@ -132,6 +119,33 @@ export function NewPropertyModal({ open, onOpenChange }: Props) {
       setError(templateError.message)
       setSaving(false)
       return
+    }
+
+    // Phase B: seed the property's billing identity line on genuine inserts
+    // (mirrors the rate handling — an existing property already has one). The
+    // subscription amount + confirmation now live on the line, not the property.
+    if (!existingProperty) {
+      const nowIso = new Date().toISOString()
+      const isSub = billingType === "subscription"
+      const { error: lineError } = await supabase
+        .from("property_billing_lines")
+        .insert({
+          property_id: property.id,
+          billing_mode: billingType,
+          job_type: category,
+          subscription_amount:
+            isSub && subscriptionAmount ? Number(subscriptionAmount) : null,
+          subscription_invoice_confirmed_at:
+            isSub && subscriptionConfirmed ? nowIso : null,
+          subscription_invoice_confirmed_by:
+            isSub && subscriptionConfirmed ? "admin" : null,
+          active: true,
+        })
+      if (lineError) {
+        setError(lineError.message)
+        setSaving(false)
+        return
+      }
     }
 
     setSaving(false)

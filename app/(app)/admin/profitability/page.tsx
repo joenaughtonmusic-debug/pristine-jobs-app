@@ -117,6 +117,33 @@ export default async function AdminProfitabilityPage() {
     ])
   )
 
+  // Phase B: the "repeating invoice unconfirmed" badge flags a property that has
+  // ANY unconfirmed active subscription line (per-line — one confirmed + one
+  // stale line still flags the property).
+  const { data: subscriptionLineData } =
+    propertyIds.length > 0
+      ? await supabase
+          .from("property_billing_lines")
+          .select("property_id, subscription_invoice_confirmed_at")
+          .eq("billing_mode", "subscription")
+          .eq("active", true)
+          .in("property_id", propertyIds)
+      : { data: [] }
+  const unconfirmedLinePropertyIds = new Set(
+    ((subscriptionLineData || []) as {
+      property_id: string
+      subscription_invoice_confirmed_at: string | null
+    }[])
+      .filter((line) =>
+        isSubscriptionUnconfirmed({
+          billing_mode: "subscription",
+          subscription_invoice_confirmed_at:
+            line.subscription_invoice_confirmed_at,
+        })
+      )
+      .map((line) => line.property_id)
+  )
+
   return (
     <div className="p-6">
       <div className="mb-6">
@@ -223,9 +250,9 @@ export default async function AdminProfitabilityPage() {
                 .filter(Boolean)
                 .join(", ")
 
-              const subscriptionUnconfirmed = propertyService
-                ? isSubscriptionUnconfirmed(propertyService)
-                : false
+              const subscriptionUnconfirmed = unconfirmedLinePropertyIds.has(
+                row.property_id
+              )
 
               return (
                 <tr key={row.property_id} className="hover:bg-gray-50">
