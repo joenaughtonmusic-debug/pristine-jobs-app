@@ -50,15 +50,23 @@ export function PropertyDialog({
   const [serviceFrequency, setServiceFrequency] = useState("")
   const [hourlyRate, setHourlyRate] = useState("80")
   const [greenwasteRate, setGreenwasteRate] = useState("26.5")
-  const [subscriptionAmount, setSubscriptionAmount] = useState("")
-  const [subscriptionConfirmed, setSubscriptionConfirmed] = useState(false)
+  // Phase B: confirmation + amount are per subscription billing LINE, so a
+  // property can hold several, each confirmed independently.
+  const [subscriptionLines, setSubscriptionLines] = useState<
+    { id: string; amount: string; confirmed: boolean }[]
+  >([])
   const [isRental, setIsRental] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const isEditing = !!property
-  // The subscription confirm control only applies to an existing subscription
-  // property (billing_type isn't set/edited here on the add path).
-  const isSubscription = isEditing && property?.billing_type === "subscription"
+
+  const updateLine = (
+    id: string,
+    patch: Partial<{ amount: string; confirmed: boolean }>
+  ) =>
+    setSubscriptionLines((prev) =>
+      prev.map((line) => (line.id === id ? { ...line, ...patch } : line))
+    )
 
   useEffect(() => {
     if (property) {
@@ -69,16 +77,42 @@ export function PropertyDialog({
       setInvoiceHandlingNote(property.invoice_handling_note || "")
       setServiceType(property.service_type || "")
       setServiceFrequency(property.service_frequency || "")
-      setSubscriptionAmount(
-        property.subscription_amount != null
-          ? String(property.subscription_amount)
-          : ""
-      )
-      // Ticked only when the property is currently, validly confirmed — a
-      // stale or unconfirmed subscription starts unticked so it requires an
-      // active re-confirmation.
-      setSubscriptionConfirmed(!isSubscriptionUnconfirmed(property))
       setIsRental(property.is_rental ?? false)
+      setError(null)
+
+      // Phase B: load the property's active subscription lines so each can be
+      // confirmed independently. A line is ticked only when it's currently,
+      // validly confirmed — a stale/unconfirmed line starts unticked so it
+      // requires an active re-confirmation.
+      let cancelled = false
+      const supabase = createClient()
+      supabase
+        .from("property_billing_lines")
+        .select("id, subscription_amount, subscription_invoice_confirmed_at")
+        .eq("property_id", property.id)
+        .eq("active", true)
+        .eq("billing_mode", "subscription")
+        .order("created_at", { ascending: true })
+        .then(({ data }) => {
+          if (cancelled) return
+          setSubscriptionLines(
+            (data || []).map((line) => ({
+              id: line.id as string,
+              amount:
+                line.subscription_amount != null
+                  ? String(line.subscription_amount)
+                  : "",
+              confirmed: !isSubscriptionUnconfirmed({
+                billing_mode: "subscription",
+                subscription_invoice_confirmed_at:
+                  line.subscription_invoice_confirmed_at,
+              }),
+            }))
+          )
+        })
+      return () => {
+        cancelled = true
+      }
     } else {
       setClientName("")
       setAddress("")
@@ -87,11 +121,10 @@ export function PropertyDialog({
       setInvoiceHandlingNote("")
       setServiceType("")
       setServiceFrequency("")
-      setSubscriptionAmount("")
-      setSubscriptionConfirmed(false)
+      setSubscriptionLines([])
       setIsRental(false)
+      setError(null)
     }
-    setError(null)
   }, [property, open])
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -122,26 +155,9 @@ export function PropertyDialog({
 }
 
     if (isEditing) {
-      // Subscription confirmation: ticking stamps a fresh confirmed_at (which
-      // also clears staleness); unticking un-confirms. Only added for
-      // subscription properties, so no other billing type is affected.
-      const subscriptionData = isSubscription
-        ? {
-            subscription_amount: subscriptionAmount
-              ? Number(subscriptionAmount)
-              : null,
-            subscription_invoice_confirmed_at: subscriptionConfirmed
-              ? new Date().toISOString()
-              : null,
-            subscription_invoice_confirmed_by: subscriptionConfirmed
-              ? user.email || "admin"
-              : null,
-          }
-        : {}
-
       const { data, error: updateError } = await supabase
         .from("properties")
-        .update({ ...propertyData, ...subscriptionData })
+        .update(propertyData)
         .eq("id", property.id)
         .select()
         .single()
@@ -150,6 +166,29 @@ export function PropertyDialog({
         setError(updateError.message)
         setLoading(false)
         return
+      }
+
+      // Phase B: confirmation + amount write to each subscription LINE, not the
+      // property. Ticking stamps a fresh confirmed_at on that line (clearing its
+      // staleness and only its own VA action); unticking un-confirms that line.
+      const nowIso = new Date().toISOString()
+      for (const line of subscriptionLines) {
+        const { error: lineError } = await supabase
+          .from("property_billing_lines")
+          .update({
+            subscription_amount: line.amount ? Number(line.amount) : null,
+            subscription_invoice_confirmed_at: line.confirmed ? nowIso : null,
+            subscription_invoice_confirmed_by: line.confirmed
+              ? user.email || "admin"
+              : null,
+            updated_at: nowIso,
+          })
+          .eq("id", line.id)
+        if (lineError) {
+          setError(lineError.message)
+          setLoading(false)
+          return
+        }
       }
 
       onSuccess(data as Property, false)
@@ -171,6 +210,22 @@ export function PropertyDialog({
 
       if (insertError) {
         setError(insertError.message)
+        setLoading(false)
+        return
+      }
+
+      // Phase B: every property carries its billing identity as a line. The add
+      // form creates a charge_up property, so seed a matching charge_up line.
+      const { error: lineError } = await supabase
+        .from("property_billing_lines")
+        .insert({
+          property_id: data.id,
+          billing_mode: "charge_up",
+          job_type: serviceType.trim() || null,
+          active: true,
+        })
+      if (lineError) {
+        setError(lineError.message)
         setLoading(false)
         return
       }
@@ -317,37 +372,55 @@ export function PropertyDialog({
               />
             </Field>
 
-            {isSubscription && (
+            {subscriptionLines.length > 0 && (
               <div className="rounded-md border border-blue-200 bg-blue-50 p-3">
                 <p className="mb-2 text-sm font-medium text-blue-900">
                   Subscription billing (Xero repeating invoice)
                 </p>
-                <Field>
-                  <FieldLabel htmlFor="subscriptionAmount">
-                    Repeating invoice amount ($ per period)
-                  </FieldLabel>
-                  <Input
-                    id="subscriptionAmount"
-                    type="number"
-                    step="0.01"
-                    placeholder="e.g. 544"
-                    value={subscriptionAmount}
-                    onChange={(e) => setSubscriptionAmount(e.target.value)}
-                    className="h-12"
-                  />
-                </Field>
-                <label className="mt-2 flex items-start gap-2 text-sm text-blue-900">
-                  <input
-                    type="checkbox"
-                    className="mt-1"
-                    checked={subscriptionConfirmed}
-                    onChange={(e) =>
-                      setSubscriptionConfirmed(e.target.checked)
+                {subscriptionLines.map((line, index) => (
+                  <div
+                    key={line.id}
+                    className={
+                      index > 0
+                        ? "mt-3 border-t border-blue-200 pt-3"
+                        : undefined
                     }
-                  />
-                  I&apos;ve confirmed a live Xero repeating invoice exists for
-                  this customer.
-                </label>
+                  >
+                    {subscriptionLines.length > 1 && (
+                      <p className="mb-1 text-xs font-medium text-blue-800">
+                        Subscription line {index + 1}
+                      </p>
+                    )}
+                    <Field>
+                      <FieldLabel htmlFor={`subscriptionAmount-${line.id}`}>
+                        Repeating invoice amount ($ per period)
+                      </FieldLabel>
+                      <Input
+                        id={`subscriptionAmount-${line.id}`}
+                        type="number"
+                        step="0.01"
+                        placeholder="e.g. 544"
+                        value={line.amount}
+                        onChange={(e) =>
+                          updateLine(line.id, { amount: e.target.value })
+                        }
+                        className="h-12"
+                      />
+                    </Field>
+                    <label className="mt-2 flex items-start gap-2 text-sm text-blue-900">
+                      <input
+                        type="checkbox"
+                        className="mt-1"
+                        checked={line.confirmed}
+                        onChange={(e) =>
+                          updateLine(line.id, { confirmed: e.target.checked })
+                        }
+                      />
+                      I&apos;ve confirmed a live Xero repeating invoice exists for
+                      this line.
+                    </label>
+                  </div>
+                ))}
               </div>
             )}
           </FieldGroup>

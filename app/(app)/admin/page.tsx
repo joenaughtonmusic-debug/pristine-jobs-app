@@ -47,12 +47,17 @@ type LabourEntryRow = {
   hours_worked: number | string | null
 }
 
-type SubscriptionPropertyRow = {
+// Phase B: subscription confirmation is per billing LINE, not per property. One
+// property can hold one confirmed line and one stale one — each flags (and
+// resolves) independently, keyed by the line id.
+type SubscriptionLineRow = {
   id: string
-  property_code: string | null
-  client_name: string | null
-  billing_type: string | null
+  property_id: string
   subscription_invoice_confirmed_at: string | null
+  properties: {
+    property_code: string | null
+    client_name: string | null
+  } | null
 }
 
 type CommunicationCountRow = {
@@ -212,7 +217,7 @@ export default async function AdminDashboardPage() {
     communicationsResult,
     timesheetsResult,
     labourEntriesResult,
-    subscriptionPropertiesResult,
+    subscriptionLinesResult,
   ] = await Promise.all([
     supabase
       .from("admin_enquiries")
@@ -286,45 +291,53 @@ export default async function AdminDashboardPage() {
       .lte("work_date", endDate)
       .limit(1000),
     supabase
-      .from("properties")
+      .from("property_billing_lines")
       .select(
-        "id, property_code, client_name, billing_type, subscription_invoice_confirmed_at"
+        "id, property_id, subscription_invoice_confirmed_at, properties(property_code, client_name)"
       )
-      .eq("billing_type", "subscription")
-      .eq("is_active", true),
+      .eq("billing_mode", "subscription")
+      .eq("active", true),
   ])
 
   // Build A: subscription properties with no confirmed (or stale) Xero
   // repeating invoice can bill nothing invisibly. Surface each as a VA action,
   // and close actions for any that have since been confirmed.
-  const subscriptionProperties = (subscriptionPropertiesResult.data ||
-    []) as SubscriptionPropertyRow[]
-  const unconfirmedSubscriptions = subscriptionProperties.filter((property) =>
-    isSubscriptionUnconfirmed(property)
+  const subscriptionLines = (subscriptionLinesResult.data ||
+    []) as unknown as SubscriptionLineRow[]
+  const unconfirmedLines = subscriptionLines.filter((line) =>
+    isSubscriptionUnconfirmed({
+      billing_mode: "subscription",
+      subscription_invoice_confirmed_at: line.subscription_invoice_confirmed_at,
+    })
   )
 
   await ensureWorkflowAdminActions(
     supabase,
-    unconfirmedSubscriptions.map((property) => ({
-      title: `Confirm Xero repeating invoice: ${property.client_name || property.property_code || "subscription property"}`,
+    unconfirmedLines.map((line) => ({
+      title: `Confirm Xero repeating invoice: ${line.properties?.client_name || line.properties?.property_code || "subscription property"}`,
       actionType: "subscription_billing_unconfirmed",
       priority: "high" as const,
       owner: "VA",
       dueDate: getActionDueDate(1),
-      propertyId: property.id,
-      sourceRecordType: "property",
-      sourceRecordId: property.id,
+      propertyId: line.property_id,
+      // Per-line identity: the dedup key is the billing line id, so two
+      // subscription lines on one property produce two independent actions
+      // rather than collapsing into one.
+      sourceRecordType: "property_billing_line",
+      sourceRecordId: line.id,
       sourceUrl: "/admin/properties",
       notes:
         "No confirmed (or a >12-month-old) Xero repeating invoice for this " +
-        "subscription property. Confirm the repeating invoice in Xero, then " +
-        "record it on the property so it stops flagging.",
+        "subscription line. Confirm the repeating invoice in Xero, then " +
+        "record it on the line so it stops flagging.",
     }))
   )
 
-  // Resolve actions for properties that are now confirmed (or no longer
-  // subscription) — the "confirm clears the action" behaviour.
-  const unconfirmedIds = new Set(unconfirmedSubscriptions.map((p) => p.id))
+  // Resolve actions for lines that are now confirmed (or no longer subscription)
+  // — the "confirm clears the action" behaviour. Also sweeps any legacy
+  // property-keyed actions (their source_record_id is a property id, never in
+  // the line-id set), migrating the flag cleanly onto per-line actions.
+  const unconfirmedLineIds = new Set(unconfirmedLines.map((line) => line.id))
   const { data: openSubscriptionActions } = await supabase
     .from("admin_actions")
     .select("id, source_record_id")
@@ -334,7 +347,7 @@ export default async function AdminDashboardPage() {
     id: string
     source_record_id: string | null
   }[])
-    .filter((action) => !unconfirmedIds.has(action.source_record_id || ""))
+    .filter((action) => !unconfirmedLineIds.has(action.source_record_id || ""))
     .map((action) => action.id)
   if (staleActionIds.length > 0) {
     await supabase
@@ -457,7 +470,7 @@ export default async function AdminDashboardPage() {
     {
       stage: "Subscription Billing",
       title: "Confirm subscription customers are billable",
-      count: unconfirmedSubscriptions.length,
+      count: unconfirmedLines.length,
       href: "/admin/actions",
       purpose:
         "Subscription customers bill from a Xero repeating invoice the app can't see. Any without a confirmed (or with a stale) one bill nothing until confirmed.",

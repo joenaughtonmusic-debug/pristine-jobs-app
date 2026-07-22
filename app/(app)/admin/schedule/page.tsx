@@ -134,6 +134,32 @@ export default async function AdminSchedulePage({
     .order("suburb", { ascending: true })
     .order("client_name", { ascending: true })
 
+  // Phase B: attach each property's active billing-line modes for the schedule
+  // invoice-method default + the mismatch guard (#21, multi-method).
+  const propertyIdsForModes = (properties || []).map((p) => p.id)
+  const { data: billingLines } =
+    propertyIdsForModes.length > 0
+      ? await supabase
+          .from("property_billing_lines")
+          .select("property_id, billing_mode")
+          .eq("active", true)
+          .in("property_id", propertyIdsForModes)
+      : { data: [] }
+  const modesByProperty = new Map<string, string[]>()
+  for (const line of (billingLines || []) as {
+    property_id: string
+    billing_mode: string | null
+  }[]) {
+    if (!line.billing_mode) continue
+    const arr = modesByProperty.get(line.property_id) ?? []
+    if (!arr.includes(line.billing_mode)) arr.push(line.billing_mode)
+    modesByProperty.set(line.property_id, arr)
+  }
+  const propertiesWithModes = (properties || []).map((property) => ({
+    ...property,
+    billing_modes: modesByProperty.get(property.id) ?? [],
+  }))
+
   const { data: staff } = await supabase
     .from("staff_members")
     .select("id, name")
@@ -207,7 +233,7 @@ export default async function AdminSchedulePage({
   thisWeekStart={startDate}
   nextWeekStart={toDateString(nextWeekMonday)}
       jobs={jobs || []}
-      properties={properties || []}
+      properties={propertiesWithModes}
       staff={staff || []}
       serviceTemplates={serviceTemplates || []}
       schedulingQueue={schedulingQueue || []}
