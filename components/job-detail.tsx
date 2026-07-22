@@ -112,7 +112,9 @@ const [photos, setPhotos] = useState(jobPhotos)
 const [selectedPhoto, setSelectedPhoto] = useState<JobPhoto | null>(null)
 const [photoCaption, setPhotoCaption] = useState("")
 const [photoType, setPhotoType] = useState<JobPhoto["photo_type"]>(
-  "client_instruction"
+  // Rental visits need a work photo; client_instruction photos don't satisfy
+  // the completion gate, so don't make them the default there.
+  job.properties?.is_rental ? "after" : "client_instruction"
 )
 const [selectedPhotoFiles, setSelectedPhotoFiles] = useState<File[]>([])
 const [uploadingPhotos, setUploadingPhotos] = useState(false)
@@ -140,6 +142,11 @@ const photoInputRef = useRef<HTMLInputElement | null>(null)
     (job.invoice_method === "charge_up" || job.billing_mode === "charge_up")
   const isTimeFlexible = job.time_limit_type === "flexible"
   const showChargeUpFlexibleGuidance = isChargeUpJob && isTimeFlexible
+  const isRentalProperty = Boolean(property?.is_rental)
+  const qualifyingPhotoCount = photos.filter(
+    (photo) => photo.photo_type !== "client_instruction"
+  ).length
+  const photoGateBlocked = isRentalProperty && qualifyingPhotoCount === 0
   const plannedGuideHours =
     job.planned_duration_hours !== null && job.planned_duration_hours !== undefined
       ? Number(job.planned_duration_hours)
@@ -542,6 +549,21 @@ const photoInputRef = useRef<HTMLInputElement | null>(null)
         </Card>
       )}
 
+      {photoGateBlocked && status !== "completed" && status !== "cancelled" && (
+        <Card className="mb-4 border-amber-300 bg-amber-50 shadow-sm">
+          <CardContent className="p-4">
+            <Badge className="mb-2 border border-amber-400 bg-white text-amber-900">
+              Rental Property
+            </Badge>
+
+            <p className="text-sm font-semibold text-amber-950">
+              Upload at least one photo of the work before completing this
+              visit. Any photo type counts except Client instruction.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
       {isAdmin && (
         <Card className="mb-4 border-blue-200 bg-blue-50">
           <CardHeader className="pb-2">
@@ -696,73 +718,73 @@ const photoInputRef = useRef<HTMLInputElement | null>(null)
           </CardHeader>
 
           <CardContent className="space-y-4 p-4 pt-0">
-            {isAdmin && (
-              <div className="rounded-lg border bg-muted/30 p-3">
-                <div className="grid gap-3">
-                  <input
-                    id={`job-photo-upload-${job.id}`}
-                    ref={photoInputRef}
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    className="block w-full rounded-md border bg-background p-2 text-sm"
-                    onChange={handlePhotoFileChange}
-                  />
+            {/* Upload stays available to ALL signed-in users, not just admins:
+                the rental photo gate depends on crew being able to upload. */}
+            <div className="rounded-lg border bg-muted/30 p-3">
+              <div className="grid gap-3">
+                <input
+                  id={`job-photo-upload-${job.id}`}
+                  ref={photoInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="block w-full rounded-md border bg-background p-2 text-sm"
+                  onChange={handlePhotoFileChange}
+                />
 
-                  <p
-                    className={cn(
-                      "text-xs",
-                      selectedPhotoFiles.length === 0
-                        ? "text-muted-foreground"
-                        : "font-medium text-green-700"
-                    )}
-                    aria-live="polite"
-                  >
-                    {selectedPhotoFiles.length === 0
-                      ? "No photos selected"
-                      : `${selectedPhotoFiles.length} photo${
-                          selectedPhotoFiles.length === 1 ? "" : "s"
-                        } selected`}
-                  </p>
+                <p
+                  className={cn(
+                    "text-xs",
+                    selectedPhotoFiles.length === 0
+                      ? "text-muted-foreground"
+                      : "font-medium text-green-700"
+                  )}
+                  aria-live="polite"
+                >
+                  {selectedPhotoFiles.length === 0
+                    ? "No photos selected"
+                    : `${selectedPhotoFiles.length} photo${
+                        selectedPhotoFiles.length === 1 ? "" : "s"
+                      } selected`}
+                </p>
 
-                  <select
-                    className="h-11 rounded-md border bg-background px-3 text-sm"
-                    value={photoType}
-                    onChange={(event) =>
-                      setPhotoType(event.target.value as JobPhoto["photo_type"])
-                    }
-                  >
-                    <option value="client_instruction">Client instruction</option>
-                    <option value="before">Before</option>
-                    <option value="after">After</option>
-                    <option value="issue">Issue</option>
-                    <option value="completion">Completion</option>
-                    <option value="other">Other</option>
-                  </select>
+                <select
+                  className="h-11 rounded-md border bg-background px-3 text-sm"
+                  value={photoType}
+                  onChange={(event) =>
+                    setPhotoType(event.target.value as JobPhoto["photo_type"])
+                  }
+                >
+                  <option value="client_instruction">Client instruction</option>
+                  <option value="before">Before</option>
+                  <option value="after">After</option>
+                  <option value="issue">Issue</option>
+                  <option value="completion">Completion</option>
+                  <option value="other">Other</option>
+                </select>
 
-                  <Textarea
-                    value={photoCaption}
-                    onChange={(event) => setPhotoCaption(event.target.value)}
-                    rows={2}
-                    placeholder="Caption or instruction for staff..."
-                  />
+                <Textarea
+                  value={photoCaption}
+                  onChange={(event) => setPhotoCaption(event.target.value)}
+                  rows={2}
+                  placeholder="Caption or instruction for staff..."
+                />
 
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="h-11"
-                    onClick={handleUploadPhotos}
-                    disabled={
-                      selectedPhotoFiles.length === 0 ||
-                      uploadingPhotos === true
-                    }
-                  >
-                    {uploadingPhotos ? <Spinner className="mr-2" /> : null}
-                    {uploadingPhotos ? "Uploading..." : "Upload photos"}
-                  </Button>
-                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-11"
+                  onClick={handleUploadPhotos}
+                  disabled={
+                    selectedPhotoFiles.length === 0 ||
+                    uploadingPhotos === true
+                  }
+                >
+                  {uploadingPhotos ? <Spinner className="mr-2" /> : null}
+                  {uploadingPhotos ? "Uploading..." : "Upload photos"}
+                </Button>
               </div>
-            )}
+            </div>
 
             {photoError && (
               <p className="rounded-md bg-red-50 p-2 text-sm text-red-600">
@@ -1018,9 +1040,12 @@ const photoInputRef = useRef<HTMLInputElement | null>(null)
                 size="lg"
                 className="h-14 text-base"
                 onClick={() => setShowCompleteDialog(true)}
+                disabled={photoGateBlocked}
               >
                 <CheckCircle className="mr-2 h-5 w-5" />
-                Complete Visit
+                {photoGateBlocked
+                  ? "Photo Required to Complete"
+                  : "Complete Visit"}
               </Button>
             )}
 
@@ -1044,6 +1069,7 @@ const photoInputRef = useRef<HTMLInputElement | null>(null)
   jobId={job.id}
   propertyId={job.property_id}
   assignedStaffId={job.assigned_staff_id || null}
+  propertyIsRental={isRentalProperty}
   onSuccess={handleCompleteSuccess}
 />
 

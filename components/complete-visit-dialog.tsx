@@ -24,6 +24,7 @@ interface CompleteVisitDialogProps {
   jobId: string
   propertyId: string
   assignedStaffId: string | null
+  propertyIsRental?: boolean
   onSuccess: () => void
 }
 
@@ -33,6 +34,7 @@ export function CompleteVisitDialog({
   jobId,
   propertyId,
   assignedStaffId,
+  propertyIsRental = false,
   onSuccess,
 }: CompleteVisitDialogProps) {
   const [loading, setLoading] = useState(false)
@@ -237,6 +239,34 @@ if (existingVisit) {
   setLoading(false)
   return
 }
+
+    // Rental properties require photo proof of the work. Checked against the
+    // DB at submit time, not just the UI state, so the gate can't be beaten
+    // by a stale page.
+    if (propertyIsRental) {
+      const { data: gatePhotos, error: gatePhotoError } = await supabase
+        .from("job_photos")
+        .select("id")
+        .eq("scheduled_job_id", jobId)
+        .neq("photo_type", "client_instruction")
+        .limit(1)
+
+      if (gatePhotoError) {
+        setError(
+          "Couldn't confirm this rental job's photos. Check your connection and try again."
+        )
+        setLoading(false)
+        return
+      }
+
+      if (!gatePhotos || gatePhotos.length === 0) {
+        setError(
+          "This is a rental property. Upload at least one photo of the work before completing the visit — any photo type counts except Client instruction."
+        )
+        setLoading(false)
+        return
+      }
+    }
 
     const materialsReviewNote =
       extraMaterialsState === "needs_admin_review"
