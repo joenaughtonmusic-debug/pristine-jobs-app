@@ -31,6 +31,12 @@ run -f "$DIR/051_captures_storage_bucket.sql"
 echo "== APPLY 052 (authenticated grants) =="
 run -f "$DIR/052_captures_grants.sql"
 
+echo "== APPLY 054 (service_role grants + default privileges) =="
+run -f "$DIR/054_captures_service_role_grants.sql"
+
+echo "== APPLY 055 (billing-view service_role grants) =="
+run -f "$DIR/055_billing_views_service_role_grants.sql"
+
 echo "== AFTER: columns + constraints =="
 run -c "select column_name, data_type, is_nullable, column_default
         from information_schema.columns
@@ -44,10 +50,16 @@ run -c "select policyname from pg_policies
         where schemaname = 'storage' and tablename = 'objects'
           and policyname like 'captures_bucket_%';"
 
-echo "== AFTER: authenticated grants =="
+echo "== AFTER: captures grants (authenticated + service_role) =="
 run -c "select grantee, privilege_type from information_schema.role_table_grants
-        where table_name = 'captures' and grantee = 'authenticated'
-        order by privilege_type;"
+        where table_name = 'captures' and grantee in ('authenticated', 'service_role')
+        order by grantee, privilege_type;"
+
+echo "== AFTER: billing-view service_role grants =="
+run -c "select table_name, grantee, privilege_type from information_schema.role_table_grants
+        where table_name in ('v_invoice_queue', 'v_invoice_ready_grouped')
+          and grantee = 'service_role'
+        order by table_name;"
 
 echo "== SMOKE: insert defaults + bad-type reject =="
 run -c "insert into public.captures (transcript) values ('__smoke__ staging rehearsal')

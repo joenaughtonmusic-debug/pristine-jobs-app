@@ -17,7 +17,9 @@ export default async function AdminActionsPage() {
         suburb
       )
     `)
-    .neq("status", "done")
+    // Default to open actions only — hide terminal states (done, and
+    // dismissed, which is what auto-closed labour-recon clutter uses).
+    .not("status", "in", "(done,dismissed)")
     .order("due_date", { ascending: true, nullsFirst: false })
     .order("created_at", { ascending: false })
 

@@ -303,35 +303,11 @@ export default async function AdminLabourReconciliationPage({
   await ensureWorkflowAdminActions(
     supabase,
     [
-      ...rows
-        .filter((row) => row.status !== "ok" && row.status !== "non_worked")
-        .map((row): WorkflowAdminActionInput => ({
-        title: `Labour reconciliation: ${row.staffName} ${formatDate(row.workDate)}`,
-        actionType: "labour_exception",
-        priority:
-          row.status === "missing_daily_hours" || row.status === "overallocated"
-            ? "high"
-            : "normal",
-        owner: "VA",
-        dueDate: getActionDueDate(0),
-        sourceRecordType: "labour_reconciliation",
-        sourceRecordId: row.key,
-        sourceUrl: `/admin/labour-reconciliation?start=${startDate}&end=${endDate}`,
-        notes: [
-          `Staff: ${row.staffName}`,
-          `Date: ${formatDate(row.workDate)}`,
-          `Status: ${statusLabel(row.status)}`,
-          `Day status: ${formatDayStatus(row.timesheet?.day_status)}`,
-          `Daily hours: ${formatHours(row.dailyHours)}`,
-          `Job hours: ${formatHours(row.jobHours)}`,
-          `Difference: ${formatDifference(row.difference)}`,
-          row.timesheet?.status_notes
-            ? `Timesheet note: ${row.timesheet.status_notes}`
-            : null,
-        ]
-          .filter(Boolean)
-          .join("\n"),
-        })),
+      // Labour reconciliation EXCEPTIONS deliberately no longer create admin
+      // actions — they were auto-generated data-quality items, not VA-delegated
+      // tasks, and clogged /admin/actions. The recon computation itself is
+      // unchanged; the exceptions still surface on this page and its badge.
+      // (misc_work_review below stays — "Link extra work" is a real VA task.)
       ...((labourEntries || []) as LabourEntryRow[])
         .filter(
           (entry) => entry.job_type === "misc" && !entry.scheduled_job_id
