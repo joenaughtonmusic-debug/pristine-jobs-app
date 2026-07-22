@@ -53,7 +53,7 @@ export async function transcribeAudio(audio: Blob, filename: string): Promise<st
 const TRIAGE_PROMPT = (transcript: string) => `Classify this voice note from a landscaping business owner into exactly one type:
 - commercial_lead: a commercial building/site he wants to approach for garden work
 - property_followup: an existing or potential residential property to follow up
-- annoying_task: a small admin/process task or annoyance to deal with later
+- annoying_task: a task to offload to the VA — a small admin/process job to hand off later
 - unsorted: genuinely unclear
 
 Return ONLY JSON, no prose: {"type": "...", "confidence": "high" | "low"}
