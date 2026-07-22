@@ -16,7 +16,7 @@ type Capture = {
 const TYPE_LABELS: Record<string, string> = {
   commercial_lead: "Commercial leads",
   property_followup: "Property follow-ups",
-  annoying_task: "Annoying tasks",
+  annoying_task: "VA Offload",
   unsorted: "Unsorted",
 }
 const TYPE_ORDER = ["commercial_lead", "property_followup", "annoying_task", "unsorted"]
