@@ -412,3 +412,27 @@ When self-booking IS built, the owner's intended availability:
 - **Days: Tuesday to Friday**
 (These are quote/visit booking slots. Confirm whether these are for site-visit
 quoting or for the jobs themselves when building.)
+
+## Expected duration per job — surface at SCHEDULING time (22 July)
+
+**The ask:** the expected-hours reference should surface at scheduling time on the
+job card, pulled from the property's attached quote — **especially for fixed-price
+jobs**, where hours aren't billed so nothing else flags an overrun. A visible
+BADGE, not an admin_actions row (don't feed the dashboard).
+
+**Investigated 22 July (read-only, live prod) — most of the plumbing exists:**
+- Quotes DO attach to properties: `quote_drafts.property_id` populated on 5 of 6
+  live drafts. Quotes do NOT link to scheduled jobs in practice yet
+  (`quote_drafts.scheduled_job_id` is null on all 6) — the property is the
+  reliable join path, as the ask assumes.
+- Expected hours are already captured on the quote: `quote_drafts.labour_hours`.
+- The landing spot already exists too: `scheduled_jobs.planned_duration_hours`,
+  shown on the crew job page as "Planned guide" — but currently only for
+  charge-up + time-flexible jobs. Fixed-price/quoted jobs (the case that most
+  needs it) don't show it.
+
+**So the build is wiring/surfacing, not new schema:** at scheduling, look up the
+property's quote → show `labour_hours` as a badge on the job card; extend the
+crew-page planned-guide display to quoted/fixed-price jobs. Watch the
+multiple-quotes-per-property case (which quote wins?) and the handoff rule:
+multiple labour lines → leave Duration blank, don't sum.
