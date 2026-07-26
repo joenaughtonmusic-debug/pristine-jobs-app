@@ -35,6 +35,20 @@ _(empty)_
 ### Meta / guardrails
 - "Design guardrail" reviewer that flags when a feature is getting too nuanced or variable-heavy and pushes toward standardisation
 
+## App audit — questions for a full repo walkthrough
+- Full run-through of the app, page by page — Joe doesn't know what some pages do
+- Sales pipeline: how job types + billing work; can lawn-mow jobs load default hours/duration
+- New-customer capture: what's collected/determined when a customer is added, and does that happen during the sales pipeline?
+- Any gaps in the build
+- VA dashboard still too busy; VA actions page has 200+ items — should only hold things Joe types manually to the VA, or items sent from the new capture workflow. Needs a clear-out + a rule for what belongs there
+- cost-capture page: overwhelming, colours/buttons/info everywhere — candidate for a redesign/simplify
+- Labour reconciliation: is it redundant if we don't capture unbillable time? Is capturing worth it — and if so it must be easy + reliable for the crew
+- New-lead notification: Joe wants to know when a lead is added. It's a PWA so no native Android push — is email via Make.com webhook enough? Decide the mechanism
+- Lead-capture spec's first decision is WHICH REPO it belongs in — GenQuote (where transcription/extraction already exist) or Pristine Jobs (port the patterns across). Decide before building. (See the ⚠️ flag in docs/LEAD_CAPTURE_SPEC.md's reuse map.)
+
+## Specced, not built
+- Lead capture — any-source extraction + approval tray → see docs/LEAD_CAPTURE_SPEC.md
+
 ## Bugs to investigate
 - Completing a visit where the primary worker is someone other than the completer, OR where helpers are added, can fail partway through — `job_labour_entries` RLS is "own rows or admin", so a crew member inserting labour for another staff member hits the wall and completion errors. Pre-existing, in the core complete-visit flow (not the walk-around feature). Affects real multi-person jobs. Investigate before it bites someone live. (Found 2026-07-22 during walk-around staging tests.)
 
