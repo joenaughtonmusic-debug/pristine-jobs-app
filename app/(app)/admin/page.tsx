@@ -1,9 +1,5 @@
 import Link from "next/link"
 import { createClient } from "@/lib/supabase/server"
-import {
-  classifyCommunication,
-  isClosedCommunication,
-} from "@/lib/communication-classification"
 import { isSubscriptionUnconfirmed } from "@/lib/subscription-billing"
 
 export const dynamic = "force-dynamic"
@@ -54,19 +50,6 @@ type SubscriptionLineRow = {
     property_code: string | null
     client_name: string | null
   } | null
-}
-
-type CommunicationCountRow = {
-  id: string
-  ignored?: boolean | null
-  requires_action?: boolean | null
-  status?: string | null
-  direction: "inbound" | "outbound"
-  source_category?: string | null
-  category?: string | null
-  subject?: string | null
-  body?: string | null
-  metadata?: Record<string, unknown> | string | null
 }
 
 function firstOrValue<T>(value: T | T[] | null | undefined) {
@@ -205,12 +188,10 @@ export default async function AdminDashboardPage() {
   const [
     phoneEnquiriesResult,
     enquiriesAwaitingSchedulingResult,
-    approvedQuoteRequestsResult,
     quotesReadyToSendResult,
     acceptedAwaitingConversionResult,
     convertedAwaitingScheduleResult,
     visitsReadyResult,
-    communicationsResult,
     timesheetsResult,
     labourEntriesResult,
     subscriptionLinesResult,
@@ -224,15 +205,6 @@ export default async function AdminDashboardPage() {
       .from("admin_enquiries")
       .select("id")
       .in("status", ["new", "needs_scheduling"])
-      .limit(500),
-    supabase
-      .from("communications")
-      .select("id")
-      .eq("category", "quote_request")
-      .eq("metadata->>estimate_action_approved", "true")
-      .or(
-        "metadata->>estimate_action_completed.is.null,metadata->>estimate_action_completed.neq.true"
-      )
       .limit(500),
     supabase
       .from("quote_drafts")
@@ -267,12 +239,6 @@ export default async function AdminDashboardPage() {
       )
       .eq("ready_for_invoice", true)
       .or("invoice_status.is.null,invoice_status.neq.excluded")
-      .limit(500),
-    supabase
-      .from("communications")
-      .select(
-        "id, ignored, requires_action, status, direction, source_category, category, subject, body, metadata"
-      )
       .limit(500),
     supabase
       .from("staff_daily_timesheets")
@@ -322,36 +288,16 @@ export default async function AdminDashboardPage() {
     (labourEntriesResult.data || []) as LabourEntryRow[]
   )
   const estimatesAwaitingScheduling =
-    (enquiriesAwaitingSchedulingResult.data?.length || 0) +
-    (approvedQuoteRequestsResult.data?.length || 0)
-  const communications = (communicationsResult.data || []) as CommunicationCountRow[]
-  const activeCommunications = communications.filter(
-    (communication) =>
-      communication.ignored !== true &&
-      communication.requires_action === true &&
-      !isClosedCommunication(communication)
-  )
-  const newOrganicLeads = activeCommunications.filter(
-    (communication) => classifyCommunication(communication) === "organic_lead"
-  ).length
-  const customerCommunications = activeCommunications.filter(
-    (communication) => classifyCommunication(communication) === "customer_message"
-  ).length
-  const aggregatorLeads = communications.filter(
-    (communication) =>
-      communication.ignored !== true &&
-      !isClosedCommunication(communication) &&
-      classifyCommunication(communication) === "aggregator_lead"
-  ).length
+    enquiriesAwaitingSchedulingResult.data?.length || 0
 
   const pipelineCards: PipelineCard[] = [
     {
       stage: "Lead Intake",
       title: "Capture and qualify new leads",
-      count: newOrganicLeads + (phoneEnquiriesResult.data?.length || 0) + aggregatorLeads,
+      count: phoneEnquiriesResult.data?.length || 0,
       href: "/admin/enquiries",
       purpose:
-        "Review organic messages, phone enquiries, and aggregator leads before they enter the quoting pipeline.",
+        "Review phone and website enquiries before they enter the quoting pipeline.",
       nextAction:
         "Classify the request, create or update the enquiry, and decide whether it needs an estimate.",
       opens: "Enquiries",
@@ -381,18 +327,6 @@ export default async function AdminDashboardPage() {
         "Get converted properties and accepted work onto the staff schedule.",
       nextAction:
         "Check property setup, assign staff, and place the first job on the schedule.",
-      opens: "Admin Schedule",
-      urgent: true,
-    },
-    {
-      stage: "Job Completion",
-      title: "Run the live work schedule",
-      count: customerCommunications,
-      href: "/admin/schedule",
-      purpose:
-        "Coordinate scheduled work, client contact, staff assignments, and job notes from one place.",
-      nextAction:
-        "Check the week, resolve customer messages, and keep jobs ready for completion.",
       opens: "Admin Schedule",
       urgent: true,
     },
@@ -439,12 +373,10 @@ export default async function AdminDashboardPage() {
   const queryErrors = [
     phoneEnquiriesResult.error?.message,
     enquiriesAwaitingSchedulingResult.error?.message,
-    approvedQuoteRequestsResult.error?.message,
     quotesReadyToSendResult.error?.message,
     acceptedAwaitingConversionResult.error?.message,
     convertedAwaitingScheduleResult.error?.message,
     visitsReadyResult.error?.message,
-    communicationsResult.error?.message,
     timesheetsResult.error?.message,
     labourEntriesResult.error?.message,
   ].filter(Boolean)

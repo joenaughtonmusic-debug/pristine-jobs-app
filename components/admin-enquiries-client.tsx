@@ -1,7 +1,6 @@
 "use client"
 
 import { useState } from "react"
-import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase/client"
 import { sendLeadNotificationToJoe } from "@/lib/lead-notifications"
@@ -20,7 +19,6 @@ type Enquiry = {
   created_at: string
   joe_new_lead_notified_at?: string | null
   joe_accepted_lead_notified_at?: string | null
-  communication_count?: number
 }
 
 type Props = {
@@ -459,18 +457,6 @@ export function AdminEnquiriesClient({
                       </div>
                     )}
 
-                    <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
-                      <span className="text-gray-500">
-                        {enquiry.communication_count || 0} communications
-                      </span>
-
-                      <Link
-                        href={`/admin/communications?enquiry=${enquiry.id}`}
-                        className="font-medium text-blue-600 hover:underline"
-                      >
-                        View related communications
-                      </Link>
-                    </div>
                   </div>
 
                   <div className="flex shrink-0 flex-col items-end gap-2">
