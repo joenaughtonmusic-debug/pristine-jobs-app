@@ -4,13 +4,10 @@ Start here for a clean chat. This file is dateless and OVERWRITTEN each session 
 git history is the archive. The tickable work list lives ONLY in
 `docs/BUILD_QUEUE.md`; this file must not duplicate it.
 
-**NEXT WORK: Tier 1 item 3 (capture → VA action board + VA notify)** — scoped
-and prerequisites cleared: new `source_record_type: "capture"` approved, DB
-dedupe index confirmed (survived the clear-out), notification pipe proven
-end-to-end. Waiting on: `VA_NOTIFICATION_EMAIL=` in `.env.local` (Joe pastes),
-then the Zoho To field mapped to `{{1.to_email}}` (currently hard-typed as
-Joe's address). Also pending: the one-line comms-reply env fix (see "Still
-broken").
+**NEXT WORK: the communications-page deletion PR — BLOCKED on Joe's inbox
+sweep.** Scope is BLESSED (see "Comms page bin" below). When Joe says the sweep
+is done, build it. After that: BUILD_QUEUE order (labour-recon misc window gap,
+Tier 2).
 
 ## Working method
 
@@ -64,51 +61,63 @@ broken").
   rows. Manual card advancement only. Voice-to-quote stays a separate app.
 - Billing vocabulary: `charge_up` / `subscription` / `non_billable` only.
 
-## What shipped this session (26 July) — all verified live in prod
+## What shipped this session (26 July, two sittings) — all live-fire verified
 
-- **Tier 1 item 1 — lead notification wiring (PR #36, merged, deployed):**
-  `sendLeadNotificationToJoe` now fires from all three lead-creation paths
-  (website webhook, VA manual add, existing-customer add), after-insert,
-  never able to fail the lead save, failures logged as one greppable line
-  `LEAD_NOTIFY_FAILED lead=<id> source=<source> error=<msg>` in Vercel logs.
-  Staging: 6/6 acceptance tests. Prod: proven with real submissions — leads
-  landed, notifications fired, emails arrived in Joe's gmail.
-- **The website enquiry chain works end-to-end for the first time ever.**
-  Prod's first-ever `website`-source leads landed 26 July.
+- **Tier 1 item 1 — lead notification wiring (PR #36):** all three lead-creation
+  paths notify after-insert; failures log `LEAD_NOTIFY_FAILED lead=<id>`.
+- **Tier 1 item 2 — VA actions clear-out (PR #37 + migration 061):** all six
+  generators cut, board emptied (staging 255 / prod 195 dismissed, zero
+  refill), dashboard subscription card repointed to /admin/properties,
+  lib/admin-actions.ts deleted. Board + Add Action form kept.
+- **Tier 1 item 3 — capture → VA action board (PR #39):** a capture triaged
+  VA Offload (annoying_task) creates an admin_actions row (action_type
+  va_offload, source_record_type "capture", DB-index deduped) AND emails the
+  VA via the Make webhook with to_email = VA_NOTIFICATION_EMAIL
+  (admin@pristinegardens.co.nz — server-only var, in .env.local AND Vercel
+  Production). Live-fired through REAL prod triage (classified high
+  confidence); VA inbox confirmation pending.
+- **WordPress form fix (plugin 0.21.2)** from the first sitting: nonce gate
+  replaced with honeypot + rate limit, every rejection logged.
+- **The notification pipeline actually works now:** Make scenario active, Zoho
+  module mapped ({{1.to_email}}, {{1.subject}}, {{1.body}}, plain text). One
+  scenario serves lead notifications (to Joe) and VA capture notifications
+  (to the VA) via the payload's to_email.
 
-## The three findings (26 July) and their states
+## The Make "Communication: Hub" story (settled 26 July evening)
 
-1. **`NEXT_PUBLIC_LEAD_NOTIFICATION_WEBHOOK_URL` was never set in Vercel —
-   FIXED.** Lead notifications had NEVER worked in prod from ANY call site
-   (including the two pre-existing ones); every call threw "not configured".
-   Var added to Production, redeployed, verified live twice (admin-enquiries
-   and website paths).
-2. **WordPress form front door — FIXED (plugin 0.21.2, live).** The nginx page
-   cache served >24h-old HTML whose WP nonce always failed → every customer
-   got "Security check failed", dropped with no log. Proven by controlled
-   experiment (cached nonce fails, cache-busted fresh nonce passes seconds
-   apart). Fix: nonce gate removed from the public form (it remains on the
-   wp-admin meta boxes, correctly), replaced with hidden honeypot
-   (`pgv2_ref_code`) + per-IP rate limit (5/hr) + every rejection logged
-   `[pgv2] enquiry rejected reason=…`; `nocache_headers()` on contact pages;
-   Joe also excluded /contact/ + /contact-us/ from the host cache. Verified:
-   Joe's incognito phone submissions landed as pipeline leads with emails.
-   Theme repo (~/Desktop/pristine-wordpress-theme, git) is the deployment
-   record; Desktop zips stopped being reliable at 0.20.22 (9 July). Rollback
-   artifact: `pristine-home-v2-mockup-v4-0.21.1.zip` on Joe's Desktop
-   (source-built, assumed-match-live, unverified).
-3. **Secret drift — OPEN (accepted).** `SALES_LEADS_WEBHOOK_SECRET` in Joe's
-   local `.env.local` does NOT match the canonical Vercel prod value (set 11d
-   before discovery). WordPress's wp-config has the CORRECT value (proven by
-   live submissions). Local file still stale — sync from the Vercel dashboard
-   if local testing against the prod endpoint is ever needed.
+- Root cause (from Joe's blueprint read): the router's route 2 (AI branch) has
+  NO filter → every email ran two branches → double insert with the same
+  external_id → duplicate-key 409s → Make auto-deactivated 17 July. Fix if
+  ever revived: route 2 as a FALLBACK route (recorded in BUILD_QUEUE, do NOT
+  do — page being binned). All four branches insert a hardcoded user_id.
+- App-side evidence: inserts died ~5 July (last communication-sourced action).
+  The table's ~100 real rows were then purged by the inverted test-row
+  cleanup (see rule 7) — only 2 test rows remain. Both approval lanes
+  (estimates-calendar quote requests, schedule client adjustments) are EMPTY —
+  nothing unactioned. Emails survive in the Zoho inbox.
 
-## Still broken — next up (one line)
+## Comms page bin — scope BLESSED, sequencing agreed
 
-**`NEXT_PUBLIC_SEND_COMMUNICATION_REPLY_WEBHOOK_URL` is absent from Vercel in
-every environment** → the VA's comms-hub Send Reply has NEVER worked in prod
-(fails honestly: "Reply webhook URL is not configured."). Fix = add the var
-(value in Joe's `.env.local`) + redeploy + ONE live prod fire per rule 1.
+Delete: both comms pages + both client components, nav entry, dashboard comms
+queries/card, enquiries communication_count + link, the estimates-calendar
+quote-request lane, the schedule client-adjustments strip, and
+lib/communication-classification.ts. Both approval lanes go WITH the page
+(Joe's explicit call: "VA reads inbox, acts directly"). Keep the communications
+TABLE as a frozen archive; Make scenario stays off. Bark/BuildersCrack →
+pipeline via manual add (source "bark" exists; automation later =
+LEAD_CAPTURE_SPEC email-forward). The queued comms-reply env fix is MOOT.
+**Sequence: Joe's inbox sweep (from ~5 July, for Bark + unhandled enquiries)
+FIRST, then the deletion PR** (staging-verified page-by-page — estimates-
+calendar and schedule surgeries touch live surfaces).
+
+## Still broken / open
+
+- `NEXT_PUBLIC_SEND_COMMUNICATION_REPLY_WEBHOOK_URL` absent from Vercel — VA
+  Send Reply never worked in prod. MOOT if the comms page bin proceeds; do
+  nothing until that lands.
+- Local `.env.local` SALES_LEADS_WEBHOOK_SECRET still differs from the
+  canonical Vercel value (accepted; sync from dashboard if ever needed).
+- Notification Link field is a relative path (BUILD_QUEUE, small).
 
 ## Access / tooling (this machine)
 
@@ -116,6 +125,9 @@ every environment** → the VA's comms-hub Send Reply has NEVER worked in prod
   (used for `php -l` on plugin builds).
 - Vercel CLI via `npx vercel` — authed; project linked (`.vercel/`, gitignored).
   Runtime log retention is hours — never promise 30-day history.
+  OPENAI_API_KEY is marked SENSITIVE in Vercel — `env pull` redacts it, so
+  staging can't run real capture triage; positive-path tests need a local
+  stub (never committed) and the real path proves out via a prod live fire.
 - Staging run: `set -a; source .env.staging; set +a && npm run dev`.
 - Live UI verification: temp auth user + profiles row (NOTE: prod has a signup
   trigger that auto-creates profiles as 'staff' — PATCH to admin, don't
@@ -128,11 +140,18 @@ every environment** → the VA's comms-hub Send Reply has NEVER worked in prod
   the primary domain is open). WP form → same-page POST (theme plugin
   `pristine-home-v2-mockup-v4`, source in ~/Desktop/pristine-wordpress-theme).
 
-## Pending cleanup
+## Pending cleanup (ON HOLD until the VA confirms her capture email)
 
-None — all test rows and temp users from 26 July verified deleted (prod holds
-zero example.com auth users, zero ZZTEST/Diagnostic leads). Test emails in
-Joe's inboxes are his to delete.
+Prod rows, all link-free, one read-only-confirm pass when released: sales_leads
+`b781161e` (ZZTEST Item3 Lead Path) + `464d778e` (ZZTEST Post-Mapping Lead),
+captures `bf1b5cd4` (Kennards/mulch test), admin_actions `d4642452` (its VA
+Offload card — visible on the board, deliberately), auth user + profile for
+item3-verify@example.com. Plus test emails in Joe's and the VA's inboxes.
+
+## Open PRs
+
+#40 (docs: Make root cause, rule-7 example, this handoff) — merge before
+starting the next chat so it reads current docs from main.
 
 ## Non-build track
 
