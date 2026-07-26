@@ -3,6 +3,37 @@
 The ONLY tickable list. The session handoff (docs/SESSION_HANDOFF.md) points here
 and must not duplicate it. Tick items here; git history is the archive.
 
+## TOP PRIORITY — website lead chain broken in three places (diagnosed 26 July; fix NOT yet scoped)
+
+Diagnosis only so far. The end-to-end website enquiry chain has never delivered a
+lead to the app — prod `sales_leads` has zero `website`-source rows ever. Three
+independent breaks:
+
+- [ ] **(a) WordPress form front door.** "Security check failed" is a WP NONCE
+      failure, not reCAPTCHA (no captcha verification exists in the handler —
+      `pristine-home-v2.php:4946`). `/contact-us/` runs behind nginx page cache
+      (`x-nginx-cache: WordPress`, max-age 7200). Anonymous visitors share a
+      uid-0 nonce (normal WP); the failure hits LOGGED-IN users served the
+      cached anonymous page (uid mismatch) — Joe's phone repro. Whether
+      anonymous customers also fail is being tested (Joe: private-window
+      submit). Rejected submissions are dropped with NO log.
+- [ ] **(b) WordPress → app forward.** The theme's `send_sales_lead_webhook`
+      silently skips unless `PRISTINE_JOBS_SALES_LEADS_URL` + `_SECRET` are
+      defined in wp-config.php (state on live server unverified), and the
+      secret in local `.env.local` does NOT match the canonical Vercel prod
+      value (Vercel wins — Joe updating wp-config himself). Failures would only
+      reach PHP error_log.
+- [ ] **(c) App → notification email.** FIXED 26 July:
+      `NEXT_PUBLIC_LEAD_NOTIFICATION_WEBHOOK_URL` was never set in Vercel, so
+      ALL lead notifications (including the two pre-existing call sites) failed
+      in production since forever — the 23 July audit's "the notifier exists
+      and works" was true of the code and FALSE in production. Var added +
+      redeployed + verified live ("Joe was emailed about this new lead.",
+      notified-at stamp written). REMAINING:
+      `NEXT_PUBLIC_SEND_COMMUNICATION_REPLY_WEBHOOK_URL` is ALSO missing in
+      Vercel — the VA's comms-hub Send Reply shows "Reply webhook URL is not
+      configured." in prod. Not yet fixed.
+
 ## SHIPPED (don't rebuild)
 - [x] Per-line billing model (`property_billing_lines`, migrations 057–059)
 - [x] `fixed_recurring` billing pattern (051/052)
