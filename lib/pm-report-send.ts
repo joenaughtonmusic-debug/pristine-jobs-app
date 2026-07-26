@@ -8,7 +8,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import { renderPmReportPdf, type PmReportData } from "@/lib/pm-report"
 
 const REPORT_BUCKET = "pm-reports"
-const SIGNED_URL_TTL_SECONDS = 60 * 60 * 24 * 7 // 7 days — ample for Make + retries
+const SIGNED_URL_TTL_SECONDS = 60 * 60 * 4 // 4 hours — Make fetches within seconds; only needs to survive retries
 
 export type PmReportOptions = {
   businessName?: string

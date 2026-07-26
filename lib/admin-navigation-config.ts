@@ -32,6 +32,7 @@ export const adminNavGroups: AdminNavGroup[] = [
       { href: "/admin/cost-capture", label: "Cost Capture" },
       { href: "/admin/invoices", label: "Invoices" },
       { href: "/admin/properties", label: "Properties" },
+      { href: "/admin/pm-reports", label: "PM Reports" },
     ],
   },
   {
