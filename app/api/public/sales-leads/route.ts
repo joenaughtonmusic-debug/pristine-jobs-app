@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { sendLeadNotificationToJoe } from "@/lib/lead-notifications"
 import {
   normalizeSalesLeadWebhookPayload,
   type SalesLeadWebhookPayload,
@@ -79,6 +80,30 @@ export async function POST(request: Request) {
     source: normalized.row.source,
     suburb: normalized.row.suburb,
   })
+
+  // Notify AFTER the insert succeeds. A notification failure must never fail
+  // the lead save — WordPress still gets its success response.
+  try {
+    await sendLeadNotificationToJoe({
+      supabase,
+      enquiry: {
+        id: data.id,
+        name: normalized.row.name,
+        suburb: normalized.row.suburb,
+        address: normalized.row.address,
+        notes: normalized.row.message,
+        source: normalized.row.source,
+        link_path: "/sales-pipeline",
+      },
+      action: "created",
+    })
+  } catch (notifyError) {
+    console.error(
+      `LEAD_NOTIFY_FAILED lead=${data.id} source=${normalized.row.source} error=${
+        notifyError instanceof Error ? notifyError.message : String(notifyError)
+      }`
+    )
+  }
 
   return json(
     {
