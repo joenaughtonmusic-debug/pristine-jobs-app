@@ -17,6 +17,13 @@ and must not duplicate it. Tick items here; git history is the archive.
       work" entry is invisible until someone pages back. Small fix, needs
       doing (e.g. an out-of-window unlinked-misc count/banner on the page).
 
+- [ ] **Notification Link field is a relative path** (`/sales-pipeline`) — not
+      clickable in the email. Make it a full URL (NEXT_PUBLIC_APP_URL exists
+      in Vercel). Small; touches lib/lead-notifications.ts (Tier 5 proxy item
+      also touches that file — can ride together).
+- [x] **VA actions board clear-out (Tier 1 item 2)** — SHIPPED 26 July, PR #37
+      + migration 061 (staging 255 / prod 195 rows dismissed, zero refill).
+
 ## RESOLVED 26 July — website lead chain (was TOP PRIORITY; kept for the record)
 - [x] **(a) WordPress form front door — FIXED (plugin 0.21.2, live-verified).**
       Root cause: nginx page cache served >24h-old HTML whose WP nonce always
