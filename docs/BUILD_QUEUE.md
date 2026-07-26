@@ -92,7 +92,10 @@ pitches before the app supports them.*
 - [ ] Xero invoice path has never fired on a real job (only test row INV-2382).
       Needs one real parallel run before it's trusted.
 - [ ] Make.com webhook URLs are `NEXT_PUBLIC_*`, baked into the public JS bundle.
-      Fix: proxy through a server action/API route, drop the prefix.
+      Fix: proxy through a server action/API route, drop the prefix. The hardcoded
+      `JOE_NOTIFICATION_EMAIL` in lib/lead-notifications.ts moves server-side as
+      part of the SAME fix (decided 26 July — not before, since the original call
+      sites are client components).
 - [ ] Dual lockfile (package-lock.json + pnpm-lock.yaml) — pick one
 - [ ] ESLint not installed locally — `npm run lint` is broken
 - [ ] Reconciliation badge wording: scope to charge_up

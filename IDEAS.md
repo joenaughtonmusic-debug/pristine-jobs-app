@@ -44,6 +44,7 @@ _(empty)_
 - cost-capture page: overwhelming, colours/buttons/info everywhere — candidate for a redesign/simplify
 - Labour reconciliation: is it redundant if we don't capture unbillable time? Is capturing worth it — and if so it must be easy + reliable for the crew
 - New-lead notification: Joe wants to know when a lead is added. It's a PWA so no native Android push — is email via Make.com webhook enough? Decide the mechanism
+- The hardcoded JOE_NOTIFICATION_EMAIL in lib/lead-notifications.ts is deliberately staying put for now: both original call sites are client components, so a server-only env var would break them. The address leaves the client bundle together with the NEXT_PUBLIC_ webhook URLs in the Tier 5 "proxy through a server action" item (BUILD_QUEUE.md) — treat them as one fix
 - Lead-capture spec's first decision is WHICH REPO it belongs in — GenQuote (where transcription/extraction already exist) or Pristine Jobs (port the patterns across). Decide before building. (See the ⚠️ flag in docs/LEAD_CAPTURE_SPEC.md's reuse map.)
 
 ## Specced, not built
