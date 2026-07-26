@@ -4,13 +4,14 @@ Start here for a clean chat. This file is dateless and OVERWRITTEN each session 
 git history is the archive. The tickable work list lives ONLY in
 `docs/BUILD_QUEUE.md`; this file must not duplicate it.
 
-**NEXT WORK: the PM issue-report feature (piece 2 shipped as an engine, PR #46).**
-Immediate step is Joe's — set up the Make scenario + `PM_REPORT_WEBHOOK_URL` env
-var (exact steps in PR #46's description). Once that's in: do the **inbox
-live-fire** (acceptance = the PDF attachment opens in the inbox, NOT a webhook
-200), then apply migration **064 to prod**. After that, build **piece 2b** (the
-office review/send UI) and **piece 3** (the walk-around resolve/dismiss lifecycle
-+ `reported_to_pm_at`). Decisions for those are locked — see below.
+**NEXT WORK: piece 3 of the PM issue-report feature** — the walk-around
+resolve/dismiss lifecycle + `reported_to_pm_at` stamp. Decisions are locked (see
+below). Pieces 2 and 2b are DONE: engine merged (#46), 064 applied to prod, the
+Make scenario is live (built-in Email/SMTP module — the Zoho Mail module has no
+attachments field), `PM_REPORT_WEBHOOK_URL` is in Vercel Production, and BOTH
+live-fires were confirmed at the inbox (staging engine → Make → PDF opened;
+prod through the deployed Vercel route → PDF opened, photos render). The 2b
+review/send UI is built + staging-live-verified, awaiting merge as **PR #48**.
 
 ## Working method
 - **Advisory Claude** (chat): plans, decides, keeps the queue, writes briefs.
@@ -79,21 +80,25 @@ office review/send UI) and **piece 3** (the walk-around resolve/dismiss lifecycl
 - **PM contact table** (PR #45, migration 063, prod-applied): shared
   `property_managers` (one PM → many properties), assigned from the property
   dialog on rentals. Joe is entering PMs now.
-- **PM report engine** (PR #46, OPEN): `@react-pdf/renderer` PDF (address, visit
-  date, our name, each issue photo+note — NO ids/jargon/severity words), stored
-  in a private `pm-reports` bucket, signed URL → Make; `pm_reports` record;
-  admin API route. Migration 064 on STAGING only. Staging-verified except the
-  Make hop + Next-route runtime (both proven by the pending live-fire).
+- **PM report engine** (PR #46, MERGED): `@react-pdf/renderer` PDF (address,
+  visit date, our name, each issue photo+note — NO ids/jargon/severity words),
+  stored in a private `pm-reports` bucket, signed URL → Make; `pm_reports`
+  record; admin API route. Make hop + Vercel runtime both live-fired and
+  confirmed at the inbox.
+- **PM report review/send UI, piece 2b** (PR #48, OPEN): `/admin/pm-reports` —
+  To send queue + Sent section, per-issue editable notes (job_photos.caption;
+  engine reads fresh at send = the review step), two-step confirm send, re-send
+  warning, no-PM-email warning, failed sends surfaced. Signed URL TTL 7d → 4h.
+  Staging-live-verified incl. admin caption-edit RLS through the real UI.
 - **Docs** (PR #43): retry-lockout scoping + Cost Capture audit.
 
 ## Prod migration state
-Applied to prod: **062** (labour RLS), **063** (property_managers).
-Applied to STAGING only, NOT prod: **064** (pm_reports + private bucket) — goes
-to prod with the PM-report live-fire.
+Applied to prod: **062** (labour RLS), **063** (property_managers), **064**
+(pm_reports + private bucket — applied 27 July, post-checks passed).
 
 ## Open PRs
-- **#46** — PM report engine. Needs: Joe's Make scenario + `PM_REPORT_WEBHOOK_URL`
-  in Vercel → then inbox live-fire → then 064 to prod → then merge.
+- **#48** — PM report review/send UI (piece 2b). Fully verified; just needs
+  Joe's merge. Also carries the 4h signed-URL TTL and this docs refresh.
 
 ## Locked decisions for the upcoming pieces
 - **Walk-around resolve/dismiss lifecycle (piece 3 / Tier 3):** four states

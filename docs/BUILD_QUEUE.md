@@ -152,15 +152,21 @@ and must not duplicate it. Tick items here; git history is the archive.
 - [x] **1. PM contact table** — SHIPPED (PR #45, migration 063, prod). Shared
       `property_managers` (one PM → many properties), assigned from the property
       dialog on rentals. Joe is entering PMs.
-- [~] **2. Report engine** — PR #46 OPEN (migration 064 on STAGING only). PDF
-      (react-pdf) → private `pm-reports` bucket → signed URL → Make; `pm_reports`
-      record; admin API route `POST /api/pm-report {visitId}`. BLOCKED on Joe:
-      new Make scenario (Webhook → HTTP Get a file → Zoho send w/ attachment) +
-      `PM_REPORT_WEBHOOK_URL` in Vercel Production. Then inbox live-fire
-      (acceptance = attachment opens, not a 200) → apply 064 to prod → merge.
-- [ ] **2b. Office review/send UI** — list visits-with-issues awaiting a report,
-      show the issues + PM recipient, "Send" button → calls the API. Review
-      before send (crew free-text goes to a client). No issues → nothing to send.
+- [x] **2. Report engine** — SHIPPED (PR #46 merged, migration 064 applied to
+      prod). PDF (react-pdf) → private `pm-reports` bucket → signed URL → Make;
+      `pm_reports` record; admin API route `POST /api/pm-report {visitId}`.
+      Make scenario is LIVE: Webhook → HTTP Get a file → **built-in Email app
+      over SMTP** (NOT the Zoho Mail module — it has no attachments field),
+      sending from contact@pristinegardens.co.nz. Live-fired TWICE, confirmed
+      at the inbox both times: staging engine → Make → PDF opened; prod through
+      the deployed Vercel route (proves react-pdf on Vercel) → PDF opened,
+      photos render.
+- [~] **2b. Office review/send UI** — BUILT, PR #48 open. `/admin/pm-reports`:
+      To send queue + Sent section; per-issue editable notes (saved to
+      job_photos.caption, engine reads fresh at send = review-before-send);
+      two-step confirm Send; re-send warns with prior date; no-PM-email rows
+      warn instead of send. Signed URL TTL now 4h (was 7d). Per-issue exclusion
+      deferred to piece 3 by decision. Staging live-verified end-to-end.
 - [ ] **3. Walk-around resolve/dismiss lifecycle** (was: "list only grows").
       DECISIONS LOCKED: four states `open`/`resolved`/`dismissed`/`not_our_job`;
       property badge counts `open` ONLY; status set from the property dialog
@@ -211,6 +217,9 @@ pitches before the app supports them.*
       boundary — this is its own scoping job)
 
 ## TIER 5 — housekeeping
+- [ ] Delete leftover PROD admin user `item3-verify@example.com` (test debris
+      from an earlier session, found 27 July; profile role=admin). Confirm with
+      Joe, then remove the auth user + profile row. Its sessions were revoked.
 - [ ] Arm branch 5 for Maggie + Sunhill, then ONE parallel run before retiring
       Joe's manual invoice copying. Don't retire the manual copy first.
 - [ ] 9 unconfirmed subscription lines — a VA-in-UI task, NOT a SQL batch
