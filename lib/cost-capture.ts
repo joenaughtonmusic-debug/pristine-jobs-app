@@ -5,6 +5,35 @@ export type CostCaptureStatus =
   | "missing_material_review"
   | "ready_for_invoice_with_warnings"
 
+export type StaffCostRate = {
+  staff_name: string
+  hourly_cost: number | string | null
+  active?: boolean | null
+}
+
+// Labour COST is sourced from the staff_cost_rates table — the single source of
+// truth, the same one property_profitability joins. Do NOT reintroduce hardcoded
+// per-name rates: they drifted (Fletcher was hardcoded $43 vs the table's $38,
+// James defaulted to $39 vs the table's $44) and gave cost-capture different
+// margins from the profitability view.
+//
+// Matching mirrors the view (scr.staff_name = jle.staff_name): an unmatched
+// staff name resolves to 0, exactly as the view's LEFT JOIN contributes nothing
+// for a missing rate — so the two surfaces always agree. A staff member missing
+// from staff_cost_rates is a table-maintenance signal, not a cost-capture bug.
+export function buildLabourRateLookup(rows: StaffCostRate[]) {
+  const map = new Map<string, number>()
+
+  for (const row of rows) {
+    if (row.active === false) continue
+    const name = String(row.staff_name || "").trim()
+    if (name) map.set(name, Number(row.hourly_cost || 0))
+  }
+
+  return (staffName?: string | null) =>
+    map.get(String(staffName || "").trim()) ?? 0
+}
+
 type CostCaptureInput = {
   readyForInvoice?: boolean | null
   visitHours: number

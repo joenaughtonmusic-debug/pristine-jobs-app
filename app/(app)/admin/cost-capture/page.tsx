@@ -3,6 +3,8 @@ import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
 import {
   type CostCaptureStatus,
+  type StaffCostRate,
+  buildLabourRateLookup,
   getCostCaptureIssueLabels,
   getCostCaptureStatus,
 } from "@/lib/cost-capture"
@@ -117,17 +119,6 @@ function getPropertyLabel(visit: VisitRow) {
     [property?.address_line_1, property?.suburb].filter(Boolean).join(", ") ||
     "No property"
   )
-}
-
-function getLabourRate(staffName?: string | null) {
-  const name = String(staffName || "").trim().toLowerCase()
-
-  if (name.includes("fletcher") || name.includes("fletch")) return 43
-  if (name.includes("hugh")) return 39
-  if (name.includes("charles")) return 39
-  if (name.includes("alex")) return 35
-
-  return 39
 }
 
 function getExtraCost(charge: VisitExtraCharge) {
@@ -373,49 +364,6 @@ async function markReadyForInvoice(formData: FormData) {
   revalidatePath("/admin/invoices")
 }
 
-async function backfillFallbackVisitLabour() {
-  "use server"
-
-  const supabase = await createClient()
-  const { data: visits } = await supabase
-    .from("visits")
-    .select("id, scheduled_job_id, property_id, hours_worked")
-    .eq("completion_status", "completed")
-    .gte("visit_date", "2026-05-13")
-    .gt("hours_worked", 0)
-
-  const candidateVisits = visits || []
-  const visitIds = candidateVisits.map((visit) => visit.id)
-
-  if (visitIds.length === 0) return
-
-  const { data: existingLabour } = await supabase
-    .from("visit_labour_entries")
-    .select("visit_id")
-    .in("visit_id", visitIds)
-
-  const visitsWithLabour = new Set((existingLabour || []).map((entry) => entry.visit_id))
-  const fallbackRows = candidateVisits
-    .filter((visit) => !visitsWithLabour.has(visit.id))
-    .map((visit) => ({
-      visit_id: visit.id,
-      scheduled_job_id: visit.scheduled_job_id || null,
-      property_id: visit.property_id || null,
-      staff_name: "Unknown",
-      hours_worked: Number(visit.hours_worked || 0),
-      labour_type: "fallback_backfill",
-      notes:
-        "Created from visits.hours_worked during cost capture backfill",
-    }))
-
-  if (fallbackRows.length > 0) {
-    await supabase.from("visit_labour_entries").insert(fallbackRows)
-  }
-
-  revalidatePath("/admin/cost-capture")
-  revalidatePath("/admin/invoices")
-}
-
 export default async function AdminCostCapturePage({
   searchParams,
 }: {
@@ -611,6 +559,14 @@ export default async function AdminCostCapturePage({
     }
   }
 
+  const { data: staffCostRates } = await supabase
+    .from("staff_cost_rates")
+    .select("staff_name, hourly_cost, active")
+
+  const labourRateFor = buildLabourRateLookup(
+    (staffCostRates || []) as StaffCostRate[]
+  )
+
   const labourByVisit = ((labourEntries || []) as VisitLabourEntry[]).reduce<
     Record<string, VisitLabourEntry[]>
   >((grouped, entry) => {
@@ -636,7 +592,7 @@ export default async function AdminCostCapturePage({
       0
     )
     const labourCost = labour.reduce((total, entry) => {
-      return total + Number(entry.hours_worked || 0) * getLabourRate(entry.staff_name)
+      return total + Number(entry.hours_worked || 0) * labourRateFor(entry.staff_name)
     }, 0)
     const materialCost = extras.reduce((total, charge) => total + getExtraCost(charge), 0)
     const materialSell = extras.reduce((total, charge) => total + getExtraSell(charge), 0)
@@ -712,14 +668,6 @@ export default async function AdminCostCapturePage({
           >
             Export CSV
           </Link>
-          <form action={backfillFallbackVisitLabour}>
-            <button
-              type="submit"
-              className="rounded-md border px-3 py-2 text-sm font-medium hover:bg-gray-50"
-            >
-              Backfill Missing Labour
-            </button>
-          </form>
         </div>
       </header>
 
@@ -940,7 +888,6 @@ export default async function AdminCostCapturePage({
                             <option value="extra">Extra</option>
                             <option value="travel">Travel</option>
                             <option value="admin">Admin</option>
-                            <option value="fallback_backfill">Fallback backfill</option>
                             <option value="other">Other</option>
                           </select>
                           <button
@@ -1162,8 +1109,13 @@ export default async function AdminCostCapturePage({
         <div className="mb-4">
           <h2 className="text-lg font-semibold">Back-Costing Report</h2>
           <p className="text-sm text-gray-500">
-            Labour rates: Fletcher $43/hr, Hugh $39/hr, Charles $39/hr, Alex
-            $35/hr, fallback $39/hr.
+            Labour cost uses the staff cost rates table (the same source as
+            Profitability):{" "}
+            {((staffCostRates || []) as StaffCostRate[])
+              .filter((rate) => rate.active !== false)
+              .map((rate) => `${rate.staff_name} $${Number(rate.hourly_cost || 0)}/hr`)
+              .join(", ") || "no rates configured"}
+            . Staff without a rate are costed at $0 — add them to the table.
           </p>
         </div>
 
