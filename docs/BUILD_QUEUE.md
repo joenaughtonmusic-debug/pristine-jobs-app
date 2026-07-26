@@ -11,6 +11,12 @@ and must not duplicate it. Tick items here; git history is the archive.
       fire before ticking (handoff rule 1 — reading the code is not
       verification).
 
+- [ ] **Labour-recon misc-work window gap** — the ONE signal that lost coverage
+      in the VA actions clear-out: the recon page only shows unlinked misc
+      entries inside its default Mon-Fri window, so a prior-week "Link extra
+      work" entry is invisible until someone pages back. Small fix, needs
+      doing (e.g. an out-of-window unlinked-misc count/banner on the page).
+
 ## RESOLVED 26 July — website lead chain (was TOP PRIORITY; kept for the record)
 - [x] **(a) WordPress form front door — FIXED (plugin 0.21.2, live-verified).**
       Root cause: nginx page cache served >24h-old HTML whose WP nonce always
