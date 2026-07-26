@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { createClient } from "@/lib/supabase/server"
+import { sendLeadNotificationToJoe } from "@/lib/lead-notifications"
 import {
   buildExistingCustomerLeadRow,
   buildManualLeadRow,
@@ -51,7 +52,11 @@ export async function createManualLead(
     return { error: built.error }
   }
 
-  const { error } = await supabase.from("sales_leads").insert(built.row)
+  const { data: createdLead, error } = await supabase
+    .from("sales_leads")
+    .insert(built.row)
+    .select("id")
+    .single()
 
   if (error) {
     console.error("[sales-pipeline] manual lead insert failed", {
@@ -59,6 +64,31 @@ export async function createManualLead(
       message: error.message,
     })
     return { error: "Failed to save the lead. Please try again." }
+  }
+
+  // Notify AFTER the insert succeeds; a failure never fails the lead save.
+  if (createdLead) {
+    try {
+      await sendLeadNotificationToJoe({
+        supabase,
+        enquiry: {
+          id: createdLead.id,
+          name: built.row.name,
+          suburb: built.row.suburb,
+          job_type: built.row.job_type ?? null,
+          notes: built.row.message,
+          source: built.row.source,
+          link_path: "/sales-pipeline",
+        },
+        action: "created",
+      })
+    } catch (notifyError) {
+      console.error(
+        `LEAD_NOTIFY_FAILED lead=${createdLead.id} source=${built.row.source} error=${
+          notifyError instanceof Error ? notifyError.message : String(notifyError)
+        }`
+      )
+    }
   }
 
   revalidatePath("/sales-pipeline")
@@ -99,7 +129,11 @@ export async function createExistingCustomerLead(
     return { error: built.error }
   }
 
-  const { error } = await supabase.from("sales_leads").insert(built.row)
+  const { data: createdLead, error } = await supabase
+    .from("sales_leads")
+    .insert(built.row)
+    .select("id")
+    .single()
 
   if (error) {
     console.error("[sales-pipeline] existing-customer lead insert failed", {
@@ -107,6 +141,32 @@ export async function createExistingCustomerLead(
       message: error.message,
     })
     return { error: "Failed to save the lead. Please try again." }
+  }
+
+  // Notify AFTER the insert succeeds; a failure never fails the lead save.
+  if (createdLead) {
+    try {
+      await sendLeadNotificationToJoe({
+        supabase,
+        enquiry: {
+          id: createdLead.id,
+          name: built.row.name,
+          suburb: built.row.suburb,
+          address: built.row.address,
+          job_type: built.row.job_type ?? null,
+          notes: built.row.message,
+          source: built.row.source,
+          link_path: "/sales-pipeline",
+        },
+        action: "created",
+      })
+    } catch (notifyError) {
+      console.error(
+        `LEAD_NOTIFY_FAILED lead=${createdLead.id} source=${built.row.source} error=${
+          notifyError instanceof Error ? notifyError.message : String(notifyError)
+        }`
+      )
+    }
   }
 
   revalidatePath("/sales-pipeline")
