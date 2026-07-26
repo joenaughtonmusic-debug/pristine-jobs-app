@@ -62,8 +62,10 @@ and must not duplicate it. Tick items here; git history is the archive.
       capture-page items.
 - [ ] **3. Capture page → VA action board** — voice note on `/capture` becomes a VA
       action + notify the VA.
-- [ ] **4. Fix stale `docs/HANDOFF_for_VS_Code_Claude.md`** — it says "There is NO
-      staging DB, test against PRODUCTION". False and unsafe. Also stops at PR #14.
+- [x] **4. Fix stale `docs/HANDOFF_for_VS_Code_Claude.md`** — DONE 26 July: the
+      false "no staging DB, test against PRODUCTION" section replaced with the
+      staging-first flow; shipped ledger now defers to BUILD_QUEUE (was stuck at
+      PR #14); migration + next-work sections brought current.
 
 ## TIER 2 — real gaps, need a decision first
 - [ ] **Messenger + Bark lead intake.** No path exists for either. This IS

@@ -1,7 +1,9 @@
 # HANDOFF — for Claude in VS Code (Pristine Jobs)
 
-Read this before doing anything. It's the technical state, the landmines, and the
-working rules. A fresh coding session that ignores these will repeat known mistakes.
+Read this before doing anything. It's the standing technical rulebook and the
+landmines. For CURRENT session state, read `docs/SESSION_HANDOFF.md`; for the
+work list, `docs/BUILD_QUEUE.md`. A fresh coding session that ignores these will
+repeat known mistakes.
 
 ---
 
@@ -51,14 +53,21 @@ advisory Claude (planning) and you (code).
 ---
 
 ## PRODUCTION SAFETY (important)
-- **There is NO staging DB.** You test against PRODUCTION, which now has REAL
-  customers (e.g. "Sarah"). Self-clean every test artifact (delete test jobs,
-  un-stamp drafts, restore lead status, remove temp users). Never leave the DB
-  dirty.
-- **Never touch real customer rows in a test.** Use known test data only. If unsure
-  whether a row is real, don't write to it.
-- Known test data safe to use/clean: `john test` (property 12-ALLENDALE-MOUNT-ALBER),
-  `13 Weybridge Crescent` draft. (These should probably be cleaned up eventually.)
+- **A staging DB EXISTS — use it first, always.** Staging: Supabase project
+  `yrpkfxmthregprsfkxaf` (Tokyo), a prod snapshot with Make.com webhook URLs
+  deliberately blanked (staging can never email a customer). Prod:
+  `tblvlffqanqpqhcagcrk` (Mumbai). Flow: rehearse on staging → Joe's OK → prod.
+  Connection strings + passwords come from Joe each session, pasted into the
+  coding window, never chat. (An earlier version of this file said "there is no
+  staging DB, test against production" — that was false and unsafe.)
+- Prod tests only for final verification, self-cleaning: temp users, test rows,
+  storage objects deleted; statuses/flags restored; read-only-confirm before
+  deleting anything (an orphan test property once turned up in a routine delete).
+- **Never touch real customer rows in a test.** If unsure whether a row is real,
+  don't write to it.
+- **Anything that leaves the app — email, webhook, Xero — gets ONE live prod
+  fire before it counts as shipped.** The lead notifier was code-complete and
+  had never once worked in prod (env var missing in Vercel).
 
 ---
 
@@ -84,7 +93,14 @@ advisory Claude (planning) and you (code).
 
 ---
 
-## RECENTLY SHIPPED (so you don't rebuild it) — PRs #9–#14, all merged
+## RECENTLY SHIPPED (so you don't rebuild it)
+
+**The authoritative shipped ledger is `docs/BUILD_QUEUE.md` → SHIPPED** (this
+file previously stopped at PR #14; the queue now carries everything through
+PR #36: per-line billing 057–059, rental tag, photo-gate, walk-around report +
+severity 060, capture/VA Offload, auth gate + RLS role separation 041, lead
+notification wiring on all three creation paths, WordPress form fix 0.21.2).
+Highlights from the PR #9–#14 era that still shape the code:
 - Service-aware quote builder: new-customer-first; quote type reshapes form (pricing
   panel filter, template filter, scope/terms wording, hand-edit preservation);
   greenwaste one-input auto-range; lead `job_type` pre-selects builder type.
@@ -106,19 +122,16 @@ advisory Claude (planning) and you (code).
   the branch and give Joe the compare URL to open it.
 - **Nothing is live until merged to `main` and deployed.** Say so clearly — don't
   imply a pushed branch is live.
-- Migrations: if a schema change is needed, provide the exact SQL for Joe to paste
-  into Supabase (with a post-check query), and state that the code depends on it
-  being applied FIRST.
+- Migrations: numbered `scripts/NNN_*.sql` with an intent header, idempotency,
+  and fail-loud RAISE post-checks (057 is the model). Applied via psql: rehearse
+  on staging → Joe's OK → prod. Schema before code — state that the code depends
+  on the migration being applied FIRST. (Numbering has collided before — check
+  for the next truly free number.)
 
 ---
 
 ## THE CURRENT / NEXT WORK
-The advisory side is running a **data-model AUDIT next** (properties table adequacy,
-billing coverage, hours capture billable/non-billable + fixed-job hours, when/what
-captured at customer creation, fixed-lawn-mowing + recurring invoice, crew hours
-recording). Expect to be asked to run READ-ONLY SELECT/schema queries against the
-live DB and report — **not** to build during the audit. Classify findings as
-GAP / PLUMBING / PRESENTATION.
-
-If asked to build after the audit, the same rules above apply: investigate first,
-verify live, fail honestly, don't over-build, show the plan.
+Lives in `docs/SESSION_HANDOFF.md` (current state, overwritten each session) and
+`docs/BUILD_QUEUE.md` (the tickable list) — this file deliberately doesn't track
+it. Whatever the task: investigate first, staging first, verify live, fail
+honestly, don't over-build, show the plan.
