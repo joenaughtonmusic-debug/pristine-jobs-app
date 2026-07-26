@@ -84,6 +84,18 @@ and must not duplicate it. Tick items here; git history is the archive.
       and check what's stale. Includes cost-capture redesign (overwhelming),
       new-customer capture fields, gaps in the build.
 
+## TIER 2 additions (26 July audit findings)
+- [ ] **PAGE_AUDIT.md is stale on 8 of 16 pages** (dashboard, enquiries, quotes,
+      schedule, properties, actions, labour-recon, profitability — per-line
+      billing ripple + photo-gate/walk-around). Two recs dead (quotes split
+      DONE; labour-recon exceptions→actions REVERSED). Refresh when the app
+      audit runs.
+- [ ] **Cost Capture page: 1,237 lines, entirely undocumented** — largest page
+      in the app, added the same day as PAGE_AUDIT, never covered by it. The
+      page Joe calls overwhelming. Documentation + simplification candidate.
+- [ ] **Quoted-jobs → invoices merge still undone** — the one live PAGE_AUDIT
+      recommendation; page and nav entry both remain.
+
 ## TIER 3 — PM / body-corporate set (the sales USP)
 - [ ] Rental-flagged jobs surface as rentals (trivial now the tag exists)
 - [ ] **PM portal** — upcoming visits, per-property history, downloadable reports.
