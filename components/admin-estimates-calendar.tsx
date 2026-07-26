@@ -88,20 +88,6 @@ type Enquiry = {
   joe_accepted_lead_notified_at?: string | null
 }
 
-type QuoteRequest = {
-  id: string
-  channel?: string | null
-  source_category?: string | null
-  subject: string | null
-  body: string | null
-  priority: string | null
-  risk_level: string | null
-  ai_summary: string | null
-  suggested_reply: string | null
-  metadata: Record<string, any> | string | null
-  created_at: string | null
-}
-
 type Props = {
   thisWeekStart: string
   nextWeekStart: string
@@ -112,7 +98,6 @@ type Props = {
   calendarBlockouts: CalendarBlockout[]
   calendarBlockoutError?: string | null
   enquiries: Enquiry[]
-  quoteRequests: QuoteRequest[]
   joeStaffId: string | null
 }
 
@@ -197,61 +182,6 @@ function blockoutTouchesNzDate(blockout: CalendarBlockout, date: string) {
   return startDate <= date && endDate >= date
 }
 
-function parseQuoteRequestMetadata(item: QuoteRequest) {
-  let metadata = item.metadata
-
-  if (typeof metadata === "string") {
-    try {
-      metadata = JSON.parse(metadata)
-    } catch {
-      metadata = null
-    }
-  }
-
-  return metadata && typeof metadata === "object" && !Array.isArray(metadata)
-    ? metadata
-    : {}
-}
-
-function getQuoteRequestSender(item: QuoteRequest) {
-  const metadata = parseQuoteRequestMetadata(item)
-  const fromName = metadata.from_name
-  const fromEmail = metadata.from_email
-
-  if (typeof fromName === "string" && fromName.trim()) return fromName
-  if (typeof fromEmail === "string" && fromEmail.trim()) return fromEmail
-
-  return item.subject || "Quote request"
-}
-
-function getQuoteRequestEmail(item: QuoteRequest) {
-  const metadata = parseQuoteRequestMetadata(item)
-  const fromEmail = metadata.from_email
-
-  return typeof fromEmail === "string" && fromEmail.trim() ? fromEmail : null
-}
-
-function getQuoteRequestNotes(item: QuoteRequest) {
-  const metadata = parseQuoteRequestMetadata(item)
-  const fromName = metadata.from_name
-  const fromEmail = metadata.from_email
-
-  return [
-    "Source: AI Quote Request",
-    item.subject ? `Subject: ${item.subject}` : null,
-    typeof fromName === "string" && fromName.trim()
-      ? `From name: ${fromName}`
-      : null,
-    typeof fromEmail === "string" && fromEmail.trim()
-      ? `From email: ${fromEmail}`
-      : null,
-    item.ai_summary ? `AI summary:\n${item.ai_summary}` : null,
-    item.body ? `Original body:\n${item.body}` : null,
-  ]
-    .filter(Boolean)
-    .join("\n\n")
-}
-
 function getAreaForSuburb(suburb: string | null | undefined) {
   if (!suburb) return "OTHER"
 
@@ -334,7 +264,6 @@ export function AdminEstimatesCalendar({
   calendarBlockouts = [],
   calendarBlockoutError = null,
   enquiries = [],
-  quoteRequests = [],
   joeStaffId,
 }: Props) {
   const router = useRouter()
@@ -347,10 +276,6 @@ export function AdminEstimatesCalendar({
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null)
   const [selectedEstimate, setSelectedEstimate] = useState<Estimate | null>(null)
   const [selectedEnquiry, setSelectedEnquiry] = useState<Enquiry | null>(null)
-  const [selectedQuoteRequest, setSelectedQuoteRequest] =
-    useState<QuoteRequest | null>(null)
-  const [visibleQuoteRequests, setVisibleQuoteRequests] =
-    useState(quoteRequests)
 
   const [estimateDate, setEstimateDate] = useState(thisWeekStart)
   const [estimateStartTime, setEstimateStartTime] = useState("")
@@ -481,7 +406,6 @@ const [savingBlock, setSavingBlock] = useState(false)
     setSelectedProperty(property)
     setSelectedEstimate(null)
     setSelectedEnquiry(null)
-    setSelectedQuoteRequest(null)
     setEstimateDate(thisWeekStart)
     setEstimateStartTime("")
     setEstimateDuration("1")
@@ -504,7 +428,6 @@ const [savingBlock, setSavingBlock] = useState(false)
   setSelectedProperty(temporaryProperty)
   setSelectedEstimate(null)
   setSelectedEnquiry(enquiry)
-  setSelectedQuoteRequest(null)
   setEstimateDate(thisWeekStart)
   setEstimateStartTime("")
   setEstimateDuration("1")
@@ -523,29 +446,6 @@ const [savingBlock, setSavingBlock] = useState(false)
   setModalOpen(true)
 }
 
-  const openQuoteRequestEstimateModal = (quoteRequest: QuoteRequest) => {
-    const temporaryProperty: Property = {
-      id: "",
-      property_code: "NEW",
-      client_name: getQuoteRequestSender(quoteRequest),
-      address_line_1: null,
-      suburb: null,
-      property_category: null,
-      is_active: true,
-    }
-
-    setSelectedProperty(temporaryProperty)
-    setSelectedEstimate(null)
-    setSelectedEnquiry(null)
-    setSelectedQuoteRequest(quoteRequest)
-    setEstimateDate(thisWeekStart)
-    setEstimateStartTime("")
-    setEstimateDuration("1")
-    setEstimateNotes(getQuoteRequestNotes(quoteRequest))
-    setError(null)
-    setModalOpen(true)
-  }
-
   const openEditModal = (estimate: Estimate) => {
     const property = properties.find((item) => item.id === estimate.property_id)
 
@@ -557,7 +457,6 @@ const [savingBlock, setSavingBlock] = useState(false)
     setSelectedProperty(property)
     setSelectedEstimate(estimate)
     setSelectedEnquiry(null)
-    setSelectedQuoteRequest(null)
     setEstimateDate(estimate.scheduled_date)
     setEstimateStartTime(estimate.planned_start_time || "")
     setEstimateDuration(
@@ -575,7 +474,6 @@ const [savingBlock, setSavingBlock] = useState(false)
     setSelectedProperty(null)
     setSelectedEstimate(null)
     setSelectedEnquiry(null)
-    setSelectedQuoteRequest(null)
     setEstimateDate(thisWeekStart)
     setEstimateStartTime("")
     setEstimateDuration("1")
@@ -587,7 +485,7 @@ const [savingBlock, setSavingBlock] = useState(false)
   const handleSaveEstimate = async () => {
   if (!selectedProperty) return
 
-  if (!joeStaffId && !selectedEnquiry && !selectedQuoteRequest) {
+  if (!joeStaffId && !selectedEnquiry) {
     setError("Could not find Estimator in staff_members.")
     return
   }
@@ -598,18 +496,13 @@ const [savingBlock, setSavingBlock] = useState(false)
 
   let propertyId = selectedProperty.id
 
-  if ((selectedEnquiry || selectedQuoteRequest) && !propertyId) {
+  if (selectedEnquiry && !propertyId) {
     const { error: estimateError } = await supabase
       .from("estimates")
       .insert({
-        enquiry_id: selectedEnquiry?.id || null,
-        communication_id: selectedQuoteRequest?.id || null,
-        customer_name: selectedEnquiry
-          ? selectedEnquiry.name
-          : getQuoteRequestSender(selectedQuoteRequest!),
-        customer_email: selectedEnquiry
-          ? selectedEnquiry.email || null
-          : getQuoteRequestEmail(selectedQuoteRequest!),
+        enquiry_id: selectedEnquiry.id,
+        customer_name: selectedEnquiry.name,
+        customer_email: selectedEnquiry.email || null,
         customer_phone: selectedEnquiry?.phone || null,
         address_line_1: selectedEnquiry?.address || null,
         suburb: selectedEnquiry?.suburb || null,
@@ -714,53 +607,6 @@ const [savingBlock, setSavingBlock] = useState(false)
             : "Lead was accepted, but Joe was not emailed."
       }
     }
-  }
-
-  if (selectedQuoteRequest) {
-    const quoteRequestMetadata = parseQuoteRequestMetadata(selectedQuoteRequest)
-    const metadata: Record<string, any> = {
-      ...quoteRequestMetadata,
-      estimate_action_completed: true,
-      estimate_action_completed_at: new Date().toISOString(),
-    }
-
-    if (!quoteRequestMetadata.joe_accepted_lead_notified_at) {
-      try {
-        const notifiedAt = await sendLeadNotificationToJoe({
-          supabase,
-          enquiry: {
-            id: selectedQuoteRequest.id,
-            name: getQuoteRequestSender(selectedQuoteRequest),
-            suburb: null,
-            address: null,
-            job_type: "quote_request",
-            notes: getQuoteRequestNotes(selectedQuoteRequest),
-            source:
-              selectedQuoteRequest.source_category ||
-              selectedQuoteRequest.channel ||
-              "email",
-            link_path: `/admin/communications/${selectedQuoteRequest.id}`,
-          },
-          action: "accepted",
-        })
-
-        metadata.joe_accepted_lead_notified_at = notifiedAt
-      } catch (notificationError) {
-        leadNotificationWarning =
-          notificationError instanceof Error
-            ? `Lead was accepted, but Joe was not emailed: ${notificationError.message}`
-            : "Lead was accepted, but Joe was not emailed."
-      }
-    }
-
-    await supabase
-      .from("communications")
-      .update({ metadata })
-      .eq("id", selectedQuoteRequest.id)
-
-    setVisibleQuoteRequests((items) =>
-      items.filter((item) => item.id !== selectedQuoteRequest.id)
-    )
   }
 
   resetModal()
@@ -1199,59 +1045,6 @@ const handleReadyToSchedule = async (estimate: Estimate) => {
 
       <WeekSection title="This Week" days={thisWeekDays} />
       <WeekSection title="Next Week" days={nextWeekDays} />
-
-      <section className="mb-8 rounded-xl border bg-white p-4 shadow-sm">
-        <h2 className="text-lg font-semibold">AI Quote Requests</h2>
-
-        <p className="mb-4 text-sm text-gray-500">
-          Approved quote request communications ready for estimate scheduling review.
-        </p>
-
-        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-          {visibleQuoteRequests.length > 0 ? (
-            visibleQuoteRequests.map((item) => (
-              <div
-                key={item.id}
-                className="rounded-lg border border-blue-100 bg-blue-50 p-4"
-              >
-                <div className="font-semibold text-gray-900">
-                  {getQuoteRequestSender(item)}
-                </div>
-
-                {(item.ai_summary || item.body) && (
-                  <div className="mt-3 line-clamp-3 text-sm text-gray-700">
-                    {item.ai_summary || item.body}
-                  </div>
-                )}
-
-                <div className="mt-3 text-xs text-gray-500">
-                  Email · {item.priority || "normal"} · {formatDateTime(item.created_at)}
-                  {item.risk_level === "high" ? " · High risk" : ""}
-                </div>
-
-                <a
-                  href={`/admin/communications/${item.id}`}
-                  className="mt-3 inline-flex rounded-md border border-blue-200 bg-white px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-50"
-                >
-                  Open Communication
-                </a>
-
-                <button
-                  type="button"
-                  onClick={() => openQuoteRequestEstimateModal(item)}
-                  className="ml-2 mt-3 inline-flex rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white"
-                >
-                  Schedule Estimate
-                </button>
-              </div>
-            ))
-          ) : (
-            <p className="rounded-lg border border-dashed p-3 text-sm text-gray-400">
-              No approved AI quote requests waiting for review.
-            </p>
-          )}
-        </div>
-      </section>
 
       <section className="mb-8 rounded-xl border bg-white p-4 shadow-sm">
         <h2 className="text-lg font-semibold">Schedule Quote Requests</h2>

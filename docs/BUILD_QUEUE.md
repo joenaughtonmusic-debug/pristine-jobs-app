@@ -4,12 +4,9 @@ The ONLY tickable list. The session handoff (docs/SESSION_HANDOFF.md) points her
 and must not duplicate it. Tick items here; git history is the archive.
 
 ## NEXT UP — one-line fix, live-fire to verify
-- [ ] **Comms-reply webhook env var.** `NEXT_PUBLIC_SEND_COMMUNICATION_REPLY_WEBHOOK_URL`
-      is absent from Vercel in every environment → the VA's comms-hub Send
-      Reply has NEVER worked in prod ("Reply webhook URL is not configured.").
-      Fix: add the var (value in Joe's `.env.local`) + redeploy + ONE live prod
-      fire before ticking (handoff rule 1 — reading the code is not
-      verification).
+- [x] **Comms-reply webhook env var — MOOT, closed 26 July.** The comms page
+      bin proceeded (branch comms-page-bin), so Send Reply no longer exists.
+      Never add `NEXT_PUBLIC_SEND_COMMUNICATION_REPLY_WEBHOOK_URL` to Vercel.
 
 - [ ] **Labour-recon misc-work window gap** — the ONE signal that lost coverage
       in the VA actions clear-out: the recon page only shows unlinked misc
@@ -81,12 +78,10 @@ and must not duplicate it. Tick items here; git history is the archive.
 - [x] **1. Lead notifications wiring** — SHIPPED 26 July (see SHIPPED). The
       env-var move was deliberately dropped (client-component call sites);
       the email leaves the bundle in the Tier 5 proxy item.
-- [ ] **2. VA actions board clear-out** — cut the six generators (signals stay as
-      badges on their own pages), migration to dismiss the auto-generated backlog
-      while preserving manual rows. Board should hold only Joe's manual notes and
-      capture-page items.
-- [ ] **3. Capture page → VA action board** — voice note on `/capture` becomes a VA
-      action + notify the VA.
+- [x] **2. VA actions board clear-out** — SHIPPED 26 July (PR #37 + migration
+      061; see the [x] entry above).
+- [x] **3. Capture page → VA action board** — SHIPPED 26 July (PR #39),
+      live-fired through real prod triage; VA inbox confirmation pending.
 - [x] **4. Fix stale `docs/HANDOFF_for_VS_Code_Claude.md`** — DONE 26 July: the
       false "no staging DB, test against PRODUCTION" section replaced with the
       staging-first flow; shipped ledger now defers to BUILD_QUEUE (was stuck at
@@ -179,6 +174,25 @@ pitches before the app supports them.*
 - [ ] Phase C: drop write-dead `properties.subscription_*` columns (after burn-in)
 
 ## PARKED (deliberately)
+- [ ] **Quote conversions per month — parked 26 July; revisit after 3+ months
+      of real quoting data (≈ Oct 2026).** Investigated live in prod, no build:
+      `quote_drafts` has 6 rows total (earliest 1 June 2026), 2 sent, 0
+      accepted, 0 declined — any report is a chart of nothing, and the metric
+      is only as good as the "mark accepted" click habit, which doesn't exist
+      yet. Findings for whoever builds it later:
+      - **Key "sent" off `proposal_sent_at`** (stamped by Make.com on the real
+        send; `quote_sent_at` mirrors it) — **NEVER off `status`**. `status`
+        stays `'draft'` on sent quotes; only `proposal_status` (→ `sent`) and
+        `xero_quote_status` (→ `SENT_APP`) advance. Also never `created_at`
+        (unsent drafts would inflate the denominator).
+      - "Accepted" = `quote_accepted_at`; three write paths (public quote page,
+        manual mark-accepted button, sales-pipeline card). Email acceptances
+        are lost unless someone clicks — behavioural gap, not technical.
+      - Declined is barely recorded → report accepted-vs-sent counts, not a
+        conversion rate, while n is tiny.
+      - Pre-June 2026 quote history lives ONLY in Xero (app has no Xero read
+        path) — read history in Xero's own reports; do not backfill.
+
 Back-costing / worst-performing-jobs reports · crew billable vs non-billable hours
 reporting · email sniffer for acceptance language · reply detection / auto-advance.
 

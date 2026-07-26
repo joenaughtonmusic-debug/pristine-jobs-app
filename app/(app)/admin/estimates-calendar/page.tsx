@@ -97,14 +97,6 @@ export default async function EstimatesCalendarPage() {
     .in("status", ["new", "needs_scheduling"])
     .order("created_at", { ascending: false })
 
-  const { data: quoteRequests } = await supabase
-    .from("communications")
-    .select("*")
-    .eq("category", "quote_request")
-    .eq("metadata->>estimate_action_approved", "true")
-    .or("metadata->>estimate_action_completed.is.null,metadata->>estimate_action_completed.neq.true")
-    .order("created_at", { ascending: false })
-
   return (
     <AdminEstimatesCalendar
       thisWeekStart={startDate}
@@ -116,7 +108,6 @@ export default async function EstimatesCalendarPage() {
       calendarBlockouts={calendarBlockouts || []}
       calendarBlockoutError={calendarBlockoutsError?.message || null}
       enquiries={enquiries || []}
-      quoteRequests={quoteRequests || []}
       joeStaffId={joeStaff?.id || null}
     />
   )

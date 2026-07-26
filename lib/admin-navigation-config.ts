@@ -35,9 +35,8 @@ export const adminNavGroups: AdminNavGroup[] = [
     ],
   },
   {
-    label: "Communications",
+    label: "Notes & Actions",
     links: [
-      { href: "/admin/communications", label: "Communications" },
       { href: "/admin/internal-notes", label: "Team Notes" },
       { href: "/admin/actions", label: "Admin Actions" },
     ],
