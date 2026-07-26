@@ -33,6 +33,13 @@ interface PropertyDialogProps {
   onSuccess: (property: Property, isNew: boolean) => void
 }
 
+type PropertyManager = {
+  id: string
+  name: string
+  email: string | null
+  company: string | null
+}
+
 function makePropertyCode(value: string) {
   return value
     .toUpperCase()
@@ -62,6 +69,15 @@ export function PropertyDialog({
     { id: string; amount: string; confirmed: boolean }[]
   >([])
   const [isRental, setIsRental] = useState(false)
+  // Property manager: shared contact (one PM -> many properties). Pick an
+  // existing PM or add one inline; the property stores property_manager_id.
+  const [propertyManagers, setPropertyManagers] = useState<PropertyManager[]>([])
+  const [propertyManagerId, setPropertyManagerId] = useState("")
+  const [addingPm, setAddingPm] = useState(false)
+  const [newPmName, setNewPmName] = useState("")
+  const [newPmEmail, setNewPmEmail] = useState("")
+  const [newPmCompany, setNewPmCompany] = useState("")
+  const [savingPm, setSavingPm] = useState(false)
   const [walkAroundIssues, setWalkAroundIssues] = useState<
     {
       id: string
@@ -84,6 +100,19 @@ export function PropertyDialog({
     )
 
   useEffect(() => {
+    if (!open) return
+
+    // PM list is needed whether adding or editing, so load it regardless.
+    let pmCancelled = false
+    createClient()
+      .from("property_managers")
+      .select("id, name, email, company")
+      .eq("active", true)
+      .order("name", { ascending: true })
+      .then(({ data }) => {
+        if (!pmCancelled) setPropertyManagers((data || []) as PropertyManager[])
+      })
+
     if (property) {
       setClientName(property.client_name)
       setAddress(property.address_line_1 ?? "")
@@ -93,6 +122,7 @@ export function PropertyDialog({
       setServiceType(property.service_type || "")
       setServiceFrequency(property.service_frequency || "")
       setIsRental(property.is_rental ?? false)
+      setPropertyManagerId(property.property_manager_id ?? "")
       setError(null)
 
       // Phase B: load the property's active subscription lines so each can be
@@ -152,6 +182,7 @@ export function PropertyDialog({
 
       return () => {
         cancelled = true
+        pmCancelled = true
       }
     } else {
       setClientName("")
@@ -163,10 +194,56 @@ export function PropertyDialog({
       setServiceFrequency("")
       setSubscriptionLines([])
       setIsRental(false)
+      setPropertyManagerId("")
+      setAddingPm(false)
+      setNewPmName("")
+      setNewPmEmail("")
+      setNewPmCompany("")
       setWalkAroundIssues([])
       setError(null)
+      return () => {
+        pmCancelled = true
+      }
     }
   }, [property, open])
+
+  const handleAddPropertyManager = async () => {
+    const name = newPmName.trim()
+    if (!name) {
+      setError("Enter the property manager's name.")
+      return
+    }
+
+    setSavingPm(true)
+    setError(null)
+
+    const { data, error: pmError } = await createClient()
+      .from("property_managers")
+      .insert({
+        name,
+        email: newPmEmail.trim() || null,
+        company: newPmCompany.trim() || null,
+      })
+      .select("id, name, email, company")
+      .single()
+
+    setSavingPm(false)
+
+    if (pmError) {
+      setError(pmError.message)
+      return
+    }
+
+    const created = data as PropertyManager
+    setPropertyManagers((prev) =>
+      [...prev, created].sort((a, b) => a.name.localeCompare(b.name))
+    )
+    setPropertyManagerId(created.id)
+    setAddingPm(false)
+    setNewPmName("")
+    setNewPmEmail("")
+    setNewPmCompany("")
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -192,6 +269,7 @@ export function PropertyDialog({
   service_frequency: serviceFrequency || null,
   service_interval_weeks: getServiceIntervalWeeks(serviceFrequency),
   is_rental: isRental,
+  property_manager_id: propertyManagerId || null,
   updated_at: new Date().toISOString(),
 }
 
@@ -341,6 +419,92 @@ export function PropertyDialog({
               />
               Rental / PM-managed property
             </label>
+
+            {isRental && (
+              <Field>
+                <FieldLabel htmlFor="propertyManager">
+                  Property manager
+                </FieldLabel>
+                {!addingPm ? (
+                  <div className="flex gap-2">
+                    <select
+                      id="propertyManager"
+                      className="h-12 flex-1 rounded-md border bg-background px-3 text-sm"
+                      value={propertyManagerId}
+                      onChange={(e) => setPropertyManagerId(e.target.value)}
+                    >
+                      <option value="">No property manager</option>
+                      {propertyManagers.map((pm) => (
+                        <option key={pm.id} value={pm.id}>
+                          {pm.name}
+                          {pm.company ? ` (${pm.company})` : ""}
+                          {pm.email ? ` — ${pm.email}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-12"
+                      onClick={() => setAddingPm(true)}
+                    >
+                      + New
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="grid gap-2 rounded-md border bg-muted/30 p-3">
+                    <Input
+                      placeholder="PM name (required)"
+                      value={newPmName}
+                      onChange={(e) => setNewPmName(e.target.value)}
+                      className="h-11"
+                    />
+                    <Input
+                      type="email"
+                      placeholder="PM email"
+                      value={newPmEmail}
+                      onChange={(e) => setNewPmEmail(e.target.value)}
+                      className="h-11"
+                    />
+                    <Input
+                      placeholder="Company (optional)"
+                      value={newPmCompany}
+                      onChange={(e) => setNewPmCompany(e.target.value)}
+                      className="h-11"
+                    />
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        className="h-11 flex-1"
+                        onClick={handleAddPropertyManager}
+                        disabled={savingPm}
+                      >
+                        {savingPm ? <Spinner className="mr-2" /> : null}
+                        Save manager
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-11"
+                        onClick={() => {
+                          setAddingPm(false)
+                          setNewPmName("")
+                          setNewPmEmail("")
+                          setNewPmCompany("")
+                        }}
+                        disabled={savingPm}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Shared across properties — one manager can cover several. Used
+                  to send the walk-around issue report.
+                </p>
+              </Field>
+            )}
 
             {!isEditing && (
               <div className="flex gap-3">
