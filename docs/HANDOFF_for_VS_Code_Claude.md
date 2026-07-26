@@ -29,6 +29,24 @@ advisory Claude (planning) and you (code).
    self-cleaning afterward). A green build has repeatedly hidden real breakage.
    Report what you actually verified, not just that it compiled.
 
+   **2a. The test harness itself can be the thing that's wrong — make it match
+   the app's ACTUAL request, not a plausible one.** A green build hides breakage;
+   a mismatched harness invents breakage that the app never hits. Two live
+   examples, both 26 July:
+   - An RLS fix was declared broken because the acceptance harness inserted with
+     `Prefer: return=representation` (which does `INSERT ... RETURNING` and so
+     also requires the row to pass the SELECT/`USING` policy). The real app uses
+     supabase-js `.insert()` with no `.select()` → `Prefer: return=minimal`, no
+     RETURNING, and worked fine. The harness produced a false NEGATIVE that sent
+     a whole session down a wrong "the migration can't work, we need an RPC" path.
+   - A deletion PR was "verified" against a stale `.next` build cache; `rm -rf
+     .next` changed the result. Clear the build cache before trusting a UI check.
+   Before trusting a red result, confirm the harness replicates the app's real
+   verb, headers (esp. `Prefer`), auth role, and RLS context. When testing RLS as
+   a staff role in psql, note `postgres` has BYPASSRLS — use `SET ROLE
+   authenticated` AND assert `row_security_active('<table>')` is true, or the
+   test silently bypasses the policy you're checking.
+
 3. **Investigate before building.** Repeatedly, the "feature" already existed and the
    real work was wiring/surfacing it. ALWAYS first report: what already exists for
    this? Lead your plan with the investigation result.
