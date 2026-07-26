@@ -4,8 +4,13 @@ Start here for a clean chat. This file is dateless and OVERWRITTEN each session 
 git history is the archive. The tickable work list lives ONLY in
 `docs/BUILD_QUEUE.md`; this file must not duplicate it.
 
-**NEXT WORK: the one-line comms-reply env fix** (see "Still broken" below), then
-Tier 1 item 2 (VA actions board clear-out) per BUILD_QUEUE.md.
+**NEXT WORK: Tier 1 item 3 (capture → VA action board + VA notify)** — scoped
+and prerequisites cleared: new `source_record_type: "capture"` approved, DB
+dedupe index confirmed (survived the clear-out), notification pipe proven
+end-to-end. Waiting on: `VA_NOTIFICATION_EMAIL=` in `.env.local` (Joe pastes),
+then the Zoho To field mapped to `{{1.to_email}}` (currently hard-typed as
+Joe's address). Also pending: the one-line comms-reply env fix (see "Still
+broken").
 
 ## Working method
 
@@ -20,10 +25,16 @@ Tier 1 item 2 (VA actions board clear-out) per BUILD_QUEUE.md.
 ## Rules that hold every time
 
 1. **Anything that leaves the app — email, webhook, Xero — gets ONE live prod
-   fire before it goes in SHIPPED. Reading the code is not verification.**
-   (Earned 26 July: the lead notifier was audited as "exists and works"; the
-   code was fine and it had NEVER once worked in production — its env var was
-   never set in Vercel.)
+   fire before it goes in SHIPPED, and the fire must be confirmed at the FAR
+   END (the inbox, Make's History tab), never by a 200 from the webhook.**
+   Earned twice on 26 July: (a) the lead notifier was audited as "exists and
+   works" while its env var was never set in Vercel — it had never once worked
+   in production; (b) even after that fix, "notification succeeded" was still
+   false — **Make returns 200 and queues silently when a scenario is
+   INACTIVE**, so app logs showed success while nothing was delivered (and
+   once activated, the Zoho module had no field mappings and sent blank
+   emails). The first genuinely end-to-end lead notification arrived 26 July
+   evening.
 2. **Investigate before building** — the feature usually part-exists.
 3. **Never trust `scripts/*.sql`** — drifted from live. Query the live DB.
 4. **"Build passes" ≠ works.** Acceptance results with real values. `npx tsc
@@ -111,13 +122,11 @@ every environment** → the VA's comms-hub Send Reply has NEVER worked in prod
   the primary domain is open). WP form → same-page POST (theme plugin
   `pristine-home-v2-mockup-v4`, source in ~/Desktop/pristine-wordpress-theme).
 
-## Pending cleanup (read-only-confirm done, awaiting Joe's GO)
+## Pending cleanup
 
-Five prod rows, all verified link-free: admin_enquiries `0dd60f8c` (Env Fix
-Verification), auth user + profile `bb7933f1` (envfix-verify@example.com),
-sales_leads `6eb1f830` (Diagnostic Probe C3), `794455df` (ZZTEST/Remuera),
-`622b506f` (ZZTest/Mount Albert). Also in Joe's inboxes: the test emails
-(Garden Enquiry from Diagnostic Probe C3; the ZZTEST notification emails).
+None — all test rows and temp users from 26 July verified deleted (prod holds
+zero example.com auth users, zero ZZTEST/Diagnostic leads). Test emails in
+Joe's inboxes are his to delete.
 
 ## Non-build track
 
