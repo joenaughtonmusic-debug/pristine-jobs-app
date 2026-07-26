@@ -97,9 +97,56 @@ and must not duplicate it. Tick items here; git history is the archive.
       data, is it easy + reliable for crew? NOTE: hours are recorded for
       quoted-vs-actual comparison, NOT billing, so it is **not** redundant.
       Do AFTER the VA board clear-out.
-- [ ] **Labour RLS bug** — completing a visit where primary worker ≠ completer, or
-      with helpers, can fail partway. `job_labour_entries` RLS is "own rows or
-      admin". Pre-existing, core flow, affects real multi-person jobs.
+- [ ] **Labour RLS bug — FIX FOUND & VERIFIED (migration only); ready to
+      build once Joe OKs.** Investigated 26 July. The bug: `job_labour_entries`
+      is own-rows-or-admin (041), but the Complete Visit dialog inserts a row
+      per crew member from the COMPLETER's session → any row for someone else
+      is rejected 42501 and the flow aborts partway. FIRED LIVE ONCE: visit
+      5fc4a1f9 (17 Jul, Alex+Graham) — Graham's cost row missing until the
+      21 Jul recon backfill; job sat "scheduled" 2.7 days until an admin
+      completed it by hand.
+      THE FIX: widen BOTH the USING and the WITH CHECK of the single FOR ALL
+      policy to also allow job members (own OR scheduled_job_id IN
+      current_staff_job_ids() OR is_admin) — i.e. mirror the
+      visit_labour_entries policy exactly. Verified on staging as a real
+      crew-role user (row_security_active = t, so genuinely enforced, not
+      owner-bypass): the completer's insert of a teammate's row returns 201.
+      NOTE — a diagnostic rabbit-hole worth remembering: widening the WITH
+      CHECK ALONE is enough for the LIVE APP (supabase-js .insert() with no
+      .select() sends Prefer: return=minimal, no RETURNING), but it FAILS
+      under Prefer: return=representation, because INSERT...RETURNING also
+      requires the new row to pass the SELECT/USING clause — which own-only
+      USING blocks for a teammate's row. So widen USING too: it makes the fix
+      robust if anyone ever chains .select() onto that insert, and matches
+      visit_labour. This also explains why visit_labour never had the bug
+      (its USING is already job-scoped). Ruled out along the way: owner-bypass
+      (row_security_active = t), restrictive policy (none exists), triggers
+      (FK-internal only). Staging was fully restored to original 041; nothing
+      shipped yet. Build = one transactional migration (062), staging + the
+      three-shape acceptance suite (harness must use return=minimal to match
+      the app; also assert return=representation now works), then prod.
+- [ ] **Complete-visit retry lockout — separate bug, still open, the part that
+      costs money.** Independent of the RLS fix above. When ANY of the 8
+      completion writes fails partway (network drop, etc.), the visit row is
+      already inserted, so the duplicate guard (complete-visit-dialog.tsx
+      ~line 259) tells the crew "This job has already been completed." on
+      retry. Crew stops reporting it, the job looks fine on the schedule, the
+      visit stays invoice_status=not_ready — and it silently NEVER INVOICES.
+      Underlying cause: the dialog runs 8 sequential writes from the crew's
+      phone with no transaction (visit → primary labour → visit-labour →
+      hours sync → helper labour → invoice stamp → photos → job status). Fix:
+      either a resume-instead-of-block path when the existing visit is in a
+      half-completed state, or fold the whole sequence into one transactional
+      RPC. (The RLS fix does NOT address this — a partial strand can still
+      happen from a non-RLS error.)
+- [ ] **Reconciliation backfills can mask live bugs — surface, don't just
+      correct.** The 21 July labour-recon backfill note "cost row was missing"
+      WAS the RLS bug above being silently absorbed — recon caught it (earns
+      its keep; relevant to the "is labour-recon over the top?" Tier 2
+      review), but Joe's profitability for that 17 July job was wrong for four
+      days and nobody knew. Principle: if a backfill fires to fix a missing
+      row, something upstream failed — it should raise a flag, not just patch
+      the data.
 - [ ] **App audit — 8 questions** (in IDEAS.md). Start from `docs/PAGE_AUDIT.md`
       and check what's stale. Includes cost-capture redesign (overwhelming),
       new-customer capture fields, gaps in the build.
