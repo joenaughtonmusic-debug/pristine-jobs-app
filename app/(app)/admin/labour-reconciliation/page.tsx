@@ -1,10 +1,5 @@
 import Link from "next/link"
 import { createClient } from "@/lib/supabase/server"
-import {
-  ensureWorkflowAdminActions,
-  getActionDueDate,
-  type WorkflowAdminActionInput,
-} from "@/lib/admin-actions"
 
 export const dynamic = "force-dynamic"
 
@@ -300,44 +295,10 @@ export default async function AdminLabourReconciliationPage({
     (labourEntries || []) as LabourEntryRow[]
   )
 
-  await ensureWorkflowAdminActions(
-    supabase,
-    [
-      // Labour reconciliation EXCEPTIONS deliberately no longer create admin
-      // actions — they were auto-generated data-quality items, not VA-delegated
-      // tasks, and clogged /admin/actions. The recon computation itself is
-      // unchanged; the exceptions still surface on this page and its badge.
-      // (misc_work_review below stays — "Link extra work" is a real VA task.)
-      ...((labourEntries || []) as LabourEntryRow[])
-        .filter(
-          (entry) => entry.job_type === "misc" && !entry.scheduled_job_id
-        )
-        .map((entry): WorkflowAdminActionInput => {
-          return {
-            title: `Link extra work to property/job: ${entry.staff_name}`,
-            actionType: "misc_work_review",
-            priority: "normal",
-            owner: "VA",
-            dueDate: getActionDueDate(0),
-            propertyId: entry.property_id || null,
-            sourceRecordType: "job_labour_entry",
-            sourceRecordId: entry.id,
-            sourceUrl: `/admin/labour-reconciliation?start=${entry.work_date}&end=${entry.work_date}`,
-            notes: [
-              `Staff: ${entry.staff_name}`,
-              `Date: ${formatDate(entry.work_date)}`,
-              `Work: ${formatWorkType(entry.work_type || entry.job_code)}`,
-              `Hours: ${formatHours(Number(entry.hours_worked || 0))}`,
-              entry.property_id ? "Linked property exists." : "No linked property.",
-              entry.job_name ? `Label: ${entry.job_name}` : null,
-              entry.notes ? `Notes: ${entry.notes}` : null,
-            ]
-              .filter(Boolean)
-              .join("\n"),
-          }
-        }),
-    ]
-  )
+  // VA actions clear-out (Tier 1 item 2): misc-work links are no longer
+  // mirrored into admin_actions — the amber "Unscheduled / Misc Work" label
+  // on this page is the home. KNOWN GAP (BUILD_QUEUE): the page's default
+  // Mon-Fri window hides prior-week unlinked misc entries.
 
   const warningCount = rows.filter(
     (row) => row.status !== "ok" && row.status !== "non_worked"
