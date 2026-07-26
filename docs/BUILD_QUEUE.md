@@ -3,38 +3,45 @@
 The ONLY tickable list. The session handoff (docs/SESSION_HANDOFF.md) points here
 and must not duplicate it. Tick items here; git history is the archive.
 
-## TOP PRIORITY — website lead chain broken in three places (diagnosed 26 July; fix NOT yet scoped)
+## NEXT UP — one-line fix, live-fire to verify
+- [ ] **Comms-reply webhook env var.** `NEXT_PUBLIC_SEND_COMMUNICATION_REPLY_WEBHOOK_URL`
+      is absent from Vercel in every environment → the VA's comms-hub Send
+      Reply has NEVER worked in prod ("Reply webhook URL is not configured.").
+      Fix: add the var (value in Joe's `.env.local`) + redeploy + ONE live prod
+      fire before ticking (handoff rule 1 — reading the code is not
+      verification).
 
-Diagnosis only so far. The end-to-end website enquiry chain has never delivered a
-lead to the app — prod `sales_leads` has zero `website`-source rows ever. Three
-independent breaks:
-
-- [ ] **(a) WordPress form front door.** "Security check failed" is a WP NONCE
-      failure, not reCAPTCHA (no captcha verification exists in the handler —
-      `pristine-home-v2.php:4946`). `/contact-us/` runs behind nginx page cache
-      (`x-nginx-cache: WordPress`, max-age 7200). Anonymous visitors share a
-      uid-0 nonce (normal WP); the failure hits LOGGED-IN users served the
-      cached anonymous page (uid mismatch) — Joe's phone repro. Whether
-      anonymous customers also fail is being tested (Joe: private-window
-      submit). Rejected submissions are dropped with NO log.
-- [ ] **(b) WordPress → app forward.** The theme's `send_sales_lead_webhook`
-      silently skips unless `PRISTINE_JOBS_SALES_LEADS_URL` + `_SECRET` are
-      defined in wp-config.php (state on live server unverified), and the
-      secret in local `.env.local` does NOT match the canonical Vercel prod
-      value (Vercel wins — Joe updating wp-config himself). Failures would only
-      reach PHP error_log.
-- [ ] **(c) App → notification email.** FIXED 26 July:
+## RESOLVED 26 July — website lead chain (was TOP PRIORITY; kept for the record)
+- [x] **(a) WordPress form front door — FIXED (plugin 0.21.2, live-verified).**
+      Root cause: nginx page cache served >24h-old HTML whose WP nonce always
+      failed → every customer (anonymous included — both earlier hypotheses
+      were wrong) got "Security check failed", dropped with no log. Fix: nonce
+      gate removed from the public form; honeypot (`pgv2_ref_code`) + per-IP
+      rate limit (5/hr); EVERY rejection logged `[pgv2] enquiry rejected
+      reason=…`; `nocache_headers()` on contact pages + host-panel cache
+      exclusion for /contact/ and /contact-us/. Verified: Joe's incognito phone
+      submissions → pipeline leads + notification emails. Theme git repo is the
+      deployment record (Desktop zips unreliable after 0.20.22 / 9 July).
+- [x] **(b) WordPress → app forward — was NEVER broken.** wp-config.php holds
+      the correct URL + secret (proven by live submissions). Only Joe's local
+      `.env.local` secret is stale vs the canonical Vercel value — OPEN,
+      accepted; sync from the Vercel dashboard if ever needed locally.
+- [x] **(c) App → notification email — FIXED.**
       `NEXT_PUBLIC_LEAD_NOTIFICATION_WEBHOOK_URL` was never set in Vercel, so
       ALL lead notifications (including the two pre-existing call sites) failed
       in production since forever — the 23 July audit's "the notifier exists
       and works" was true of the code and FALSE in production. Var added +
-      redeployed + verified live ("Joe was emailed about this new lead.",
-      notified-at stamp written). REMAINING:
-      `NEXT_PUBLIC_SEND_COMMUNICATION_REPLY_WEBHOOK_URL` is ALSO missing in
-      Vercel — the VA's comms-hub Send Reply shows "Reply webhook URL is not
-      configured." in prod. Not yet fixed.
+      redeployed + live-verified on both the admin-enquiries and website paths.
 
 ## SHIPPED (don't rebuild)
+- [x] **Lead notifications wiring (Tier 1 item 1, PR #36) — live-fire verified
+      in prod 26 July**: all three lead-creation paths notify after-insert,
+      failures log `LEAD_NOTIFY_FAILED lead=<id> source=<source>`; 6/6 staging
+      acceptance tests; real prod submissions landed with emails in Joe's
+      inbox. (Hardcoded email stays until the Tier 5 webhook-proxy item — see
+      that entry.)
+- [x] **Website enquiry chain end-to-end** — first `website`-source leads in
+      the system's history landed 26 July.
 - [x] Per-line billing model (`property_billing_lines`, migrations 057–059)
 - [x] `fixed_recurring` billing pattern (051/052)
 - [x] Rental property tag (`is_rental`, 053) — all rentals tagged
@@ -46,9 +53,9 @@ independent breaks:
 - [x] WordPress lead webhook → `/api/public/sales-leads`
 
 ## TIER 1 — the "last 10%" (next, in order)
-- [ ] **1. Lead notifications wiring** — fire `sendLeadNotificationToJoe` from
-      `app/api/public/sales-leads/route.ts` and `createManualLead` in
-      `sales-pipeline/actions.ts`. Move hardcoded `JOE_NOTIFICATION_EMAIL` to env.
+- [x] **1. Lead notifications wiring** — SHIPPED 26 July (see SHIPPED). The
+      env-var move was deliberately dropped (client-component call sites);
+      the email leaves the bundle in the Tier 5 proxy item.
 - [ ] **2. VA actions board clear-out** — cut the six generators (signals stay as
       badges on their own pages), migration to dismiss the auto-generated backlog
       while preserving manual rows. Board should hold only Joe's manual notes and
