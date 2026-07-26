@@ -4,10 +4,6 @@ import {
   isActiveActionableCommunication,
   type CommunicationTab,
 } from "@/lib/communication-classification"
-import {
-  ensureWorkflowAdminActions,
-  getActionDueDate,
-} from "@/lib/admin-actions"
 
 export const dynamic = "force-dynamic"
 
@@ -99,37 +95,9 @@ export default async function AdminCommunicationsPage({ searchParams }: Props) {
     .neq("status", "archived")
     .order("created_at", { ascending: false })
 
-  if (!error && communications) {
-    await ensureWorkflowAdminActions(
-      supabase,
-      communications
-        .filter((communication) => isActiveActionableCommunication(communication))
-        .map((communication) => ({
-          title: `Follow up communication: ${
-            communication.subject || communication.customer_name || "Customer message"
-          }`,
-          actionType: "communication_follow_up",
-          priority:
-            communication.priority === "urgent" || communication.priority === "high"
-              ? "high"
-              : "normal",
-          owner: communication.assigned_to === "joe" ? "Joe" : "VA",
-          dueDate: getActionDueDate(1),
-          sourceRecordType: "communication",
-          sourceRecordId: communication.id,
-          sourceUrl: `/admin/communications/${communication.id}`,
-          notes: [
-            communication.customer_name ? `Customer: ${communication.customer_name}` : null,
-            communication.customer_email ? `Email: ${communication.customer_email}` : null,
-            communication.customer_phone ? `Phone: ${communication.customer_phone}` : null,
-            communication.subject ? `Subject: ${communication.subject}` : null,
-            communication.body ? communication.body.slice(0, 400) : null,
-          ]
-            .filter(Boolean)
-            .join("\n"),
-        }))
-    )
-  }
+  // VA actions clear-out (Tier 1 item 2): this page no longer mirrors
+  // actionable communications into admin_actions — the signal lives here,
+  // on this page's own lists and filters.
 
   if (error) {
     // for now render client with empty array and surface nothing server-side

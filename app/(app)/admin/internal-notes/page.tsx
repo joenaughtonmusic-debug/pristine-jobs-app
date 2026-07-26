@@ -1,10 +1,6 @@
 import Link from "next/link"
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
-import {
-  ensureWorkflowAdminActions,
-  getActionDueDate,
-} from "@/lib/admin-actions"
 
 export const dynamic = "force-dynamic"
 
@@ -125,35 +121,8 @@ export default async function AdminInternalNotesPage({
 
   const { data: notes, error } = await query
 
-  if (!error && notes) {
-    await ensureWorkflowAdminActions(
-      supabase,
-      (notes as InternalJobNote[])
-        .filter((note) => (note.status || "open") === "open")
-        .map((note) => ({
-          title: `Team note follow-up: ${getPropertyLabel(note)}`,
-          actionType: "team_note",
-          priority: "normal",
-          owner: "VA",
-          dueDate: getActionDueDate(1),
-          propertyId: note.property_id || null,
-          scheduledJobId: note.scheduled_job_id || null,
-          sourceRecordType: "internal_job_note",
-          sourceRecordId: note.id,
-          sourceUrl: note.scheduled_job_id
-            ? `/jobs/${note.scheduled_job_id}`
-            : "/admin/internal-notes",
-          notes: [
-            note.submitted_by_staff_name
-              ? `Submitted by: ${note.submitted_by_staff_name}`
-              : null,
-            note.note,
-          ]
-            .filter(Boolean)
-            .join("\n"),
-        }))
-    )
-  }
+  // VA actions clear-out (Tier 1 item 2): open team notes are no longer
+  // mirrored into admin_actions — this page and its nav badge are the home.
 
   const tabs = [
     { value: "open", label: "Open" },

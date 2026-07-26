@@ -1,10 +1,6 @@
 import Link from "next/link"
 import { revalidatePath } from "next/cache"
 import { createClient } from "@/lib/supabase/server"
-import {
-  ensureWorkflowAdminActions,
-  getActionDueDate,
-} from "@/lib/admin-actions"
 import { getCostCaptureFlags } from "@/lib/cost-capture"
 import {
   readyInvoiceStatusForVisit,
@@ -643,140 +639,9 @@ export default async function AdminInvoicesPage({
     return grouped
   }, {})
 
-  await ensureWorkflowAdminActions(
-    supabase,
-    invoiceQueueVisits.flatMap((visit) => {
-      const job = firstOrValue(visit.scheduled_jobs)
-      const property =
-        firstOrValue(job?.properties) || firstOrValue(visit.properties)
-      const normalizedInvoiceStatus = normalizeInvoiceStatus(visit.invoice_status)
-      const visitExtraCharges = extraChargesByVisit[visit.id] || []
-      const visitLabourEntries = labourEntriesByVisit[visit.id] || []
-      const materialReviewRequired =
-        Boolean(visit.materials_review_note?.trim()) ||
-        visitExtraCharges.some((charge) => charge.billable_status === "needs_review")
-      const hoursWorked = Number(visit.hours_worked || 0)
-      const visitLabourHours = visitLabourEntries.reduce(
-        (total, entry) => total + Number(entry.hours_worked || 0),
-        0
-      )
-      const greenwasteBags = Number(visit.greenwaste_bags || 0)
-      const hourlyRate = Number(property?.hourly_rate || 0)
-      const greenwasteRate = Number(property?.greenwaste_rate || 0)
-      const missingProperty = !property?.id
-      const missingInvoiceMethod = !job?.invoice_method
-      const missingLabourRate = hoursWorked > 0 && hourlyRate <= 0
-      const missingGreenwasteRate = greenwasteBags > 0 && greenwasteRate <= 0
-      const costCaptureFlags = getCostCaptureFlags({
-        readyForInvoice: visit.ready_for_invoice,
-        visitHours: hoursWorked,
-        labourCount: visitLabourEntries.length,
-        labourHours: visitLabourHours,
-        materialReviewRequired,
-        materialReviewed: Boolean(visit.cost_capture_reviewed_at),
-        hasWorkNotes: Boolean(visit.work_notes?.trim()),
-        invoiceStatus: normalizedInvoiceStatus,
-        hasXeroInvoice: Boolean(visit.xero_invoice_id || visit.xero_invoice_number),
-      })
-      const miscCharges = visitExtraCharges.filter(
-        (charge) =>
-          charge.item_code === "MISC-REVIEW" ||
-          charge.invoice_status === "review"
-      )
-      const canCalculateTotalPreview =
-        !missingLabourRate && !missingGreenwasteRate
-      const invoiceTotalPreview = canCalculateTotalPreview
-        ? hoursWorked * hourlyRate +
-          greenwasteBags * greenwasteRate +
-          visitExtraCharges.reduce((total, charge) => {
-            return total + getChargeLineTotal(charge)
-          }, 0)
-        : null
-      const actualXeroAmount =
-        visit.invoice_amount !== null && visit.invoice_amount !== undefined
-          ? Number(visit.invoice_amount)
-          : null
-      const xeroAmountDiffers =
-        actualXeroAmount !== null &&
-        Number.isFinite(actualXeroAmount) &&
-        invoiceTotalPreview !== null &&
-        Math.abs(actualXeroAmount - invoiceTotalPreview) > 0.01
-      const stuckProcessing = isStuckProcessing(visit)
-      const neverQueued = isNeverQueued(visit)
-      const hoursMismatch = billedVsCostedHours(visit, costedHoursByJobDate)
-      const hasException =
-        normalizedInvoiceStatus === "error" ||
-        stuckProcessing ||
-        neverQueued ||
-        Boolean(hoursMismatch) ||
-        missingProperty ||
-        missingInvoiceMethod ||
-        missingLabourRate ||
-        missingGreenwasteRate ||
-        costCaptureFlags.missingLabour ||
-        costCaptureFlags.labourMismatch ||
-        costCaptureFlags.missingMaterialReview ||
-        costCaptureFlags.missingWorkNotes ||
-        miscCharges.length > 0 ||
-        xeroAmountDiffers
-
-      if (!hasException) return []
-
-      const propertyLabel = getPropertyLabel(property)
-      const priority = normalizedInvoiceStatus === "error" ? "urgent" : "high"
-      const targetTab =
-        normalizedInvoiceStatus === "error" ? "errors" : "needs_review"
-
-      return [
-        {
-          title: `Invoice exception: ${propertyLabel}`,
-          actionType: "invoice_exception",
-          priority,
-          owner: "VA",
-          dueDate: getActionDueDate(priority === "urgent" ? 0 : 1),
-          propertyId: property?.id || null,
-          scheduledJobId: visit.scheduled_job_id || job?.id || null,
-          sourceRecordType: "visit",
-          sourceRecordId: visit.id,
-          sourceUrl: `/admin/invoices?tab=${targetTab}`,
-          notes: [
-            `Visit: ${formatDate(visit.visit_date || job?.scheduled_date)}`,
-            `Invoice status: ${normalizedInvoiceStatus}`,
-            visit.invoice_error || visit.invoice_error_message
-              ? `Error: ${visit.invoice_error || visit.invoice_error_message}`
-              : null,
-            stuckProcessing
-              ? "Stuck in processing for over an hour — Make never wrote back a Xero invoice."
-              : null,
-            neverQueued
-              ? `Completed ${daysSinceVisit(visit)} days ago but never queued for invoicing — mark ready or exclude.`
-              : null,
-            hoursMismatch
-              ? `Billing/cost mismatch: billing ${hoursMismatch.billed}h but ${hoursMismatch.costed}h logged against the job — reconcile before invoicing.`
-              : null,
-            missingProperty ? "Missing linked property." : null,
-            missingInvoiceMethod ? "Missing invoice method." : null,
-            missingLabourRate ? "Missing hourly labour rate." : null,
-            missingGreenwasteRate ? "Missing greenwaste rate." : null,
-            costCaptureFlags.missingLabour ? "Missing visit labour entries." : null,
-            costCaptureFlags.labourMismatch
-              ? "Visit labour entries do not match visit total hours."
-              : null,
-            costCaptureFlags.missingMaterialReview ? "Missing material review." : null,
-            costCaptureFlags.missingWorkNotes ? "Missing work notes." : null,
-            miscCharges.length > 0
-              ? `${miscCharges.length} misc/review extra charge item(s).`
-              : null,
-            xeroAmountDiffers
-              ? "Actual Xero invoice amount differs from app preview."
-              : null,
-          ]
-            .filter(Boolean)
-            .join("\n"),
-        },
-      ]
-    })
-  )
+  // VA actions clear-out (Tier 1 item 2): invoice exceptions are no longer
+  // mirrored into admin_actions — the warning badges and Needs Review /
+  // Error tabs on this page are the home.
 
   return (
     <div className="mx-auto max-w-7xl p-4 pb-10">

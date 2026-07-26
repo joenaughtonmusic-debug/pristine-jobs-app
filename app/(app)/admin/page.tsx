@@ -4,10 +4,6 @@ import {
   classifyCommunication,
   isClosedCommunication,
 } from "@/lib/communication-classification"
-import {
-  ensureWorkflowAdminActions,
-  getActionDueDate,
-} from "@/lib/admin-actions"
 import { isSubscriptionUnconfirmed } from "@/lib/subscription-billing"
 
 export const dynamic = "force-dynamic"
@@ -299,9 +295,11 @@ export default async function AdminDashboardPage() {
       .eq("active", true),
   ])
 
-  // Build A: subscription properties with no confirmed (or stale) Xero
-  // repeating invoice can bill nothing invisibly. Surface each as a VA action,
-  // and close actions for any that have since been confirmed.
+  // Build A: subscription lines with no confirmed (or stale) Xero repeating
+  // invoice can bill nothing invisibly. The count renders on the card below;
+  // the per-line detail lives on /admin/properties. (VA actions clear-out,
+  // Tier 1 item 2: these are no longer mirrored into admin_actions, and the
+  // old auto-done sweep went with the generator.)
   const subscriptionLines = (subscriptionLinesResult.data ||
     []) as unknown as SubscriptionLineRow[]
   const unconfirmedLines = subscriptionLines.filter((line) =>
@@ -310,51 +308,6 @@ export default async function AdminDashboardPage() {
       subscription_invoice_confirmed_at: line.subscription_invoice_confirmed_at,
     })
   )
-
-  await ensureWorkflowAdminActions(
-    supabase,
-    unconfirmedLines.map((line) => ({
-      title: `Confirm Xero repeating invoice: ${line.properties?.client_name || line.properties?.property_code || "subscription property"}`,
-      actionType: "subscription_billing_unconfirmed",
-      priority: "high" as const,
-      owner: "VA",
-      dueDate: getActionDueDate(1),
-      propertyId: line.property_id,
-      // Per-line identity: the dedup key is the billing line id, so two
-      // subscription lines on one property produce two independent actions
-      // rather than collapsing into one.
-      sourceRecordType: "property_billing_line",
-      sourceRecordId: line.id,
-      sourceUrl: "/admin/properties",
-      notes:
-        "No confirmed (or a >12-month-old) Xero repeating invoice for this " +
-        "subscription line. Confirm the repeating invoice in Xero, then " +
-        "record it on the line so it stops flagging.",
-    }))
-  )
-
-  // Resolve actions for lines that are now confirmed (or no longer subscription)
-  // — the "confirm clears the action" behaviour. Also sweeps any legacy
-  // property-keyed actions (their source_record_id is a property id, never in
-  // the line-id set), migrating the flag cleanly onto per-line actions.
-  const unconfirmedLineIds = new Set(unconfirmedLines.map((line) => line.id))
-  const { data: openSubscriptionActions } = await supabase
-    .from("admin_actions")
-    .select("id, source_record_id")
-    .eq("action_type", "subscription_billing_unconfirmed")
-    .neq("status", "done")
-  const staleActionIds = ((openSubscriptionActions || []) as {
-    id: string
-    source_record_id: string | null
-  }[])
-    .filter((action) => !unconfirmedLineIds.has(action.source_record_id || ""))
-    .map((action) => action.id)
-  if (staleActionIds.length > 0) {
-    await supabase
-      .from("admin_actions")
-      .update({ status: "done" })
-      .in("id", staleActionIds)
-  }
 
   const visitsReadyForInvoice = ((visitsReadyResult.data || []) as VisitCountRow[])
     .filter((visit) => {
@@ -471,7 +424,9 @@ export default async function AdminDashboardPage() {
       stage: "Subscription Billing",
       title: "Confirm subscription customers are billable",
       count: unconfirmedLines.length,
-      href: "/admin/actions",
+      // Clear-out repoint: the per-line confirm control lives on Properties
+      // (the actions board no longer mirrors these).
+      href: "/admin/properties",
       purpose:
         "Subscription customers bill from a Xero repeating invoice the app can't see. Any without a confirmed (or with a stale) one bill nothing until confirmed.",
       nextAction:

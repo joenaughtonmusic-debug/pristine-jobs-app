@@ -1,9 +1,5 @@
 import { createClient } from "@/lib/supabase/server"
 import { AdminQuoteBuilderClient } from "@/components/admin-quote-builder-client"
-import {
-  ensureWorkflowAdminActions,
-  getActionDueDate,
-} from "@/lib/admin-actions"
 
 export const dynamic = "force-dynamic"
 
@@ -191,56 +187,9 @@ export default async function AdminQuotesPage({ searchParams }: Props) {
     .order("created_at", { ascending: false })
     .limit(100)
 
-  if (!quoteDraftsError && quoteDrafts) {
-    await ensureWorkflowAdminActions(
-      supabase,
-      quoteDrafts
-        .filter((draft) => {
-          const accepted = Boolean(draft.quote_accepted_at)
-          const needsFirstJob = !draft.first_scheduled_job_id
-          const needsRecurringInvoice =
-            draft.recurring_invoice_required === true &&
-            draft.recurring_invoice_setup_status !== "completed"
-
-          return accepted && (needsFirstJob || needsRecurringInvoice)
-        })
-        .map((draft) => {
-          const needsFirstJob = !draft.first_scheduled_job_id
-          const needsRecurringInvoice =
-            draft.recurring_invoice_required === true &&
-            draft.recurring_invoice_setup_status !== "completed"
-
-          return {
-            title: `Accepted quote setup: ${
-              draft.customer_name || draft.quote_title || "Quote"
-            }`,
-            actionType: "accepted_quote_setup",
-            priority: "high",
-            owner: "VA",
-            dueDate: getActionDueDate(1),
-            propertyId: draft.property_id || null,
-            scheduledJobId: draft.first_scheduled_job_id || null,
-            sourceRecordType: "quote_draft",
-            sourceRecordId: draft.id,
-            sourceUrl: "/admin/quotes",
-            notes: [
-              draft.quote_title ? `Quote: ${draft.quote_title}` : null,
-              draft.customer_name ? `Customer: ${draft.customer_name}` : null,
-              draft.customer_email ? `Email: ${draft.customer_email}` : null,
-              draft.quote_accepted_at
-                ? `Accepted: ${new Date(draft.quote_accepted_at).toLocaleDateString("en-NZ")}`
-                : null,
-              needsFirstJob ? "Create or confirm first scheduled job." : null,
-              needsRecurringInvoice
-                ? "Set up recurring invoice in Xero/app workflow."
-                : null,
-            ]
-              .filter(Boolean)
-              .join("\n"),
-          }
-        })
-    )
-  }
+  // VA actions clear-out (Tier 1 item 2): accepted-quote setup is no longer
+  // mirrored into admin_actions — the Awaiting First Schedule / Awaiting
+  // Recurring Invoice Setup buckets on this page are the home.
 
   return (
     <AdminQuoteBuilderClient
