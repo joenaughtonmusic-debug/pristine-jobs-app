@@ -97,34 +97,14 @@ and must not duplicate it. Tick items here; git history is the archive.
       data, is it easy + reliable for crew? NOTE: hours are recorded for
       quoted-vs-actual comparison, NOT billing, so it is **not** redundant.
       Do AFTER the VA board clear-out.
-- [ ] **Labour RLS bug — FIX FOUND & VERIFIED (migration only); ready to
-      build once Joe OKs.** Investigated 26 July. The bug: `job_labour_entries`
-      is own-rows-or-admin (041), but the Complete Visit dialog inserts a row
-      per crew member from the COMPLETER's session → any row for someone else
-      is rejected 42501 and the flow aborts partway. FIRED LIVE ONCE: visit
-      5fc4a1f9 (17 Jul, Alex+Graham) — Graham's cost row missing until the
-      21 Jul recon backfill; job sat "scheduled" 2.7 days until an admin
-      completed it by hand.
-      THE FIX: widen BOTH the USING and the WITH CHECK of the single FOR ALL
-      policy to also allow job members (own OR scheduled_job_id IN
-      current_staff_job_ids() OR is_admin) — i.e. mirror the
-      visit_labour_entries policy exactly. Verified on staging as a real
-      crew-role user (row_security_active = t, so genuinely enforced, not
-      owner-bypass): the completer's insert of a teammate's row returns 201.
-      NOTE — a diagnostic rabbit-hole worth remembering: widening the WITH
-      CHECK ALONE is enough for the LIVE APP (supabase-js .insert() with no
-      .select() sends Prefer: return=minimal, no RETURNING), but it FAILS
-      under Prefer: return=representation, because INSERT...RETURNING also
-      requires the new row to pass the SELECT/USING clause — which own-only
-      USING blocks for a teammate's row. So widen USING too: it makes the fix
-      robust if anyone ever chains .select() onto that insert, and matches
-      visit_labour. This also explains why visit_labour never had the bug
-      (its USING is already job-scoped). Ruled out along the way: owner-bypass
-      (row_security_active = t), restrictive policy (none exists), triggers
-      (FK-internal only). Staging was fully restored to original 041; nothing
-      shipped yet. Build = one transactional migration (062), staging + the
-      three-shape acceptance suite (harness must use return=minimal to match
-      the app; also assert return=representation now works), then prod.
+- [x] **Labour RLS bug — SHIPPED (PR #42, migration 062, prod-applied +
+      prod live-fired).** `job_labour_entries` split into per-command policies:
+      SELECT + INSERT widened to job members (`current_staff_job_ids()`),
+      UPDATE/DELETE stay own-or-admin. Fixed the completer inserting a
+      teammate's cost row (fired live 17 Jul, Alex+Graham) AND a silent
+      under-show on `jobs/[id]`. Diagnostic lesson kept in
+      docs/HANDOFF_for_VS_Code_Claude.md rule 2a (return=representation vs the
+      app's return=minimal false-negative).
 - [ ] **Complete-visit retry lockout — separate bug, still open, the part that
       costs money.** Independent of the RLS fix above. When ANY of the 8
       completion writes fails partway (network drop, etc.), the visit row is
@@ -157,17 +137,43 @@ and must not duplicate it. Tick items here; git history is the archive.
       billing ripple + photo-gate/walk-around). Two recs dead (quotes split
       DONE; labour-recon exceptions→actions REVERSED). Refresh when the app
       audit runs.
-- [ ] **Cost Capture page: 1,237 lines, entirely undocumented** — largest page
-      in the app, added the same day as PAGE_AUDIT, never covered by it. The
-      page Joe calls overwhelming. Documentation + simplification candidate.
+- [~] **Cost Capture page: 1,237 lines** — audited (docs/COST_CAPTURE_AUDIT.md,
+      PR #43) and partly fixed: labour cost now reads staff_cost_rates and the
+      fabricating backfill button is gone (PR #44). STILL OPEN: the broader
+      simplification (drop the inline correction forms, fold back-costing into
+      Profitability, leaner read-only "what's not ready to bill" list) — see
+      the audit's "simpler version".
 - [ ] **Quoted-jobs → invoices merge still undone** — the one live PAGE_AUDIT
       recommendation; page and nav entry both remain.
 
 ## TIER 3 — PM / body-corporate set (the sales USP)
+
+### PM issue-report feature (ACTIVE — build order)
+- [x] **1. PM contact table** — SHIPPED (PR #45, migration 063, prod). Shared
+      `property_managers` (one PM → many properties), assigned from the property
+      dialog on rentals. Joe is entering PMs.
+- [~] **2. Report engine** — PR #46 OPEN (migration 064 on STAGING only). PDF
+      (react-pdf) → private `pm-reports` bucket → signed URL → Make; `pm_reports`
+      record; admin API route `POST /api/pm-report {visitId}`. BLOCKED on Joe:
+      new Make scenario (Webhook → HTTP Get a file → Zoho send w/ attachment) +
+      `PM_REPORT_WEBHOOK_URL` in Vercel Production. Then inbox live-fire
+      (acceptance = attachment opens, not a 200) → apply 064 to prod → merge.
+- [ ] **2b. Office review/send UI** — list visits-with-issues awaiting a report,
+      show the issues + PM recipient, "Send" button → calls the API. Review
+      before send (crew free-text goes to a client). No issues → nothing to send.
+- [ ] **3. Walk-around resolve/dismiss lifecycle** (was: "list only grows").
+      DECISIONS LOCKED: four states `open`/`resolved`/`dismissed`/`not_our_job`;
+      property badge counts `open` ONLY; status set from the property dialog
+      only; add `reported_to_pm_at` as a STAMP (set when a report sends), not a
+      state. Zero issues in prod today → greenfield, no backfill. Columns on
+      `job_photos`: issue_status (default 'open' + CHECK, only on photo_type
+      'issue'), issue_status_at, issue_status_by, issue_status_note. Badge +
+      property-dialog list filter to open.
+
+### Other Tier 3
 - [ ] Rental-flagged jobs surface as rentals (trivial now the tag exists)
 - [ ] **PM portal** — upcoming visits, per-property history, downloadable reports.
       BUILD LAST: only external-facing surface; displays what other features generate.
-- [ ] Walk-around issues need a resolve/dismiss lifecycle (list only grows today)
 - [ ] White-label / forwardable PDF reports for landlords
 
 Candidates (pick later, don't fan out): one-tap repair approval with pre-approved

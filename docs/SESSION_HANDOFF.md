@@ -4,158 +4,127 @@ Start here for a clean chat. This file is dateless and OVERWRITTEN each session 
 git history is the archive. The tickable work list lives ONLY in
 `docs/BUILD_QUEUE.md`; this file must not duplicate it.
 
-**NEXT WORK: the communications-page deletion PR — BLOCKED on Joe's inbox
-sweep.** Scope is BLESSED (see "Comms page bin" below). When Joe says the sweep
-is done, build it. After that: BUILD_QUEUE order (labour-recon misc window gap,
-Tier 2).
+**NEXT WORK: the PM issue-report feature (piece 2 shipped as an engine, PR #46).**
+Immediate step is Joe's — set up the Make scenario + `PM_REPORT_WEBHOOK_URL` env
+var (exact steps in PR #46's description). Once that's in: do the **inbox
+live-fire** (acceptance = the PDF attachment opens in the inbox, NOT a webhook
+200), then apply migration **064 to prod**. After that, build **piece 2b** (the
+office review/send UI) and **piece 3** (the walk-around resolve/dismiss lifecycle
++ `reported_to_pm_at`). Decisions for those are locked — see below.
 
 ## Working method
-
-- **Advisory Claude**: plans, decides, keeps the queue, writes briefs. No app code.
+- **Advisory Claude** (chat): plans, decides, keeps the queue, writes briefs.
 - **Claude Code in VS Code**: writes code, runs migrations, reads/writes live +
-  staging DBs, holds Vercel CLI access (authed as joenaughtonmusic-debug).
-- **Joe** is the bridge — pastes briefs, relays results, merges PRs, uploads
-  WordPress plugin zips via wp-admin, works the host control panel.
-- Joe is non-technical. Plain English, define jargon, one clear recommendation.
-  Honest over agreeable.
+  staging DBs, holds Vercel CLI access. This machine has direct psql to both DBs.
+- **Joe** is the bridge: pastes briefs, relays results, merges PRs, sets up
+  Make scenarios, uploads WP zips, works the host panel. Non-technical — plain
+  English, one clear recommendation, honest over agreeable.
 
 ## Rules that hold every time
-
-1. **Anything that leaves the app — email, webhook, Xero — gets ONE live prod
-   fire before it goes in SHIPPED, and the fire must be confirmed at the FAR
-   END (the inbox, Make's History tab), never by a 200 from the webhook.**
-   Earned twice on 26 July: (a) the lead notifier was audited as "exists and
-   works" while its env var was never set in Vercel — it had never once worked
-   in production; (b) even after that fix, "notification succeeded" was still
-   false — **Make returns 200 and queues silently when a scenario is
-   INACTIVE**, so app logs showed success while nothing was delivered (and
-   once activated, the Zoho module had no field mappings and sent blank
-   emails). The first genuinely end-to-end lead notification arrived 26 July
-   evening.
-2. **Investigate before building** — the feature usually part-exists.
-3. **Never trust `scripts/*.sql`** — drifted from live. Query the live DB.
-4. **"Build passes" ≠ works.** Acceptance results with real values. `npx tsc
-   --noEmit` explicitly (Vercel ignores type errors; baseline 19 pre-existing).
-   `npm run lint` broken. No test framework — verify live.
+1. **Anything that leaves the app — email, webhook, Xero — gets ONE live fire,
+   confirmed at the FAR END** (the inbox / Make History), never a 200 from the
+   webhook. Make returns 200 and queues silently even when a scenario is
+   inactive or unmapped.
+2. **"Build passes" / "typecheck passes" ≠ works. AND your test harness can be
+   the thing that's wrong.** Twice this session a verification method gave a
+   false result: (a) an acceptance harness used `Prefer: return=representation`
+   (INSERT…RETURNING, which also checks the SELECT/USING policy) while the app
+   uses `return=minimal` — it falsely condemned a correct RLS fix and nearly
+   sent us to build an unneeded RPC; (b) a UI check ran against a stale `.next`
+   cache. Make the harness match the app's ACTUAL request (verb, `Prefer`,
+   auth role, RLS context). See `docs/HANDOFF_for_VS_Code_Claude.md` rule 2a.
+3. **When testing RLS as a staff role in psql, `postgres` has BYPASSRLS.** Use
+   `SET ROLE authenticated` AND assert `row_security_active('<table>')` is true,
+   or the test silently bypasses the policy you're checking.
+4. **Never trust `scripts/*.sql` as state** — it's intent. Query the live DB.
 5. **Staging first** (Tokyo `yrpkfxmthregprsfkxaf`) → Joe's OK → prod (Mumbai
-   `tblvlffqanqpqhcagcrk`). Schema before code.
-6. **Fail loudly, never silently** — and LOG every rejection with a reason
-   (the WP form dropped customer enquiries silently for weeks; never again).
-7. **Read-only-confirm before any write to real customer data.** The concrete
-   example this rule exists for: a routine mid-July test-row cleanup on the
-   `communications` table got it exactly backwards — it KEPT the 2 test rows
-   and DELETED the ~100 real customer emails (discovered 26 July; the only
-   in-app remnants are excerpts on 103 dismissed admin_actions rows; the
-   source emails survive in the Zoho inbox). Look at what you're about to
-   delete, show it, and wait.
-8. **DB connection strings into the Claude Code window, never chat.** Passwords
-   from Joe each session. Vercel env values: the dashboard is canonical.
-9. Commit/push only on Joe's explicit OK; `git add → commit → push` together.
-10. **State a hypothesis's falsifier before acting on it.** Two wrong cache
-    theories were burned 26 July before the controlled experiment settled it.
+   `tblvlffqanqpqhcagcrk`). Schema before code. Apply scripts live in `scripts/`.
+6. **Fail loudly, never silently.** Prefer a recorded `failed` row / a stop over
+   a fake success. Reconciliation BACKFILLS that silently fix missing rows MASK
+   upstream bugs — surface, don't just correct (learned from the labour RLS bug).
+7. **Read-only-confirm before writing to real customer data.** Self-clean any
+   prod/staging test rows, users, and storage objects.
+8. **DB passwords come from Joe each session, into the Claude Code window, never
+   chat, never committed.** The PROD password was rotated this session — the old
+   string is dead; get the current one from Joe. (Staging pooler string was
+   still valid at session end.)
+9. **Commit/push only on Joe's OK; never to main directly** — branch + PR, Joe
+   merges. `git add → commit → push` together.
+10. **Dual lockfile is live** (package-lock.json + pnpm-lock.yaml). Adding a dep
+    must update BOTH or the Vercel build can fail (Vercel likely uses pnpm). Use
+    `npm install <dep>` then `npx pnpm install --lockfile-only`.
 
 ## Standing decisions / boundaries
+- Xero only via Make.com. Emails/PDFs leave via Make, never the app directly.
+- Google Calendar stays scheduling truth. Billing vocabulary: `charge_up` /
+  `subscription` / `non_billable` only.
+- Labour COST = the `staff_cost_rates` table (single source of truth; the
+  profitability view already joins it). Never hardcode per-name rates again.
+- Walk-around issue = a `job_photos` row, `photo_type='issue'` + `severity`
+  (urgent/soon/cosmetic). The public `job-photos` bucket means issue photos sit
+  on capability URLs (UUID-gated, not enumerable, but permanent+unauth once a
+  URL is known). Generated PM report PDFs therefore go in a PRIVATE bucket with
+  a short-lived signed URL for Make to fetch.
 
-- Xero only via Make.com. Emails queue through Make (or WP wp_mail), never the app.
-- Google Calendar stays scheduling truth. Signals are badges, never admin_actions
-  rows. Manual card advancement only. Voice-to-quote stays a separate app.
-- Billing vocabulary: `charge_up` / `subscription` / `non_billable` only.
+## What shipped this session (all live-verified where noted)
+- **Comms Hub binned** (PR #41): pages, lanes, dashboard card, classification
+  lib removed; `communications` table kept as a frozen archive.
+- **Labour RLS bug fixed** (PR #42, migration 062, prod-applied + prod
+  live-fired): `job_labour_entries` split into per-command policies; SELECT +
+  INSERT widened to job members, UPDATE/DELETE stay own-or-admin. Fixes crew
+  completing paired visits + a silent under-show on `jobs/[id]`.
+- **Cost Capture** (PR #44): labour cost now from `staff_cost_rates` (drift
+  fixed — Fletcher was $43 vs $38, James $39 vs $44); the fabricating "Backfill
+  Missing Labour" button removed (it had created zero prod rows).
+- **PM contact table** (PR #45, migration 063, prod-applied): shared
+  `property_managers` (one PM → many properties), assigned from the property
+  dialog on rentals. Joe is entering PMs now.
+- **PM report engine** (PR #46, OPEN): `@react-pdf/renderer` PDF (address, visit
+  date, our name, each issue photo+note — NO ids/jargon/severity words), stored
+  in a private `pm-reports` bucket, signed URL → Make; `pm_reports` record;
+  admin API route. Migration 064 on STAGING only. Staging-verified except the
+  Make hop + Next-route runtime (both proven by the pending live-fire).
+- **Docs** (PR #43): retry-lockout scoping + Cost Capture audit.
 
-## What shipped this session (26 July, two sittings) — all live-fire verified
-
-- **Tier 1 item 1 — lead notification wiring (PR #36):** all three lead-creation
-  paths notify after-insert; failures log `LEAD_NOTIFY_FAILED lead=<id>`.
-- **Tier 1 item 2 — VA actions clear-out (PR #37 + migration 061):** all six
-  generators cut, board emptied (staging 255 / prod 195 dismissed, zero
-  refill), dashboard subscription card repointed to /admin/properties,
-  lib/admin-actions.ts deleted. Board + Add Action form kept.
-- **Tier 1 item 3 — capture → VA action board (PR #39):** a capture triaged
-  VA Offload (annoying_task) creates an admin_actions row (action_type
-  va_offload, source_record_type "capture", DB-index deduped) AND emails the
-  VA via the Make webhook with to_email = VA_NOTIFICATION_EMAIL
-  (admin@pristinegardens.co.nz — server-only var, in .env.local AND Vercel
-  Production). Live-fired through REAL prod triage (classified high
-  confidence); VA inbox confirmation pending.
-- **WordPress form fix (plugin 0.21.2)** from the first sitting: nonce gate
-  replaced with honeypot + rate limit, every rejection logged.
-- **The notification pipeline actually works now:** Make scenario active, Zoho
-  module mapped ({{1.to_email}}, {{1.subject}}, {{1.body}}, plain text). One
-  scenario serves lead notifications (to Joe) and VA capture notifications
-  (to the VA) via the payload's to_email.
-
-## The Make "Communication: Hub" story (settled 26 July evening)
-
-- Root cause (from Joe's blueprint read): the router's route 2 (AI branch) has
-  NO filter → every email ran two branches → double insert with the same
-  external_id → duplicate-key 409s → Make auto-deactivated 17 July. Fix if
-  ever revived: route 2 as a FALLBACK route (recorded in BUILD_QUEUE, do NOT
-  do — page being binned). All four branches insert a hardcoded user_id.
-- App-side evidence: inserts died ~5 July (last communication-sourced action).
-  The table's ~100 real rows were then purged by the inverted test-row
-  cleanup (see rule 7) — only 2 test rows remain. Both approval lanes
-  (estimates-calendar quote requests, schedule client adjustments) are EMPTY —
-  nothing unactioned. Emails survive in the Zoho inbox.
-
-## Comms page bin — scope BLESSED, sequencing agreed
-
-Delete: both comms pages + both client components, nav entry, dashboard comms
-queries/card, enquiries communication_count + link, the estimates-calendar
-quote-request lane, the schedule client-adjustments strip, and
-lib/communication-classification.ts. Both approval lanes go WITH the page
-(Joe's explicit call: "VA reads inbox, acts directly"). Keep the communications
-TABLE as a frozen archive; Make scenario stays off. Bark/BuildersCrack →
-pipeline via manual add (source "bark" exists; automation later =
-LEAD_CAPTURE_SPEC email-forward). The queued comms-reply env fix is MOOT.
-**Sequence: Joe's inbox sweep (from ~5 July, for Bark + unhandled enquiries)
-FIRST, then the deletion PR** (staging-verified page-by-page — estimates-
-calendar and schedule surgeries touch live surfaces).
-
-## Still broken / open
-
-- `NEXT_PUBLIC_SEND_COMMUNICATION_REPLY_WEBHOOK_URL` absent from Vercel — VA
-  Send Reply never worked in prod. MOOT if the comms page bin proceeds; do
-  nothing until that lands.
-- Local `.env.local` SALES_LEADS_WEBHOOK_SECRET still differs from the
-  canonical Vercel value (accepted; sync from dashboard if ever needed).
-- Notification Link field is a relative path (BUILD_QUEUE, small).
-
-## Access / tooling (this machine)
-
-- psql at `/opt/homebrew/opt/libpq/bin/psql`; php at `/opt/homebrew/bin/php`
-  (used for `php -l` on plugin builds).
-- Vercel CLI via `npx vercel` — authed; project linked (`.vercel/`, gitignored).
-  Runtime log retention is hours — never promise 30-day history.
-  OPENAI_API_KEY is marked SENSITIVE in Vercel — `env pull` redacts it, so
-  staging can't run real capture triage; positive-path tests need a local
-  stub (never committed) and the real path proves out via a prod live fire.
-- Staging run: `set -a; source .env.staging; set +a && npm run dev`.
-- Live UI verification: temp auth user + profiles row (NOTE: prod has a signup
-  trigger that auto-creates profiles as 'staff' — PATCH to admin, don't
-  insert) + forged `sb-<ref>-auth-token` cookie + puppeteer-core in the
-  session scratchpad. Set the cookie domain to the real host. ALWAYS self-clean.
-- Crew-flow RLS landmine: `job_labour_entries` is "own rows or admin" — set the
-  test job's `assigned_staff_id` to the temp staff member.
-- Prod app URL: **https://v0-landscaping-job-app.vercel.app** (Vercel project
-  `pristine-jobs-app`; team-scoped `*-joes-projects-*` aliases are SSO-walled,
-  the primary domain is open). WP form → same-page POST (theme plugin
-  `pristine-home-v2-mockup-v4`, source in ~/Desktop/pristine-wordpress-theme).
-
-## Pending cleanup (ON HOLD until the VA confirms her capture email)
-
-Prod rows, all link-free, one read-only-confirm pass when released: sales_leads
-`b781161e` (ZZTEST Item3 Lead Path) + `464d778e` (ZZTEST Post-Mapping Lead),
-captures `bf1b5cd4` (Kennards/mulch test), admin_actions `d4642452` (its VA
-Offload card — visible on the board, deliberately), auth user + profile for
-item3-verify@example.com. Plus test emails in Joe's and the VA's inboxes.
+## Prod migration state
+Applied to prod: **062** (labour RLS), **063** (property_managers).
+Applied to STAGING only, NOT prod: **064** (pm_reports + private bucket) — goes
+to prod with the PM-report live-fire.
 
 ## Open PRs
+- **#46** — PM report engine. Needs: Joe's Make scenario + `PM_REPORT_WEBHOOK_URL`
+  in Vercel → then inbox live-fire → then 064 to prod → then merge.
 
-#40 (docs: Make root cause, rule-7 example, this handoff) — merge before
-starting the next chat so it reads current docs from main.
+## Locked decisions for the upcoming pieces
+- **Walk-around resolve/dismiss lifecycle (piece 3 / Tier 3):** four states
+  `open` / `resolved` / `dismissed` / `not_our_job`; the property badge counts
+  `open` only; status is set from the property dialog only; add
+  `reported_to_pm_at` as a STAMP (not a state), set when a PM report sends.
+  Zero issues exist in prod today — greenfield, no backfill. Add columns to
+  `job_photos` (issue_status default 'open' + CHECK, issue_status_at/by/note).
+- **PM report:** review-before-send (crew free-text goes to a client); no
+  issues → send nothing; report must read for someone who's never seen the app.
 
-## Non-build track
+## Parked (deliberately)
+- **Retry-lockout transactional RPC** — scoped in `docs/RETRY_LOCKOUT_SCOPING.md`.
+  Do NOT build until a real crew pair completes a paired visit through the app
+  and proves migration 062 works in the wild. Separate from the RLS fix: a
+  partial-write strand from any non-RLS error still trips "already completed" →
+  the job silently never invoices.
+- **Quote conversions per month** — revisit ~Oct 2026 (3+ months of data). Key
+  reports off `proposal_sent_at`, NEVER `status` (see BUILD_QUEUE).
 
-7 verified Auckland PM targets with named decision-makers + outreach templates.
-Live differentiators: photo-proof on rental visits, walk-around report — and
-now a working website lead funnel. Joe makes the PM calls himself. A reply from
-one PM teaches more than another feature.
+## Access / tooling (this machine)
+- psql at `/opt/homebrew/opt/libpq/bin/psql`. Prod ref `tblvlffqanqpqhcagcrk`
+  (Mumbai, aws-1-ap-south-1 pooler); staging ref `yrpkfxmthregprsfkxaf` (Tokyo,
+  aws-0-ap-northeast-1 pooler). Session-pooler strings + passwords from Joe.
+- Run TS/JSX scripts with `npx tsx <file>` (resolves the `@/` alias via
+  tsconfig). `@react-pdf/renderer` is now a dependency.
+- Staging run: `set -a; source .env.staging; set +a && npm run dev` (staging
+  Make webhooks are blanked — it can never email a customer).
+- Live UI verification: temp auth user + `profiles` row (prod signup trigger
+  auto-creates profiles as 'staff' — PATCH to admin, don't insert) + forged
+  `sb-<ref>-auth-token` cookie + puppeteer-core (Chrome at the standard mac
+  path). ALWAYS self-clean. New tables need `NOTIFY pgrst,'reload schema'` (the
+  apply scripts do this) to appear in the REST API.
+- Prod app URL: **https://v0-landscaping-job-app.vercel.app**.
