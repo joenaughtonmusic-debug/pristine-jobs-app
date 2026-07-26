@@ -24,6 +24,18 @@ and must not duplicate it. Tick items here; git history is the archive.
 - [x] **VA actions board clear-out (Tier 1 item 2)** — SHIPPED 26 July, PR #37
       + migration 061 (staging 255 / prod 195 rows dismissed, zero refill).
 
+- [ ] **Make "Communication: Hub" revival fix (recorded, do NOT do — page likely
+      being binned):** the router's route 2 (AI branch, modules 4→5→2) has NO
+      filter, so every email (incl. Bark/BuildersCrack/Cardlink) runs BOTH its
+      own branch and the AI branch → double insert, same external_id →
+      duplicate-key 409s → Make auto-deactivated 17 July. Fix if ever revived:
+      set route 2 as a FALLBACK route in Make (one setting, no code). Note:
+      all four branches insert a hardcoded user_id
+      (5d75a454-7dd8-432e-b7c7-560fddfcac91) — the id the error names.
+- [ ] **Comms-reply env fix (NEXT UP above) is MOOT if the comms page is
+      binned** — don't do it until the bin decision lands.
+
+
 ## RESOLVED 26 July — website lead chain (was TOP PRIORITY; kept for the record)
 - [x] **(a) WordPress form front door — FIXED (plugin 0.21.2, live-verified).**
       Root cause: nginx page cache served >24h-old HTML whose WP nonce always
