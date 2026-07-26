@@ -13,10 +13,12 @@ export default async function AdminPropertiesPage() {
 
   // severity non-null distinguishes walk-around issues from generic photos
   // that crew happened to tag "Issue" on the job page (those have no severity).
+  // Badge counts OPEN issues only (piece 3 decision).
   const { data: issuePhotos } = await supabase
     .from("job_photos")
     .select("property_id, severity")
     .eq("photo_type", "issue")
+    .eq("issue_status", "open")
     .not("severity", "is", null)
     .not("property_id", "is", null)
 
