@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
+import { type StaffCostRate, buildLabourRateLookup } from "@/lib/cost-capture"
 
 export const dynamic = "force-dynamic"
 const DEFAULT_COST_CAPTURE_START_DATE = "2026-06-10"
@@ -45,17 +46,6 @@ function firstOrValue<T>(value: T | T[] | null | undefined) {
 function csvValue(value: string | number | null | undefined) {
   const text = value === null || value === undefined ? "" : String(value)
   return `"${text.replaceAll('"', '""')}"`
-}
-
-function getLabourRate(staffName?: string | null) {
-  const name = String(staffName || "").trim().toLowerCase()
-
-  if (name.includes("fletcher") || name.includes("fletch")) return 43
-  if (name.includes("hugh")) return 39
-  if (name.includes("charles")) return 39
-  if (name.includes("alex")) return 35
-
-  return 39
 }
 
 function getExtraCost(charge: ExtraCharge) {
@@ -136,6 +126,14 @@ export async function GET(request: Request) {
           .in("visit_id", visitIds)
       : { data: [] }
 
+  const { data: staffCostRates } = await supabase
+    .from("staff_cost_rates")
+    .select("staff_name, hourly_cost, active")
+
+  const labourRateFor = buildLabourRateLookup(
+    (staffCostRates || []) as StaffCostRate[]
+  )
+
   const labourByVisit = ((labourEntries || []) as LabourEntry[]).reduce<
     Record<string, LabourEntry[]>
   >((grouped, entry) => {
@@ -174,7 +172,7 @@ export async function GET(request: Request) {
     const hours = Number(visit.hours_worked || 0)
     const labourCost = labour.reduce(
       (total, entry) =>
-        total + Number(entry.hours_worked || 0) * getLabourRate(entry.staff_name),
+        total + Number(entry.hours_worked || 0) * labourRateFor(entry.staff_name),
       0
     )
     const materialCost = extras.reduce(
