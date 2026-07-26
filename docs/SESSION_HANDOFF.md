@@ -44,7 +44,13 @@ broken").
    `tblvlffqanqpqhcagcrk`). Schema before code.
 6. **Fail loudly, never silently** — and LOG every rejection with a reason
    (the WP form dropped customer enquiries silently for weeks; never again).
-7. **Read-only-confirm before any write to real customer data.**
+7. **Read-only-confirm before any write to real customer data.** The concrete
+   example this rule exists for: a routine mid-July test-row cleanup on the
+   `communications` table got it exactly backwards — it KEPT the 2 test rows
+   and DELETED the ~100 real customer emails (discovered 26 July; the only
+   in-app remnants are excerpts on 103 dismissed admin_actions rows; the
+   source emails survive in the Zoho inbox). Look at what you're about to
+   delete, show it, and wait.
 8. **DB connection strings into the Claude Code window, never chat.** Passwords
    from Joe each session. Vercel env values: the dashboard is canonical.
 9. Commit/push only on Joe's explicit OK; `git add → commit → push` together.
