@@ -54,6 +54,10 @@ _(empty)_
 ## Bugs to investigate
 - Completing a visit where the primary worker is someone other than the completer, OR where helpers are added, can fail partway through — `job_labour_entries` RLS is "own rows or admin", so a crew member inserting labour for another staff member hits the wall and completion errors. Pre-existing, in the core complete-visit flow (not the walk-around feature). Affects real multi-person jobs. Investigate before it bites someone live. (Found 2026-07-22 during walk-around staging tests.)
 
+## WordPress theme — untracked deployment record (26 July)
+- The Desktop zips stopped at 0.20.22 (9 July); live runs 0.21.1, uploaded directly (file manager/SFTP), no zip built. The Desktop zips are NOT a reliable deployment record after 9 July — the git repo in ~/Desktop/pristine-wordpress-theme is.
+- What changed between the 0.20.22 zip and current local git source (assumed to match live, UNVERIFIED — the live folder was never downloaded for comparison): one file only, pristine-home-v2.php, ~911 lines across three 14-July commits — two SEO/service pages (Garden Tidy Up Auckland, pre-sale garden clean-up) plus a service-page framework (galleries with admin meta boxes, FAQ/schema/CTA/related-section renderers, SEO title filters). No changes to the enquiry form handler in that window.
+
 ## Parked (deliberately not now)
 - Back-costing / worst-performing-jobs reports (instinct: right pricing + efficient execution = profitability)
 - Crew billable vs non-billable hours reporting
