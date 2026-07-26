@@ -167,6 +167,12 @@ and must not duplicate it. Tick items here; git history is the archive.
       two-step confirm Send; re-send warns with prior date; no-PM-email rows
       warn instead of send. Signed URL TTL now 4h (was 7d). Per-issue exclusion
       deferred to piece 3 by decision. Staging live-verified end-to-end.
+- [ ] **PM report copy amendments** (small, fold into a nearby PR): (a) PDF
+      footer + API contact line show admin@pristinegardens.co.nz (the VA's
+      address) — switch to contact@pristinegardens.co.nz for PM-facing docs;
+      (b) add a human-citable reference number to the report (subject + PDF
+      header) so a PM handling several reports can cite one back to us —
+      pm_reports needs a short unique ref (e.g. PG-2026-0001 style sequence).
 - [ ] **3. Walk-around resolve/dismiss lifecycle** (was: "list only grows").
       DECISIONS LOCKED: four states `open`/`resolved`/`dismissed`/`not_our_job`;
       property badge counts `open` ONLY; status set from the property dialog
@@ -217,9 +223,13 @@ pitches before the app supports them.*
       boundary — this is its own scoping job)
 
 ## TIER 5 — housekeeping
-- [ ] Delete leftover PROD admin user `item3-verify@example.com` (test debris
-      from an earlier session, found 27 July; profile role=admin). Confirm with
-      Joe, then remove the auth user + profile row. Its sessions were revoked.
+- [x] Leftover PROD admin `item3-verify@example.com` — DELETED 27 July (auth
+      user + profile; no other rows referenced it). Full prod auth sweep same
+      day: 8 accounts, no other test accounts. One to confirm with Joe:
+      `pristinegardens006@gmail.com` (role staff, created 25 Apr, NEVER signed
+      in, no staff_members row) — unused; delete or keep deliberately.
+      RULE (recorded in SESSION_HANDOFF): leftover test accounts get deleted,
+      not reused.
 - [ ] Arm branch 5 for Maggie + Sunhill, then ONE parallel run before retiring
       Joe's manual invoice copying. Don't retire the manual copy first.
 - [ ] 9 unconfirmed subscription lines — a VA-in-UI task, NOT a SQL batch

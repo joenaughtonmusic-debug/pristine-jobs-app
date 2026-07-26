@@ -44,7 +44,11 @@ review/send UI is built + staging-live-verified, awaiting merge as **PR #48**.
    a fake success. Reconciliation BACKFILLS that silently fix missing rows MASK
    upstream bugs — surface, don't just correct (learned from the labour RLS bug).
 7. **Read-only-confirm before writing to real customer data.** Self-clean any
-   prod/staging test rows, users, and storage objects.
+   prod/staging test rows, users, and storage objects. **Leftover test accounts
+   from earlier sessions get DELETED, not reused** — an unused admin credential
+   on prod is a risk however convenient it looks (Joe's rule, 27 July); flag it,
+   confirm, delete. Need a temp session for verification? Create a fresh one
+   and clean it, never borrow stale ones.
 8. **DB passwords come from Joe each session, into the Claude Code window, never
    chat, never committed.** The PROD password was rotated this session — the old
    string is dead; get the current one from Joe. (Staging pooler string was
