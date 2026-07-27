@@ -241,15 +241,16 @@ pitches before the app supports them.*
       the visits TABLE directly (ready_for_invoice + status 'ready'), never
       the view. STANDING NOTE: module 48 stamps 'invoiced' with NO invoice
       created — a wrongly subscription-tagged property silently never bills.
-- [ ] **9 unconfirmed subscription lines (bucket 4 of the 28-Jul billing
-      audit — docs/BILLING_AUDIT_20260728.csv)** — VA-in-UI task with Joe's
-      27-Jul test: Xero repeating invoice EXISTS → leave as subscription and
-      tick the confirmation; NONE exists → re-express as a fixed_recurring
-      per-visit line like Maggie's. Members: McDonalds ×4, Powell St, 34B
-      Armadale, 58 Allendale, 747 Remuera, 5 Locarno. 5 Locarno already RULED
-      genuine subscription (repeating invoice, $90/visit × 2 per quarter,
-      nothing unbilled) — leave billing_type, its NULL line amount stays in
-      this task.
+- [x] **Bucket 4 (28-Jul billing audit) — CLOSED 28 July.** Joe confirmed
+      Xero repeating invoices exist for ALL remaining bucket-4 properties
+      (McDonalds ×4, Powell St, 34B Armadale, 58 Allendale, 747 Remuera);
+      with 5 Locarno (ruled earlier: repeating invoice, $90/visit × 2 per
+      quarter) every bucket-4 property is a genuine subscription. None
+      re-expressed as fixed_recurring; no unbilled work found.
+- [ ] **9 unconfirmed subscription lines** — still open as a VA-in-UI task:
+      the NULL billing-line amounts on the bucket-4 properties are a
+      data-completeness item in the app, NOT a billing gap (repeating
+      invoices confirmed 28 July).
 - [x] **Trevor (75 Pah Rd, Howick) — property marked INACTIVE 27 July** (Joe's
       ruling: no work done, none intended; was the audit's only
       active-with-no-billing-line property).
