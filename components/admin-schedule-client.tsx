@@ -122,6 +122,7 @@ admin_note?: string | null
   address_line_1: string | null
   suburb: string | null
   property_category: string | null
+  is_rental?: boolean | null
   client_email?: string | null
   phone?: string | null
 scheduling_notes?: string | null
@@ -1371,6 +1372,12 @@ const handleSendClientEmail = async () => {
               {getCrewSize(job) > 1
                 ? ` · ${job.planned_duration_hours} labour-hours`
                 : ""}
+            </span>
+          )}
+
+          {job.properties?.is_rental && (
+            <span className="rounded-full bg-amber-200 px-2 py-0.5 font-semibold text-amber-900">
+              Rental
             </span>
           )}
 

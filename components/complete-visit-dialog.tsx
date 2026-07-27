@@ -377,10 +377,20 @@ if (existingVisit) {
     // a ready visit so it can't become its own per-visit invoice.
     const readyInvoiceStatus = await readyInvoiceStatusForJob(supabase, jobId)
 
+    // The completer = the authenticated user submitting this dialog. Their
+    // profiles.id is what completed_by_staff_id references (see visitPayload).
+    const { data: completerData } = await supabase.auth.getUser()
+    const completerId = completerData?.user?.id ?? null
+
     const visitPayload = {
       scheduled_job_id: jobId,
       property_id: propertyId,
       visit_date: visitDate,
+      // Who completed the visit = the logged-in user who submitted this dialog.
+      // NB: completed_by_staff_id FKs to profiles(id) (the auth/profile id),
+      // NOT staff_members.id — the column name is misleading. Verified on the
+      // live DB. Going forward only; historic rows are not backfilled.
+      completed_by_staff_id: completerId,
       hours_worked: labourEntryTotal,
       greenwaste_bags: parseInt(greenwasteBags) || 0,
       work_notes: workNotes.trim() || null,
