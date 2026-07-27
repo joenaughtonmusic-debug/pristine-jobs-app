@@ -4,136 +4,107 @@ Start here for a clean chat. This file is dateless and OVERWRITTEN each session 
 git history is the archive. The tickable work list lives ONLY in
 `docs/BUILD_QUEUE.md`; this file must not duplicate it.
 
-**NEXT WORK: piece 3 of the PM issue-report feature** — the walk-around
-resolve/dismiss lifecycle + `reported_to_pm_at` stamp. Decisions are locked (see
-below). Pieces 2 and 2b are DONE: engine merged (#46), 064 applied to prod, the
-Make scenario is live (built-in Email/SMTP module — the Zoho Mail module has no
-attachments field), `PM_REPORT_WEBHOOK_URL` is in Vercel Production, and BOTH
-live-fires were confirmed at the inbox (staging engine → Make → PDF opened;
-prod through the deployed Vercel route → PDF opened, photos render). The 2b
-review/send UI is built + staging-live-verified, awaiting merge as **PR #48**.
+**NEXT WORK: finish the invoice-pipe cleanup, in this order.**
+1. Joe eyeballs the two visit-date lists (8 extreme + 4 no-labour rows — in
+   BUILD_QUEUE's repair item) → run `scripts/repair_visit_dates_20260727.sql`
+   (ID-keyed, guarded, 108 rows).
+2. Queue-view fix for the Sunhill router gap: expose
+   `scheduled_jobs.invoice_method` in `v_invoice_queue` (migration), Joe updates
+   the Make router condition, then reset + requeue the SH15 visit.
+3. Joe closes the parallel-run comparison (INV-2409 vs manual Maggie invoice)
+   and the INV-2352 deleted-search.
+Then: PM report copy amendments (contact@ footer + citable ref number), extras
+flow for fixed-price invoices, and the rest of BUILD_QUEUE in tier order.
 
 ## Working method
 - **Advisory Claude** (chat): plans, decides, keeps the queue, writes briefs.
 - **Claude Code in VS Code**: writes code, runs migrations, reads/writes live +
-  staging DBs, holds Vercel CLI access. This machine has direct psql to both DBs.
-- **Joe** is the bridge: pastes briefs, relays results, merges PRs, sets up
-  Make scenarios, uploads WP zips, works the host panel. Non-technical — plain
+  staging DBs, holds Vercel CLI access. Direct psql to both DBs.
+- **Joe** is the bridge: merges PRs, works the Make/Xero/host panels. Plain
   English, one clear recommendation, honest over agreeable.
 
 ## Rules that hold every time
-1. **Anything that leaves the app — email, webhook, Xero — gets ONE live fire,
-   confirmed at the FAR END** (the inbox / Make History), never a 200 from the
-   webhook. Make returns 200 and queues silently even when a scenario is
-   inactive or unmapped.
-2. **"Build passes" / "typecheck passes" ≠ works. AND your test harness can be
-   the thing that's wrong.** Twice this session a verification method gave a
-   false result: (a) an acceptance harness used `Prefer: return=representation`
-   (INSERT…RETURNING, which also checks the SELECT/USING policy) while the app
-   uses `return=minimal` — it falsely condemned a correct RLS fix and nearly
-   sent us to build an unneeded RPC; (b) a UI check ran against a stale `.next`
-   cache. Make the harness match the app's ACTUAL request (verb, `Prefer`,
-   auth role, RLS context). See `docs/HANDOFF_for_VS_Code_Claude.md` rule 2a.
-3. **When testing RLS as a staff role in psql, `postgres` has BYPASSRLS.** Use
-   `SET ROLE authenticated` AND assert `row_security_active('<table>')` is true,
-   or the test silently bypasses the policy you're checking.
-4. **Never trust `scripts/*.sql` as state** — it's intent. Query the live DB.
+1. **Anything that leaves the app gets ONE live fire, confirmed at the FAR END —
+   and "arrived" is not "right": check every field against ground truth the
+   operator knows first-hand.** The visit-date corruption rode ~90 real invoices
+   for 3 weeks because nobody compared the printed date to a known service date.
+   Parallel-run any pipe that WRITES BACK into the app, not just outbound ones.
+2. **"Build passes" ≠ works, and your test harness can be the thing that's
+   wrong.** Match the harness to the app's ACTUAL request (verb, `Prefer`, auth
+   role, RLS context). See `docs/HANDOFF_for_VS_Code_Claude.md` rule 2a.
+3. **Testing RLS in psql: `postgres` has BYPASSRLS** — `SET ROLE authenticated`
+   AND assert `row_security_active()`.
+4. **Never trust `scripts/*.sql` as state** — query the live DB. (Bit us again
+   27 July: the work_type CHECK existed only in the live DB.)
 5. **Staging first** (Tokyo `yrpkfxmthregprsfkxaf`) → Joe's OK → prod (Mumbai
-   `tblvlffqanqpqhcagcrk`). Schema before code. Apply scripts live in `scripts/`.
-6. **Fail loudly, never silently.** Prefer a recorded `failed` row / a stop over
-   a fake success. Reconciliation BACKFILLS that silently fix missing rows MASK
-   upstream bugs — surface, don't just correct (learned from the labour RLS bug).
-7. **Read-only-confirm before writing to real customer data.** Self-clean any
-   prod/staging test rows, users, and storage objects. **Leftover test accounts
-   from earlier sessions get DELETED, not reused** — an unused admin credential
-   on prod is a risk however convenient it looks (Joe's rule, 27 July); flag it,
-   confirm, delete. Need a temp session for verification? Create a fresh one
-   and clean it, never borrow stale ones.
+   `tblvlffqanqpqhcagcrk`). Schema before code.
+6. **Fail loudly, never silently.** Surface, don't silently correct.
+7. **Read-only-confirm before writing to real customer data; self-clean all test
+   artifacts. Leftover test accounts get DELETED, not reused** — flag, confirm,
+   delete; make fresh temp sessions and clean them (Joe's rule, 27 July, after a
+   stale prod admin got borrowed for a live-fire).
 8. **DB passwords come from Joe each session, into the Claude Code window, never
-   chat, never committed.** The PROD password was rotated this session — the old
-   string is dead; get the current one from Joe. (Staging pooler string was
-   still valid at session end.)
-9. **Commit/push only on Joe's OK; never to main directly** — branch + PR, Joe
-   merges. `git add → commit → push` together.
-10. **Dual lockfile is live** (package-lock.json + pnpm-lock.yaml). Adding a dep
-    must update BOTH or the Vercel build can fail (Vercel likely uses pnpm). Use
-    `npm install <dep>` then `npx pnpm install --lockfile-only`.
+   chat, never committed — and NEVER echo a secret back in reply text, even
+   inside a command block.** Give commands with placeholders and "paste from
+   your notes". (A prod password got echoed 27 July → forced rotation. Both
+   prod and staging strings were re-issued that session; get current ones from
+   Joe.)
+9. **Commit/push only on Joe's OK; never to main directly** — branch + PR.
+10. **Dual lockfile** — `npm install <dep>` then `npx pnpm install --lockfile-only`.
+11. **Make blueprint imports reset scenario schedules** (hourly → 9-hourly seen
+    live). Post-import checklist: schedule interval, webhook binding, connection
+    warnings, on/off state, then Run-once on a known row.
+12. **Make's Supabase upserts can't simply drop NOT NULL/no-default columns**
+    (Postgres checks NOT NULL on the proposed insert row BEFORE conflict
+    resolution). The house pattern for Make→visits writes is raw PATCH via
+    makeAnApiCall with only the changed fields.
+
+## State of the world (27 July, end of session)
+- **PM issue-report feature COMPLETE** (pieces 1, 2, 2b, 3 all merged: PRs #45,
+  #46, #48, #49). Crew logs issues → office reviews/edits at /admin/pm-reports →
+  send → PM gets PDF (private bucket, 4h signed URL, via Make Email/SMTP from
+  contact@) → issues stamped reported_to_pm_at; lifecycle statuses set from the
+  property dialog only; everything filters to `open`.
+- **Prod migrations applied: 062–066** (labour RLS; property_managers;
+  pm_reports+bucket; issue lifecycle; work_type lawn_mowing).
+- **Invoice pipe (Make → Xero): LIVE and real since ~7 July** (drafts INV-2367 →
+  INV-2409, several paid). 27 July: all 12 visits-writing modules across
+  "Pristine App to Xero Invoice", "Invoice: Status Paid/Sent", "Xero: Update App
+  Invoices" converted to raw PATCH (blueprint JSON edits, re-imported). The
+  visit_date −1/touch corruption is stopped at source but **historic damage is
+  unrepaired until the staged repair runs** (see NEXT WORK; the
+  inference-over-controlled-test caveat is recorded in BUILD_QUEUE).
+- **Queue hygiene:** 21 stranded 'processing' visits flushed to 'excluded' 27
+  July (Joe verified all were manually invoiced — stale status, not lost money).
+  v_invoice_queue is currently honest.
+- **Parallel run in flight:** see BUILD_QUEUE Tier 5 item for full state.
+- **Fresh session needs:** prod + staging pooler strings from Joe (both
+  re-issued 27 July after the rotation).
 
 ## Standing decisions / boundaries
-- Xero only via Make.com. Emails/PDFs leave via Make, never the app directly.
-- Google Calendar stays scheduling truth. Billing vocabulary: `charge_up` /
-  `subscription` / `non_billable` only.
-- Labour COST = the `staff_cost_rates` table (single source of truth; the
-  profitability view already joins it). Never hardcode per-name rates again.
-- Walk-around issue = a `job_photos` row, `photo_type='issue'` + `severity`
-  (urgent/soon/cosmetic). The public `job-photos` bucket means issue photos sit
-  on capability URLs (UUID-gated, not enumerable, but permanent+unauth once a
-  URL is known). Generated PM report PDFs therefore go in a PRIVATE bucket with
-  a short-lived signed URL for Make to fetch.
-
-## What shipped this session (all live-verified where noted)
-- **Comms Hub binned** (PR #41): pages, lanes, dashboard card, classification
-  lib removed; `communications` table kept as a frozen archive.
-- **Labour RLS bug fixed** (PR #42, migration 062, prod-applied + prod
-  live-fired): `job_labour_entries` split into per-command policies; SELECT +
-  INSERT widened to job members, UPDATE/DELETE stay own-or-admin. Fixes crew
-  completing paired visits + a silent under-show on `jobs/[id]`.
-- **Cost Capture** (PR #44): labour cost now from `staff_cost_rates` (drift
-  fixed — Fletcher was $43 vs $38, James $39 vs $44); the fabricating "Backfill
-  Missing Labour" button removed (it had created zero prod rows).
-- **PM contact table** (PR #45, migration 063, prod-applied): shared
-  `property_managers` (one PM → many properties), assigned from the property
-  dialog on rentals. Joe is entering PMs now.
-- **PM report engine** (PR #46, MERGED): `@react-pdf/renderer` PDF (address,
-  visit date, our name, each issue photo+note — NO ids/jargon/severity words),
-  stored in a private `pm-reports` bucket, signed URL → Make; `pm_reports`
-  record; admin API route. Make hop + Vercel runtime both live-fired and
-  confirmed at the inbox.
-- **PM report review/send UI, piece 2b** (PR #48, OPEN): `/admin/pm-reports` —
-  To send queue + Sent section, per-issue editable notes (job_photos.caption;
-  engine reads fresh at send = the review step), two-step confirm send, re-send
-  warning, no-PM-email warning, failed sends surfaced. Signed URL TTL 7d → 4h.
-  Staging-live-verified incl. admin caption-edit RLS through the real UI.
-- **Docs** (PR #43): retry-lockout scoping + Cost Capture audit.
-
-## Prod migration state
-Applied to prod: **062** (labour RLS), **063** (property_managers), **064**
-(pm_reports + private bucket — applied 27 July, post-checks passed).
-
-## Open PRs
-- **#48** — PM report review/send UI (piece 2b). Fully verified; just needs
-  Joe's merge. Also carries the 4h signed-URL TTL and this docs refresh.
-
-## Locked decisions for the upcoming pieces
-- **Walk-around resolve/dismiss lifecycle (piece 3 / Tier 3):** four states
-  `open` / `resolved` / `dismissed` / `not_our_job`; the property badge counts
-  `open` only; status is set from the property dialog only; add
-  `reported_to_pm_at` as a STAMP (not a state), set when a PM report sends.
-  Zero issues exist in prod today — greenfield, no backfill. Add columns to
-  `job_photos` (issue_status default 'open' + CHECK, issue_status_at/by/note).
-- **PM report:** review-before-send (crew free-text goes to a client); no
-  issues → send nothing; report must read for someone who's never seen the app.
+- Xero only via Make. Emails/PDFs leave via Make, never the app directly.
+- Google Calendar stays scheduling truth. Billing vocabulary: charge_up /
+  subscription / non_billable — plus `fixed_recurring` per-visit lines (live on
+  property_billing_lines AND scheduled_jobs.invoice_method; the line-items view
+  has a fixed_recurring branch emitting 1 × fixed_visit_amount).
+- Labour COST = staff_cost_rates only.
+- Maintenance = price per visit with a frequency, never a converted monthly sub.
 
 ## Parked (deliberately)
-- **Retry-lockout transactional RPC** — scoped in `docs/RETRY_LOCKOUT_SCOPING.md`.
-  Do NOT build until a real crew pair completes a paired visit through the app
-  and proves migration 062 works in the wild. Separate from the RLS fix: a
-  partial-write strand from any non-RLS error still trips "already completed" →
-  the job silently never invoices.
-- **Quote conversions per month** — revisit ~Oct 2026 (3+ months of data). Key
-  reports off `proposal_sent_at`, NEVER `status` (see BUILD_QUEUE).
+- **Retry-lockout transactional RPC** — scoped in docs/RETRY_LOCKOUT_SCOPING.md;
+  wait for a real crew pair to prove 062 in the wild.
+- **Quote conversions per month** — revisit ~Oct 2026; key off
+  `proposal_sent_at`, never `status`.
+- **pristinegardens006@gmail.com** (staff role, never signed in, no staff row) —
+  Joe to rule delete-or-keep.
 
 ## Access / tooling (this machine)
-- psql at `/opt/homebrew/opt/libpq/bin/psql`. Prod ref `tblvlffqanqpqhcagcrk`
-  (Mumbai, aws-1-ap-south-1 pooler); staging ref `yrpkfxmthregprsfkxaf` (Tokyo,
-  aws-0-ap-northeast-1 pooler). Session-pooler strings + passwords from Joe.
-- Run TS/JSX scripts with `npx tsx <file>` (resolves the `@/` alias via
-  tsconfig). `@react-pdf/renderer` is now a dependency.
+- psql at `/opt/homebrew/opt/libpq/bin/psql`; session-pooler strings + passwords
+  from Joe each session. Two projects: prod `tblvlffqanqpqhcagcrk` (Mumbai),
+  staging `yrpkfxmthregprsfkxaf` (Tokyo).
+- `npx tsc --noEmit` explicitly (build ignores type errors). `npm run lint`
+  broken. Run TS scripts with `npx tsx`.
 - Staging run: `set -a; source .env.staging; set +a && npm run dev` (staging
-  Make webhooks are blanked — it can never email a customer).
-- Live UI verification: temp auth user + `profiles` row (prod signup trigger
-  auto-creates profiles as 'staff' — PATCH to admin, don't insert) + forged
-  `sb-<ref>-auth-token` cookie + puppeteer-core (Chrome at the standard mac
-  path). ALWAYS self-clean. New tables need `NOTIFY pgrst,'reload schema'` (the
-  apply scripts do this) to appear in the REST API.
+  Make webhooks blanked). Live UI verification: fresh temp auth user +
+  puppeteer-core (Chrome at the standard mac path), ALWAYS self-cleaned.
 - Prod app URL: **https://v0-landscaping-job-app.vercel.app**.

@@ -1,0 +1,132 @@
+-- visit_date repair: 108 Make-shifted rows, anchored to crew labour dates.
+-- ID-keyed with a before-value guard: a row whose visit_date changed since
+-- preview is SKIPPED, not overwritten. Excludes: 8 extreme-drift rows and
+-- 4 no-labour rows (Joe eyeballs those separately), 1 already-correct canary.
+begin;
+with repair(id, expected_before, new_date) as (values
+('485de17d-fd7d-44dd-bf8e-aa8e833d210b'::uuid,'2026-05-18'::date,'2026-05-21'::date),
+('6886ba15-302b-4bbb-9f8a-bbd3f53ca239'::uuid,'2026-05-11'::date,'2026-05-12'::date),
+('262f24da-2371-4524-8ea2-9f9bcbce4956'::uuid,'2026-06-13'::date,'2026-06-15'::date),
+('2102056e-7045-4202-b383-be73a0b13f6d'::uuid,'2026-05-18'::date,'2026-05-19'::date),
+('ad45d841-8f0b-44d4-bdb8-3612ffcd2173'::uuid,'2026-05-18'::date,'2026-06-05'::date),
+('0005ffbc-db6b-4d04-be40-863580293457'::uuid,'2026-06-09'::date,'2026-06-11'::date),
+('3f137f51-b375-45fe-b460-1fd36ec2f09a'::uuid,'2026-04-23'::date,'2026-04-24'::date),
+('dbfe067f-99f0-41fd-8330-5b3d90e1228e'::uuid,'2026-04-25'::date,'2026-04-26'::date),
+('e1038c83-45e7-48fb-924d-6d8ef897b943'::uuid,'2026-04-25'::date,'2026-04-26'::date),
+('ab510d9b-2eb0-4042-9660-a6fe4684ed06'::uuid,'2026-06-14'::date,'2026-06-22'::date),
+('62390818-aaa3-4708-a491-8e8de087084d'::uuid,'2026-04-25'::date,'2026-04-26'::date),
+('2ab6d3b5-7ced-40da-b72d-952a7c9cb175'::uuid,'2026-04-25'::date,'2026-04-26'::date),
+('cba7f7c7-2aae-4ff1-a5ef-59be013498d8'::uuid,'2026-05-08'::date,'2026-05-28'::date),
+('5037c4a4-d859-48e9-bd59-02a2a162de42'::uuid,'2026-05-24'::date,'2026-06-04'::date),
+('9fdf7c43-ff4e-44ca-ba2d-1b40ca04fd69'::uuid,'2026-05-22'::date,'2026-06-02'::date),
+('3344dbed-3b7f-4c4b-8a22-dc8a130246d0'::uuid,'2026-04-25'::date,'2026-04-26'::date),
+('c33ed522-43f1-4a90-82b7-dacafba6188f'::uuid,'2026-05-11'::date,'2026-05-13'::date),
+('e22fd8c8-2c57-47ad-bbda-f5d23f3480d4'::uuid,'2026-05-21'::date,'2026-05-28'::date),
+('0cdf16ea-86ba-406a-b1a7-ec2f7abe0926'::uuid,'2026-06-02'::date,'2026-06-03'::date),
+('a55567bf-93d0-4f92-9029-eecb1d299dcf'::uuid,'2026-05-13'::date,'2026-06-05'::date),
+('67cd6e0b-adf9-4b39-a598-6e755339a42a'::uuid,'2026-04-27'::date,'2026-04-28'::date),
+('57a86bae-da7e-418d-8986-a99d0ab7af5e'::uuid,'2026-04-25'::date,'2026-04-26'::date),
+('759bc3b1-e157-42ea-a583-739949fe7015'::uuid,'2026-05-28'::date,'2026-05-29'::date),
+('50f488d2-d71c-4c69-a212-0c73856a0e28'::uuid,'2026-05-06'::date,'2026-05-07'::date),
+('b5e97804-d61c-4a71-a3ae-fd7458ce2176'::uuid,'2026-05-17'::date,'2026-06-02'::date),
+('dcddceb5-65cd-4b41-b400-63419c893843'::uuid,'2026-05-13'::date,'2026-05-14'::date),
+('a270487b-9246-4cf7-8064-bd4b941f77ad'::uuid,'2026-06-20'::date,'2026-06-22'::date),
+('001bce02-b305-4717-b6d7-17b892f496b1'::uuid,'2026-06-02'::date,'2026-06-10'::date),
+('3d226ad6-3c2c-4474-ae45-ff1b601f06c7'::uuid,'2026-06-20'::date,'2026-06-22'::date),
+('297c2dbe-eefa-4ee5-8189-cf6a96855006'::uuid,'2026-04-25'::date,'2026-04-26'::date),
+('fb9f87ec-2b58-4bdf-bb5a-1053dc65add3'::uuid,'2026-04-25'::date,'2026-04-26'::date),
+('faa2447f-0303-4e7e-9571-a742b7a4f892'::uuid,'2026-04-27'::date,'2026-04-28'::date),
+('51cc9bb3-9bb9-4d40-b202-2550a50a8e50'::uuid,'2026-06-03'::date,'2026-06-11'::date),
+('5d104836-f852-42d2-8472-e88a5a8411d4'::uuid,'2026-05-10'::date,'2026-05-11'::date),
+('c9c6bd5c-7c69-4aa3-8de5-4e3b0eb666a0'::uuid,'2026-04-29'::date,'2026-04-30'::date),
+('93826499-5b1e-4621-af28-f8e2f932a370'::uuid,'2026-05-04'::date,'2026-05-05'::date),
+('a80add55-6ee2-4499-a468-1302310c1dd9'::uuid,'2026-05-10'::date,'2026-05-11'::date),
+('eb0937aa-97d0-42dc-9483-4c7bf4308e22'::uuid,'2026-06-05'::date,'2026-06-10'::date),
+('d84ff997-bb3d-4639-ad50-0ff39185ea78'::uuid,'2026-05-05'::date,'2026-05-07'::date),
+('a729b150-878b-494a-8df4-407a0ded2c10'::uuid,'2026-04-18'::date,'2026-04-28'::date),
+('57ad428e-31e7-4f28-bae6-32d0ff923843'::uuid,'2026-05-09'::date,'2026-05-19'::date),
+('4e1a7edd-039b-47fb-840a-55da0508fb99'::uuid,'2026-05-22'::date,'2026-05-27'::date),
+('10422eee-7556-4a54-8f85-7bc4249da4ad'::uuid,'2026-06-13'::date,'2026-06-19'::date),
+('1dc617d3-c2d9-48df-acc1-1ae78f57b32e'::uuid,'2026-06-13'::date,'2026-06-15'::date),
+('3900d580-af83-432f-a746-d02a7febcb5a'::uuid,'2026-06-10'::date,'2026-06-11'::date),
+('fe83b20e-50cf-46cb-ae24-69d43e0dbb8a'::uuid,'2026-06-09'::date,'2026-06-12'::date),
+('3ab10ef9-0673-4c21-9b63-accfa7014cdd'::uuid,'2026-05-07'::date,'2026-06-02'::date),
+('dd8500be-328a-4158-91c1-5d1a35610d6e'::uuid,'2026-06-04'::date,'2026-06-05'::date),
+('b36ad95e-5b7e-43c8-b159-aa8f527a55d7'::uuid,'2026-06-07'::date,'2026-06-11'::date),
+('74a43b5b-13b6-4d3b-b602-7432a2fa2758'::uuid,'2026-06-11'::date,'2026-06-12'::date),
+('4647125d-c9a4-4b8b-8750-a1d7156063b4'::uuid,'2026-05-25'::date,'2026-06-04'::date),
+('18c23e83-9c52-4100-a71f-a9ce0e2b4b98'::uuid,'2026-06-19'::date,'2026-06-22'::date),
+('712d81de-f25d-40e5-93bc-a51407d86fb2'::uuid,'2026-06-09'::date,'2026-06-11'::date),
+('8b7a01f3-3fe7-464e-827e-64fcb6e62191'::uuid,'2026-06-01'::date,'2026-06-04'::date),
+('43d509a0-a091-4332-aa92-b22455ba9269'::uuid,'2026-06-02'::date,'2026-06-07'::date),
+('d9f86cf9-febe-4b77-abdb-a551ec4324e7'::uuid,'2026-06-18'::date,'2026-06-19'::date),
+('1450b0c8-94d6-47c0-8ec3-3dafba1132ca'::uuid,'2026-06-16'::date,'2026-06-18'::date),
+('152972b6-2f20-4ff9-b8ec-77fcf41fb9f1'::uuid,'2026-06-18'::date,'2026-06-19'::date),
+('71b36feb-9e99-4e8c-b756-626bb9246aff'::uuid,'2026-06-09'::date,'2026-06-16'::date),
+('7df98556-2ab1-4497-8bb3-88e9765f460f'::uuid,'2026-06-02'::date,'2026-06-10'::date),
+('2ce09814-c6d2-43fd-bc3e-67c645295f3c'::uuid,'2026-07-01'::date,'2026-07-03'::date),
+('708df22e-777c-48e7-92f1-d9a1bc578f5e'::uuid,'2026-07-16'::date,'2026-07-17'::date),
+('1270546f-537d-497b-82db-b6ab85973d6e'::uuid,'2026-07-07'::date,'2026-07-08'::date),
+('c50b6e85-5338-4364-a6d8-0efd7cb487c0'::uuid,'2026-07-20'::date,'2026-07-22'::date),
+('c7aa7199-a517-4772-b197-a09bcab78eb7'::uuid,'2026-07-14'::date,'2026-07-16'::date),
+('9f1e8d79-143d-48e8-bf78-046bd78746e0'::uuid,'2026-07-16'::date,'2026-07-17'::date),
+('21e3048d-af28-46d1-942c-92925de0d4ed'::uuid,'2026-06-22'::date,'2026-06-25'::date),
+('b6029644-2ba9-42c2-8d25-2be1fac3648e'::uuid,'2026-07-08'::date,'2026-07-09'::date),
+('e8bc9025-095a-412f-a5e2-c89b384d1d78'::uuid,'2026-07-07'::date,'2026-07-09'::date),
+('1ac8db9e-7b6a-4f7f-9f45-a6f1fb07d03c'::uuid,'2026-07-26'::date,'2026-07-27'::date),
+('5ea0f1b9-061e-46e5-afb5-0b3cb5ee74ab'::uuid,'2026-07-12'::date,'2026-07-14'::date),
+('a8ebde04-91e1-4fd4-be67-90658e722375'::uuid,'2026-06-23'::date,'2026-06-25'::date),
+('57ed17f5-5bf6-408f-a7c5-e0fd31588c75'::uuid,'2026-07-04'::date,'2026-07-06'::date),
+('3a548fde-081f-4d62-8c44-db0e6ecd7a34'::uuid,'2026-06-27'::date,'2026-06-29'::date),
+('c7f40ff2-e23a-418d-be25-7d019f643607'::uuid,'2026-07-15'::date,'2026-07-16'::date),
+('24f050d6-914f-4f6a-bde1-e3291d71fa60'::uuid,'2026-06-30'::date,'2026-07-02'::date),
+('3c62db54-95bf-4238-9513-eefa62eaf6ab'::uuid,'2026-07-15'::date,'2026-07-17'::date),
+('a84a9b2c-0b79-49a4-a467-ea01dbdceb3c'::uuid,'2026-06-24'::date,'2026-06-26'::date),
+('1abbf97b-bf2d-4cd4-b014-cdc87fda595f'::uuid,'2026-07-06'::date,'2026-07-07'::date),
+('e350702a-967f-409f-a379-4186022c3cea'::uuid,'2026-06-23'::date,'2026-06-25'::date),
+('741304d0-d943-4c1e-9e38-6664149c9242'::uuid,'2026-07-15'::date,'2026-07-16'::date),
+('fa109b5f-5458-42d4-8113-887b7b030d94'::uuid,'2026-06-10'::date,'2026-06-11'::date),
+('b3e1969b-8613-4951-b0a1-8bc7d915851a'::uuid,'2026-06-02'::date,'2026-06-03'::date),
+('7ab4ef28-5a19-4bed-92de-a9d163fabbe2'::uuid,'2026-06-29'::date,'2026-06-30'::date),
+('2420a600-9d23-4d8d-b8eb-8556ff210f05'::uuid,'2026-05-05'::date,'2026-05-06'::date),
+('e4d7a066-9302-44b2-b4d3-cb9a87d5921f'::uuid,'2026-05-14'::date,'2026-05-31'::date),
+('db4df960-7595-4d6c-b62d-d7b37df53153'::uuid,'2026-06-29'::date,'2026-06-30'::date),
+('b05dffd8-e360-4ba5-93b7-093ff46886d5'::uuid,'2026-06-24'::date,'2026-06-26'::date),
+('96ac0617-258c-4ef5-ad1d-82c455e91c85'::uuid,'2026-07-02'::date,'2026-07-04'::date),
+('e848662b-9563-4444-a7ed-c8132850eb79'::uuid,'2026-07-20'::date,'2026-07-21'::date),
+('a416dfcd-b1d6-4b54-aa32-c6cdf0e7d12c'::uuid,'2026-07-07'::date,'2026-07-09'::date),
+('7229cd4b-5c01-4a68-bf45-3cc0d4fba83e'::uuid,'2026-06-15'::date,'2026-06-16'::date),
+('4601998f-ec52-468a-8788-b0a53cb749a4'::uuid,'2026-06-24'::date,'2026-06-25'::date),
+('b9cc4bc1-d5a6-4026-bc40-021e9cfcb20f'::uuid,'2026-06-11'::date,'2026-06-12'::date),
+('d2578ec9-cd4b-40c0-bdc5-3cc7e05127cf'::uuid,'2026-06-17'::date,'2026-06-18'::date),
+('6b6194cb-106f-42fe-9574-4961eb7656af'::uuid,'2026-06-18'::date,'2026-06-19'::date),
+('4d386ab2-f3ed-4a0b-b6d3-e5306820c6a2'::uuid,'2026-06-08'::date,'2026-06-09'::date),
+('ad99a128-114e-42a7-a977-ec147e3161cf'::uuid,'2026-06-15'::date,'2026-06-16'::date),
+('0bf9a845-80f8-4dec-b88a-4a8b59a72a27'::uuid,'2026-06-08'::date,'2026-06-09'::date),
+('ec953652-540c-4d62-8e81-3bcf587a6790'::uuid,'2026-06-09'::date,'2026-06-10'::date),
+('8cd7f6b3-70d4-4d79-9423-a32e11103e32'::uuid,'2026-07-08'::date,'2026-07-09'::date),
+('903ec78a-db95-47aa-bcbe-dc8e05fff822'::uuid,'2026-07-14'::date,'2026-07-15'::date),
+('6d101358-208f-4623-a0de-5c6b94466820'::uuid,'2026-06-25'::date,'2026-06-26'::date),
+('29adb762-4a5f-437d-bb56-bbcd6837395c'::uuid,'2026-06-28'::date,'2026-06-29'::date),
+('e9cef751-a4ef-4033-9ec9-3281b2afc07f'::uuid,'2026-06-28'::date,'2026-06-29'::date),
+('5d1d967b-8298-42aa-9ddf-f776cee706b0'::uuid,'2026-07-08'::date,'2026-07-09'::date),
+('3c27a0a5-e424-4422-83e7-ea82747cfecd'::uuid,'2026-07-08'::date,'2026-07-09'::date),
+('9c6bbe45-ac09-497d-9337-53974587a29e'::uuid,'2026-07-08'::date,'2026-07-09'::date)
+)
+update visits v
+set visit_date = r.new_date
+from repair r
+where v.id = r.id and v.visit_date = r.expected_before;
+-- post-check: count must be 108
+do $$
+declare n int;
+begin
+  select count(*) into n from visits v
+  join job_labour_entries jle on jle.scheduled_job_id = v.scheduled_job_id
+  where (v.invoice_status in ('draft_created','authorised','sent','paid','invoiced')
+         or v.xero_invoice_id is not null
+         or v.invoice_note like 'Flushed stale processing row%')
+    and v.visit_date = jle.work_date;
+  raise notice 'rows now agreeing with labour dates: %', n;
+end $$;
+commit;

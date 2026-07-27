@@ -161,7 +161,7 @@ and must not duplicate it. Tick items here; git history is the archive.
       at the inbox both times: staging engine → Make → PDF opened; prod through
       the deployed Vercel route (proves react-pdf on Vercel) → PDF opened,
       photos render.
-- [~] **2b. Office review/send UI** — BUILT, PR #48 open. `/admin/pm-reports`:
+- [x] **2b. Office review/send UI** — SHIPPED (PR #48 merged 27 July). `/admin/pm-reports`:
       To send queue + Sent section; per-issue editable notes (saved to
       job_photos.caption, engine reads fresh at send = review-before-send);
       two-step confirm Send; re-send warns with prior date; no-PM-email rows
@@ -173,14 +173,16 @@ and must not duplicate it. Tick items here; git history is the archive.
       (b) add a human-citable reference number to the report (subject + PDF
       header) so a PM handling several reports can cite one back to us —
       pm_reports needs a short unique ref (e.g. PG-2026-0001 style sequence).
-- [ ] **3. Walk-around resolve/dismiss lifecycle** (was: "list only grows").
-      DECISIONS LOCKED: four states `open`/`resolved`/`dismissed`/`not_our_job`;
-      property badge counts `open` ONLY; status set from the property dialog
-      only; add `reported_to_pm_at` as a STAMP (set when a report sends), not a
-      state. Zero issues in prod today → greenfield, no backfill. Columns on
-      `job_photos`: issue_status (default 'open' + CHECK, only on photo_type
-      'issue'), issue_status_at, issue_status_by, issue_status_note. Badge +
-      property-dialog list filter to open.
+- [x] **3. Walk-around resolve/dismiss lifecycle** — SHIPPED (PR #49 merged
+      27 July, migrations 065 + 066 on prod). Four states as locked; status set
+      from the property dialog only (select + note + confirm); badge, dialog,
+      PM-reports queue and report engine all filter to `open`;
+      `reported_to_pm_at` stamped on exactly the issues a successful send
+      included (stamp failure surfaces as warning + pm_reports.error, never a
+      fake send-failure). Staging-live-verified end-to-end incl. the PDF
+      containing only open issues. Also in #49: "Lawn mowing" misc work type
+      (066 extends the work_type CHECK — scripts/ didn't show the constraint;
+      live DB did).
 
 ### Other Tier 3
 - [ ] Rental-flagged jobs surface as rentals (trivial now the tag exists)
@@ -230,11 +232,43 @@ pitches before the app supports them.*
       in, no staff_members row) — unused; delete or keep deliberately.
       RULE (recorded in SESSION_HANDOFF): leftover test accounts get deleted,
       not reused.
-- [ ] Arm branch 5 for Maggie + Sunhill, then ONE parallel run before retiring
-      Joe's manual invoice copying. Don't retire the manual copy first.
+- [~] **Maggie + Sunhill fixed-price parallel run — IN FLIGHT (27 July).**
+      Maggie: draft INV-2409 created by the pipe ($149 Lawn mowing) — Joe
+      compares against his manual invoice this cycle, then void one. Sunhill:
+      NO draft — Make's router keyed on properties.billing_type='subscription'
+      and took the mark-`invoiced`-create-nothing branch, though the JOB was
+      fixed_recurring ($84.50). FIX NEEDED: expose scheduled_jobs.invoice_method
+      in v_invoice_queue (small migration) + Joe points the router condition at
+      it; then reset the SH15 visit (stuck at status 'invoiced', no Xero id)
+      and requeue. Two separate services at SH15 — never merge the $84.50 lawn
+      line with the $329.74 garden line. Don't retire the manual copy until a
+      full clean cycle.
 - [ ] 9 unconfirmed subscription lines — a VA-in-UI task, NOT a SQL batch
-- [ ] Xero invoice path has never fired on a real job (only test row INV-2382).
-      Needs one real parallel run before it's trusted.
+- [x] ~~"Xero invoice path has never fired on a real job"~~ — WRONG since at
+      least 7 July: the pipe has created real drafts continuously (INV-2367 →
+      INV-2409, several PAID). Corrected 27 July; Joe had been planning around
+      the stale claim.
+- [ ] **visit_date corruption repair — STAGED, awaiting Joe's eyeball of two
+      small lists.** Make's visits-upserts round-tripped `visit_date` through
+      its timezone handling, shifting it −1 day PER TOUCH (repeat-touching
+      payment watcher → drift up to 26 days; all 121 Make-touched visits
+      affected, 0 untouched ones). Fixed at source 27 July: all 12 modules
+      across 3 scenarios converted to raw-PATCH (only changed fields; pattern
+      from "Xero: Invoice Paid update" module 6) — NOTE this was accepted on
+      inference (121/121 shifted vs 16/16 clean + updated_at matching the run),
+      NOT a controlled single-row test; if the repair ever looks wrong, revisit
+      that assumption first. Repair script: scripts/repair_visit_dates_20260727.sql
+      — 108 rows, ID-keyed, before-value-guarded, anchored to crew labour dates
+      (which equal NZ creation dates on every row — two independent anchors).
+      Excluded for eyeball: 8 extreme rows (before-dates Oct–Dec 2025 — if
+      those were deliberate catch-up invoices for pre-app work, their old dates
+      are REAL and must not be repaired) + 4 no-labour rows (2 are
+      TEST-ALPHA-UI debris — delete not repair; SG21 + SS1 April setup rows).
+- [ ] **TEST-ALPHA-UI property + its 2 visits on PROD** — test debris found
+      27 July; delete per the no-reuse/self-clean rule (check FKs first).
+- [ ] **INV-2352 (Maggie 29-Jun, $184) — still unresolved.** App says
+      draft_created with a real Xero id; Joe found no invoice. Search Xero with
+      "Deleted & voided" filter before scaling the pipe further.
 - [ ] Make.com webhook URLs are `NEXT_PUBLIC_*`, baked into the public JS bundle.
       Fix: proxy through a server action/API route, drop the prefix. The hardcoded
       `JOE_NOTIFICATION_EMAIL` in lib/lead-notifications.ts moves server-side as
