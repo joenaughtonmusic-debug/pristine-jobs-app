@@ -101,15 +101,16 @@ Extract ONLY what is written. Rules — follow exactly:
 - Never infer a name from an email address, never guess a suburb from context, never invent a phone number. If a field is not stated, return null.
 - If the only contact details in the message belong to the person who PASSED THE LEAD ON (a referrer — the BNI/word-of-mouth pattern), set contact_role to "referrer" and put THEIR details in the contact fields. Do NOT promote the referrer to the customer. Set contact_role "customer" only when the contact details clearly belong to the person who wants the work. Use "unknown" when it cannot be determined.
 - An address appearing without a stated owner (e.g. alone in a comments field) goes to site_address; it does NOT imply the contact is the customer.
-- referrer_name: the person who referred, if named (e.g. "Shane the Pool Guru").
+- referrer_name: the person who referred the lead, if named (e.g. "Shane the Pool Guru"). When contact_role is "referrer" (a BNI/referral where the listed contact IS the referring member), ALSO set referrer_name to that member's name — the same name may correctly appear in both contact_name and referrer_name.
 - referral_source: only when evidenced — "bni" for BNI Connect referrals, "word_of_mouth" when someone passed it on informally, else the best-evidenced value or null.
 - site_address: exactly as written; never complete or correct it.
 - service_summary: short, close to the customer's own wording. Null if no service is stated.
 - job_type_hint: your best hint only; the human confirms. Null if unclear.
 - deadline_date: ISO (YYYY-MM-DD) ONLY if a date is explicitly stated or unambiguously resolvable against the received date. If it cannot be resolved unambiguously, set deadline_date null and keep the phrase in deadline_reason.
+- deadline_reason: the phrase that explains WHY there's a deadline (e.g. "pool work starts Monday 27 July"). If there is any stated deadline or time pressure, put that phrase HERE — do NOT put it in internal_notes. internal_notes is only for OTHER scheduling/access/hazard fragments that are not the deadline reason.
 - warmth: integer 1–5 only if a temperature/rating is stated (BNI), else null.
 - attachments_note: e.g. "3 photos attached", if mentioned.
-- internal_notes: scheduling/access/hazard-flavoured fragments only — never customer-facing copy.`
+- internal_notes: access/hazard/scheduling fragments that are NOT the deadline reason — never customer-facing copy.`
 
 function userPrompt(rawSource: string, receivedDateISO: string): string {
   return `Received date: ${receivedDateISO}\n\nEnquiry text:\n"""\n${rawSource}\n"""`
