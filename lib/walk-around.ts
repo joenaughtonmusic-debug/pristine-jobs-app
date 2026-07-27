@@ -19,6 +19,25 @@ export const SEVERITY_BADGE_CLASSES: Record<WalkAroundSeverity, string> = {
   cosmetic: "bg-gray-100 text-gray-700",
 }
 
+// Issue lifecycle (piece 3, migration 065). Property badge and dialog list
+// show OPEN only; status is set from the property dialog only.
+// reported_to_pm_at is a stamp set when a PM report sends, not a state.
+export const ISSUE_STATUSES = [
+  "open",
+  "resolved",
+  "dismissed",
+  "not_our_job",
+] as const
+
+export type IssueStatus = (typeof ISSUE_STATUSES)[number]
+
+export const ISSUE_STATUS_LABELS: Record<IssueStatus, string> = {
+  open: "Open",
+  resolved: "Resolved",
+  dismissed: "Dismissed",
+  not_our_job: "Not our job",
+}
+
 const SEVERITY_RANK: Record<WalkAroundSeverity, number> = {
   urgent: 0,
   soon: 1,

@@ -147,6 +147,7 @@ function formatLandscapingJobLabel(job: LandscapingJob) {
 }
 
 const miscWorkTypeOptions = [
+  { value: "lawn_mowing", label: "Lawn mowing" },
   { value: "tip_run", label: "Tip run" },
   { value: "extra_property_work", label: "Extra property work" },
   { value: "travel", label: "Travel" },

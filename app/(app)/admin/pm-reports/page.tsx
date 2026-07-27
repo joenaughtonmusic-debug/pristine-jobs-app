@@ -38,10 +38,12 @@ export default async function AdminPmReportsPage() {
   // visit. Issues without a visit_id can't be reported (the engine sends per
   // visit) — none should exist, but if one does it stays visible on the
   // property dialog rather than silently vanishing here.
+  // OPEN issues only (piece 3) — matches what the engine will actually send.
   const { data: issuePhotos, error: issuesError } = await supabase
     .from("job_photos")
     .select("id, visit_id, property_id, public_url, caption, severity, created_at")
     .eq("photo_type", "issue")
+    .eq("issue_status", "open")
     .not("severity", "is", null)
     .not("visit_id", "is", null)
     .order("created_at", { ascending: false })

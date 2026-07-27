@@ -160,9 +160,10 @@ function VisitCard({ row }: { row: PmReportRow }) {
       if (result?.status === "sent") {
         setSendState({
           step: "sent",
-          message: `Report sent to ${result.recipientEmail} (${result.issueCount} ${
-            result.issueCount === 1 ? "issue" : "issues"
-          }).`,
+          message:
+            `Report sent to ${result.recipientEmail} (${result.issueCount} ${
+              result.issueCount === 1 ? "issue" : "issues"
+            }).` + (result.warning ? ` Warning: ${result.warning}` : ""),
         })
         router.refresh()
         return

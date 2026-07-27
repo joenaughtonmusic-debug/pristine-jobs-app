@@ -26,11 +26,18 @@ export type PmReportPrepared = {
   pmName: string | null
   data: PmReportData
   issueCount: number
+  issueIds: string[] // the OPEN issues in the report; stamped after a send
 }
 
 export type PmReportResult =
   | { status: "skipped"; reason: string }
-  | { status: "sent"; reportId: string; recipientEmail: string; issueCount: number }
+  | {
+      status: "sent"
+      reportId: string
+      recipientEmail: string
+      issueCount: number
+      warning?: string // e.g. the send worked but the reported_to_pm_at stamp failed
+    }
   | { status: "failed"; error: string; reportId?: string }
 
 function formatVisitDate(value: string | null | undefined): string {
@@ -76,11 +83,14 @@ export async function preparePmReport(
 
   if (!pm?.email?.trim()) return { skip: "property manager has no email" }
 
+  // OPEN issues only (piece 3): resolved/dismissed/not-our-job issues never
+  // reach a PM — the dialog's status control is the exclusion mechanism.
   const { data: issues } = await supabase
     .from("job_photos")
-    .select("public_url, caption, severity")
+    .select("id, public_url, caption, severity")
     .eq("visit_id", visitId)
     .eq("photo_type", "issue")
+    .eq("issue_status", "open")
     .not("severity", "is", null)
 
   const issueRows = (issues || []).filter((r) => r.public_url)
@@ -115,6 +125,7 @@ export async function preparePmReport(
       pmName: pm.name || null,
       data,
       issueCount: issueRows.length,
+      issueIds: issueRows.map((r) => r.id as string),
     },
   }
 }
@@ -196,6 +207,20 @@ export async function sendPmReport(
     sendError = e instanceof Error ? e.message : "webhook request failed"
   }
 
+  // Stamp reported_to_pm_at on the issues that went out (piece 3). A stamp
+  // failure must not masquerade as a send failure — the email already left —
+  // but it must be surfaced, never swallowed.
+  let stampError: string | null = null
+  if (!sendError && prepared.issueIds.length > 0) {
+    const { error: stampUpdateError } = await supabase
+      .from("job_photos")
+      .update({ reported_to_pm_at: new Date().toISOString() })
+      .in("id", prepared.issueIds)
+    if (stampUpdateError) {
+      stampError = `sent, but stamping reported_to_pm_at failed: ${stampUpdateError.message}`
+    }
+  }
+
   const { data: record } = await supabase
     .from("pm_reports")
     .insert({
@@ -206,7 +231,7 @@ export async function sendPmReport(
       pdf_path: pdfPath,
       issue_count: prepared.issueCount,
       status: sendError ? "failed" : "sent",
-      error: sendError,
+      error: sendError || stampError,
       sent_at: sendError ? null : new Date().toISOString(),
       sent_by: opts.sentBy || null,
     })
@@ -221,5 +246,6 @@ export async function sendPmReport(
     reportId: record?.id as string,
     recipientEmail: prepared.recipientEmail,
     issueCount: prepared.issueCount,
+    ...(stampError ? { warning: stampError } : {}),
   }
 }

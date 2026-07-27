@@ -20,9 +20,12 @@ import {
   serviceFrequencyOptions,
 } from "@/lib/service-frequency"
 import {
+  ISSUE_STATUSES,
+  ISSUE_STATUS_LABELS,
   SEVERITY_BADGE_CLASSES,
   SEVERITY_LABELS,
   severityRank,
+  type IssueStatus,
   type WalkAroundSeverity,
 } from "@/lib/walk-around"
 
@@ -85,8 +88,18 @@ export function PropertyDialog({
       caption: string | null
       severity: WalkAroundSeverity | null
       created_at: string | null
+      reported_to_pm_at: string | null
     }[]
   >([])
+  // Piece 3: this dialog is the ONLY place issue status changes. Picking a
+  // non-open status opens a confirm step (optional note) before it saves;
+  // saving removes the issue from this open-only list.
+  const [issueStatusDrafts, setIssueStatusDrafts] = useState<
+    Record<string, { status: IssueStatus; note: string }>
+  >({})
+  const [savingIssueStatusId, setSavingIssueStatusId] = useState<string | null>(
+    null
+  )
   const [error, setError] = useState<string | null>(null)
 
   const isEditing = !!property
@@ -155,13 +168,15 @@ export function PropertyDialog({
             }))
           )
         })
-      // Walk-around issues logged by crew at rental visit completions —
-      // read-only here so the office/PM can see them at the property.
+      // Walk-around issues logged by crew at rental visit completions.
+      // OPEN issues only (piece 3): resolved/dismissed/not-our-job disappear
+      // from here and from the property badge.
       supabase
         .from("job_photos")
-        .select("id, public_url, caption, severity, created_at")
+        .select("id, public_url, caption, severity, created_at, reported_to_pm_at")
         .eq("property_id", property.id)
         .eq("photo_type", "issue")
+        .eq("issue_status", "open")
         .not("severity", "is", null)
         .order("created_at", { ascending: false })
         .then(({ data }) => {
@@ -172,6 +187,7 @@ export function PropertyDialog({
             caption: string | null
             severity: WalkAroundSeverity | null
             created_at: string | null
+            reported_to_pm_at: string | null
           }[]
           setWalkAroundIssues(
             rows.sort(
@@ -200,12 +216,45 @@ export function PropertyDialog({
       setNewPmEmail("")
       setNewPmCompany("")
       setWalkAroundIssues([])
+      setIssueStatusDrafts({})
       setError(null)
       return () => {
         pmCancelled = true
       }
     }
   }, [property, open])
+
+  const handleSaveIssueStatus = async (issueId: string) => {
+    const draft = issueStatusDrafts[issueId]
+    if (!draft || draft.status === "open") return
+    setSavingIssueStatusId(issueId)
+    setError(null)
+
+    const supabase = createClient()
+    const { data: userData } = await supabase.auth.getUser()
+
+    const { error: statusError } = await supabase
+      .from("job_photos")
+      .update({
+        issue_status: draft.status,
+        issue_status_at: new Date().toISOString(),
+        issue_status_by: userData?.user?.email || null,
+        issue_status_note: draft.note.trim() || null,
+      })
+      .eq("id", issueId)
+
+    setSavingIssueStatusId(null)
+    if (statusError) {
+      setError(`Couldn't update the issue status: ${statusError.message}`)
+      return
+    }
+    // The list shows open issues only, so a saved status removes the row.
+    setWalkAroundIssues((prev) => prev.filter((issue) => issue.id !== issueId))
+    setIssueStatusDrafts((prev) => {
+      const { [issueId]: _dropped, ...rest } = prev
+      return rest
+    })
+  }
 
   const handleAddPropertyManager = async () => {
     const name = newPmName.trim()
@@ -632,50 +681,117 @@ export function PropertyDialog({
             {isEditing && walkAroundIssues.length > 0 && (
               <div className="rounded-md border p-3">
                 <p className="mb-2 text-sm font-medium">
-                  Walk-around issues ({walkAroundIssues.length})
+                  Open walk-around issues ({walkAroundIssues.length})
                 </p>
-                <div className="flex flex-col gap-2">
-                  {walkAroundIssues.map((issue) => (
-                    <div key={issue.id} className="flex items-start gap-3">
-                      {issue.public_url ? (
-                        <a
-                          href={issue.public_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="shrink-0"
-                          onClick={(event) => event.stopPropagation()}
-                        >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={issue.public_url}
-                            alt={issue.caption || "Walk-around issue photo"}
-                            className="h-12 w-12 rounded-md border object-cover"
-                          />
-                        </a>
-                      ) : (
-                        <div className="h-12 w-12 shrink-0 rounded-md border bg-muted" />
-                      )}
-                      <div className="min-w-0">
-                        <span
-                          className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
-                            SEVERITY_BADGE_CLASSES[issue.severity ?? "cosmetic"]
-                          }`}
-                        >
-                          {SEVERITY_LABELS[issue.severity ?? "cosmetic"]}
-                        </span>
-                        <p className="mt-1 text-sm">
-                          {issue.caption || "No note"}
-                        </p>
-                        {issue.created_at && (
-                          <p className="text-xs text-muted-foreground">
-                            {new Date(issue.created_at).toLocaleDateString(
-                              "en-NZ"
-                            )}
-                          </p>
+                <div className="flex flex-col gap-3">
+                  {walkAroundIssues.map((issue) => {
+                    const draft = issueStatusDrafts[issue.id]
+                    return (
+                      <div key={issue.id} className="flex items-start gap-3">
+                        {issue.public_url ? (
+                          <a
+                            href={issue.public_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="shrink-0"
+                            onClick={(event) => event.stopPropagation()}
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={issue.public_url}
+                              alt={issue.caption || "Walk-around issue photo"}
+                              className="h-12 w-12 rounded-md border object-cover"
+                            />
+                          </a>
+                        ) : (
+                          <div className="h-12 w-12 shrink-0 rounded-md border bg-muted" />
                         )}
+                        <div className="min-w-0 flex-1">
+                          <span
+                            className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${
+                              SEVERITY_BADGE_CLASSES[issue.severity ?? "cosmetic"]
+                            }`}
+                          >
+                            {SEVERITY_LABELS[issue.severity ?? "cosmetic"]}
+                          </span>
+                          <p className="mt-1 text-sm">
+                            {issue.caption || "No note"}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {issue.created_at
+                              ? new Date(issue.created_at).toLocaleDateString(
+                                  "en-NZ"
+                                )
+                              : null}
+                            {issue.reported_to_pm_at
+                              ? ` · Reported to PM ${new Date(
+                                  issue.reported_to_pm_at
+                                ).toLocaleDateString("en-NZ")}`
+                              : ""}
+                          </p>
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <select
+                              className="h-9 rounded-md border bg-background px-2 text-sm"
+                              value={draft?.status ?? "open"}
+                              disabled={savingIssueStatusId === issue.id}
+                              onChange={(e) => {
+                                const status = e.target.value as IssueStatus
+                                setIssueStatusDrafts((prev) => {
+                                  if (status === "open") {
+                                    const { [issue.id]: _dropped, ...rest } =
+                                      prev
+                                    return rest
+                                  }
+                                  return {
+                                    ...prev,
+                                    [issue.id]: {
+                                      status,
+                                      note: prev[issue.id]?.note ?? "",
+                                    },
+                                  }
+                                })
+                              }}
+                            >
+                              {ISSUE_STATUSES.map((status) => (
+                                <option key={status} value={status}>
+                                  {ISSUE_STATUS_LABELS[status]}
+                                </option>
+                              ))}
+                            </select>
+                            {draft && (
+                              <>
+                                <Input
+                                  className="h-9 flex-1 min-w-40 text-sm"
+                                  placeholder="Note (optional) — why?"
+                                  value={draft.note}
+                                  onChange={(e) =>
+                                    setIssueStatusDrafts((prev) => ({
+                                      ...prev,
+                                      [issue.id]: {
+                                        status: draft.status,
+                                        note: e.target.value,
+                                      },
+                                    }))
+                                  }
+                                />
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  disabled={savingIssueStatusId === issue.id}
+                                  onClick={() => handleSaveIssueStatus(issue.id)}
+                                >
+                                  {savingIssueStatusId === issue.id ? (
+                                    <Spinner className="mr-1" />
+                                  ) : null}
+                                  Confirm
+                                </Button>
+                              </>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
             )}
