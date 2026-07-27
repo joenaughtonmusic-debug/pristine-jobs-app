@@ -21,16 +21,6 @@ and must not duplicate it. Tick items here; git history is the archive.
 - [x] **VA actions board clear-out (Tier 1 item 2)** — SHIPPED 26 July, PR #37
       + migration 061 (staging 255 / prod 195 rows dismissed, zero refill).
 
-- [ ] **Make "Communication: Hub" revival fix (recorded, do NOT do — page likely
-      being binned):** the router's route 2 (AI branch, modules 4→5→2) has NO
-      filter, so every email (incl. Bark/BuildersCrack/Cardlink) runs BOTH its
-      own branch and the AI branch → double insert, same external_id →
-      duplicate-key 409s → Make auto-deactivated 17 July. Fix if ever revived:
-      set route 2 as a FALLBACK route in Make (one setting, no code). Note:
-      all four branches insert a hardcoded user_id
-      (5d75a454-7dd8-432e-b7c7-560fddfcac91) — the id the error names.
-- [ ] **Comms-reply env fix (NEXT UP above) is MOOT if the comms page is
-      binned** — don't do it until the bin decision lands.
 
 
 ## RESOLVED 26 July — website lead chain (was TOP PRIORITY; kept for the record)
@@ -161,7 +151,7 @@ and must not duplicate it. Tick items here; git history is the archive.
       at the inbox both times: staging engine → Make → PDF opened; prod through
       the deployed Vercel route (proves react-pdf on Vercel) → PDF opened,
       photos render.
-- [~] **2b. Office review/send UI** — BUILT, PR #48 open. `/admin/pm-reports`:
+- [x] **2b. Office review/send UI** — SHIPPED (PR #48 merged 27 July). `/admin/pm-reports`:
       To send queue + Sent section; per-issue editable notes (saved to
       job_photos.caption, engine reads fresh at send = review-before-send);
       two-step confirm Send; re-send warns with prior date; no-PM-email rows
@@ -173,14 +163,16 @@ and must not duplicate it. Tick items here; git history is the archive.
       (b) add a human-citable reference number to the report (subject + PDF
       header) so a PM handling several reports can cite one back to us —
       pm_reports needs a short unique ref (e.g. PG-2026-0001 style sequence).
-- [ ] **3. Walk-around resolve/dismiss lifecycle** (was: "list only grows").
-      DECISIONS LOCKED: four states `open`/`resolved`/`dismissed`/`not_our_job`;
-      property badge counts `open` ONLY; status set from the property dialog
-      only; add `reported_to_pm_at` as a STAMP (set when a report sends), not a
-      state. Zero issues in prod today → greenfield, no backfill. Columns on
-      `job_photos`: issue_status (default 'open' + CHECK, only on photo_type
-      'issue'), issue_status_at, issue_status_by, issue_status_note. Badge +
-      property-dialog list filter to open.
+- [x] **3. Walk-around resolve/dismiss lifecycle** — SHIPPED (PR #49 merged
+      27 July, migrations 065 + 066 on prod). Four states as locked; status set
+      from the property dialog only (select + note + confirm); badge, dialog,
+      PM-reports queue and report engine all filter to `open`;
+      `reported_to_pm_at` stamped on exactly the issues a successful send
+      included (stamp failure surfaces as warning + pm_reports.error, never a
+      fake send-failure). Staging-live-verified end-to-end incl. the PDF
+      containing only open issues. Also in #49: "Lawn mowing" misc work type
+      (066 extends the work_type CHECK — scripts/ didn't show the constraint;
+      live DB did).
 
 ### Other Tier 3
 - [ ] Rental-flagged jobs surface as rentals (trivial now the tag exists)
@@ -224,17 +216,94 @@ pitches before the app supports them.*
 
 ## TIER 5 — housekeeping
 - [x] Leftover PROD admin `item3-verify@example.com` — DELETED 27 July (auth
-      user + profile; no other rows referenced it). Full prod auth sweep same
-      day: 8 accounts, no other test accounts. One to confirm with Joe:
-      `pristinegardens006@gmail.com` (role staff, created 25 Apr, NEVER signed
-      in, no staff_members row) — unused; delete or keep deliberately.
-      RULE (recorded in SESSION_HANDOFF): leftover test accounts get deleted,
-      not reused.
-- [ ] Arm branch 5 for Maggie + Sunhill, then ONE parallel run before retiring
-      Joe's manual invoice copying. Don't retire the manual copy first.
-- [ ] 9 unconfirmed subscription lines — a VA-in-UI task, NOT a SQL batch
-- [ ] Xero invoice path has never fired on a real job (only test row INV-2382).
-      Needs one real parallel run before it's trusted.
+      user + profile). Full prod auth sweep + re-verification: 8 accounts, no
+      test-shaped addresses, no orphans either direction. RULE (in
+      SESSION_HANDOFF): leftover test accounts get deleted, not reused.
+- [ ] **pristinegardens006@gmail.com — Joe RULED keep (it's Charles's) but the
+      link is BLOCKED on a conflict:** Charles's staff_members row is ALREADY
+      linked to pristine528@gmail.com (active login, last sign-in 15 July).
+      Joe to rule which is really Charles's: if 006, re-point the staff row
+      (and decide what pristine528 is); if pristine528, then 006 is NOT
+      Charles's and goes back to delete-or-keep. No write made.
+- [x] **Maggie + Sunhill fixed-price parallel run — CLOSED 27 July, both
+      proven on the fixed pipeline.** Sunhill: router gap fixed → INV-2410
+      (1 × $84.50 "Lawn mowing — 15 Sunhill Road — 2026-07-27"), garden line
+      correctly excluded, xero_contact_id 2da711c6-… written back, confirmed
+      by Joe. Maggie: stale INV-2409 (printed 2026-07-26; generated
+      pre-repair) deleted in Xero → visit reset → regenerated as INV-2411
+      printing 2026-07-27, 1 × $149 — proves the raw-PATCH conversion on both
+      create and write-back. Root cause of the Sunhill dead-end: router 45's
+      condition on {{3.billing_type}} from the properties lookup
+      (invoice_method was already available at module 49). Fixed by Joe in the
+      Make UI: route 1 = billing_type != subscription OR invoice_method =
+      fixed_recurring; route 2 adds invoice_method != fixed_recurring. The
+      v_invoice_queue/invoice_method migration was CANCELLED — module 1 reads
+      the visits TABLE directly (ready_for_invoice + status 'ready'), never
+      the view. STANDING NOTE: module 48 stamps 'invoiced' with NO invoice
+      created — a wrongly subscription-tagged property silently never bills.
+- [ ] **9 unconfirmed subscription lines (bucket 4 of the 28-Jul billing
+      audit — docs/BILLING_AUDIT_20260728.csv)** — VA-in-UI task with Joe's
+      27-Jul test: Xero repeating invoice EXISTS → leave as subscription and
+      tick the confirmation; NONE exists → re-express as a fixed_recurring
+      per-visit line like Maggie's. Members: McDonalds ×4, Powell St, 34B
+      Armadale, 58 Allendale, 747 Remuera, 5 Locarno. 5 Locarno already RULED
+      genuine subscription (repeating invoice, $90/visit × 2 per quarter,
+      nothing unbilled) — leave billing_type, its NULL line amount stays in
+      this task.
+- [x] **Trevor (75 Pah Rd, Howick) — property marked INACTIVE 27 July** (Joe's
+      ruling: no work done, none intended; was the audit's only
+      active-with-no-billing-line property).
+- [ ] **Verify the app never sets ready_for_invoice=true on a non_billable
+      visit** — route 1 now catches everything that isn't 'subscription', so a
+      non_billable visit reaching 'ready' would invoice. Read the app's
+      ready-stamp paths once and confirm.
+- [ ] **Extras flow for fixed-price invoices** — petrol/greenwaste etc. as
+      visit_extra_charges lines appended under the fixed line; the view
+      already supports it (sort_order 10); needs the office add-extras flow.
+- [ ] **Consolidate the three overlapping paid/sent Make scenarios — DEFERRED
+      behind a burn-in period (Joe, 27 July).** The raw-PATCH conversion was
+      accepted on inference, not a controlled test; let it run clean for a
+      while before restructuring the scenarios.
+- [ ] **Nothing propagates Xero deletions/voids back into the app** (verified
+      28 Jul, read-only): no Xero webhook receiver exists (4 API routes, none
+      Xero); the app has no 'deleted'/'voided' status concept
+      (normalizeInvoiceStatus maps draft/created/authorized/invoiced only);
+      the Make watchers route on paid/sent transitions, and Xero's own
+      list-invoices excludes deleted drafts, so a deletion is INVISIBLE to
+      every layer. Proven twice for real: INV-2352 and INV-2409 both left
+      permanent draft_created stamps cleared by hand. Consequence: a deleted
+      draft's visit is never re-polled (Make only reads 'ready') → silently
+      unbilled — same class as module 48. Current exposure: 24 draft_created
+      + 1 authorised + 5 sent = 30 visits. No fix proposed yet per Joe.
+- [x] ~~"Xero invoice path has never fired on a real job"~~ — WRONG since at
+      least 7 July: the pipe has created real drafts continuously (INV-2367 →
+      INV-2409, several PAID). Corrected 27 July; Joe had been planning around
+      the stale claim.
+- [x] **visit_date corruption repair — DONE 27 July (UPDATE 108, all guards
+      held; today's MR1+SH15 visits verified back on the 27th).** By Joe's
+      decision the 8 extreme rows (pre-app 2025 invoices, already paid) were
+      SKIPPED deliberately — their old dates stand; the 2 April setup rows were
+      left as-is. Original finding: Make's visits-upserts round-tripped `visit_date` through
+      its timezone handling, shifting it −1 day PER TOUCH (repeat-touching
+      payment watcher → drift up to 26 days; all 121 Make-touched visits
+      affected, 0 untouched ones). Fixed at source 27 July: all 12 modules
+      across 3 scenarios converted to raw-PATCH (only changed fields; pattern
+      from "Xero: Invoice Paid update" module 6) — NOTE this was accepted on
+      inference (121/121 shifted vs 16/16 clean + updated_at matching the run),
+      NOT a controlled single-row test; if the repair ever looks wrong, revisit
+      that assumption first. Repair script: scripts/repair_visit_dates_20260727.sql
+      — 108 rows, ID-keyed, before-value-guarded, anchored to crew labour dates
+      (which equal NZ creation dates on every row — two independent anchors).
+      Excluded for eyeball: 8 extreme rows (before-dates Oct–Dec 2025 — if
+      those were deliberate catch-up invoices for pre-app work, their old dates
+      are REAL and must not be repaired) + 4 no-labour rows (2 are
+      TEST-ALPHA-UI debris — delete not repair; SG21 + SS1 April setup rows).
+- [x] **TEST-ALPHA-UI property — DELETED from prod 27 July** (property, 2
+      visits, 2 jobs, labour row, billing line, 2 dismissed admin_actions;
+      FK-checked, transactional, verified zero remaining).
+- [x] **INV-2352 — CLOSED 27 July.** Joe had deleted it in Xero and re-issued
+      as INV-2408 (29 June garden maintenance, $184). Not a write-back bug.
+      INV-2408 and INV-2411 are different visits — nothing to void.
 - [ ] Make.com webhook URLs are `NEXT_PUBLIC_*`, baked into the public JS bundle.
       Fix: proxy through a server action/API route, drop the prefix. The hardcoded
       `JOE_NOTIFICATION_EMAIL` in lib/lead-notifications.ts moves server-side as
@@ -246,6 +315,15 @@ pitches before the app supports them.*
 - [ ] Phase C: drop write-dead `properties.subscription_*` columns (after burn-in)
 
 ## PARKED (deliberately)
+- [ ] **Make "Communication: Hub" revival fix (do NOT do — comms page binned
+      26 July):** if ever revived, route 2 (AI branch, modules 4→5→2) has no
+      filter → double insert → 409s → Make auto-deactivated 17 July. Fix =
+      make route 2 a FALLBACK route (one Make setting). All four branches
+      insert hardcoded user_id 5d75a454-7dd8-432e-b7c7-560fddfcac91.
+- [ ] **Placeholder staff rows "Temp Worker" and "Estimator"** (no auth, active)
+      — parked by Joe 27 July. Related finding, unruled: a staff row named
+      "Test Staff" (casual, ACTIVE) is linked to Joe's own admin auth account
+      (pristinegardensnz) — test debris in staff_members; rule on it next pass.
 - [ ] **Quote conversions per month — parked 26 July; revisit after 3+ months
       of real quoting data (≈ Oct 2026).** Investigated live in prod, no build:
       `quote_drafts` has 6 rows total (earliest 1 June 2026), 2 sent, 0

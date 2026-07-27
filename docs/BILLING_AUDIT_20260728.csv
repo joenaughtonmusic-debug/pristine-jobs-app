@@ -1,0 +1,95 @@
+id,property_code,client_name,active,billing_type,hourly_rate,job_invoice_methods,active_line_count,active_line_details,job_fixed_visit_amounts,last_invoiced_visit,in_invoice_queue_now,f1_fixed_recurring_candidate,f2_type_vs_jobs_disagree,f3_active_no_line,f4_null_zero_amount_line,f5_multi_line,f6_charge_up_tagged,fx_charge_up_null_rate
+d49d09b8-1771-47eb-95aa-e8034f73ba72,HE3,1 Ciprian Place,t,charge_up,80.00,charge_up,1,charge_up:one_off:NULL,,,f,f,f,f,f,f,t,f
+b1b400a4-854b-425c-b2c5-317976a94660,12AALLENDALEROAD,12a Allendale Road,t,charge_up,80.00,quoted,1,charge_up:one_off:NULL,,,f,f,t,f,f,f,t,f
+b8242d2e-be36-440b-8ca4-d5122f722966,MS12,12a Mt Smart Road,t,charge_up,90.00,quoted,1,charge_up:maintenance:NULL,,,f,f,t,f,f,f,t,f
+2a49e114-dab0-4733-99ff-ca40ef121e2b,13WEYBRIDGHECRESCENT,13 Weybridge Crescent,t,charge_up,80.00,charge_up,1,charge_up:maintenance:NULL,,2026-06-26,f,f,f,f,f,f,t,f
+edec8c2c-129b-4193-af02-1a7e2b5d2ed0,SH15,15 Sunhill Road (Strata Title Administration Ltd),t,subscription,90.00,"charge_up,fixed_recurring,subscription",2,fixed_recurring:Regular 2 monthly garden maintenance visits:329.74 | fixed_recurring:Lawn mowing:84.50,84.50,2026-07-27,f,t,t,f,f,t,f,f
+dc4314d6-3450-4396-a704-16ab9c72fedf,CP16,16 Cathedral Place Body Corporate,t,charge_up,90.00,charge_up,1,charge_up:maintenance:NULL,,2026-07-16,f,f,f,f,f,f,t,f
+994c1c47-a766-4819-8182-a05c108ed784,EP18,16 Endymion Place,t,charge_up,90.00,charge_up,1,charge_up:maintenance:NULL,,,f,f,f,f,f,f,t,f
+61ca0c8c-354f-4221-9250-1b5fa7cda70f,1689GREATNORTHROAD,1689 Great North Road,t,charge_up,90.00,charge_up,1,charge_up:maintenance:NULL,,,f,f,f,f,f,f,t,f
+1806bc4e-562b-44cb-bcbf-2f7f9a7a060d,POWELL17,17/19 Powell Street,t,subscription,90.00,"charge_up,subscription",1,subscription:maintenance:NULL,,2026-06-22,f,f,t,f,t,f,f,f
+f14ec54f-2260-4932-a679-abc3edba6746,2114GOWINGDRIVE,2/114 Gowing Drive,t,charge_up,80.00,quoted,1,charge_up:one_off:NULL,,2026-05-19,f,f,t,f,f,f,t,f
+b210f747-0a56-476a-942c-9b830923f21f,BS20,20 Ballarat Street,t,charge_up,90.00,,1,charge_up:maintenance:NULL,,,f,f,f,f,f,f,t,f
+32350f92-a8bc-4ac5-8f97-48358000fc03,KA25,25 Kitenui Ave,t,charge_up,90.00,charge_up,1,charge_up:maintenance:NULL,,2026-06-18,f,f,f,f,f,f,t,f
+49a78b5e-902b-4e74-8225-2fa7e2bbf2e2,29HACKETT,29 Hackett Street,t,charge_up,80.00,quoted,1,charge_up:one_off:NULL,,,f,f,t,f,f,f,t,f
+f568ccbe-3087-4a88-8785-f728c13ae1d1,2AREWIROAD,2a Rewi Road,t,charge_up,80.00,"charge_up,quoted",1,charge_up:one_off:NULL,,,f,f,t,f,f,f,t,f
+c36bb509-646a-405e-b64e-b4b676068703,2C4CHAPLINSTREET,2C/4 Chaplin Street (Tapi),t,charge_up,80.00,quoted,1,charge_up:one_off:NULL,,,f,f,t,f,f,f,t,f
+f7f294ad-0b89-4e29-8526-f47a19c645df,TS3,3 Tui Street,t,charge_up,90.00,charge_up,1,charge_up:maintenance:NULL,,2026-06-04,f,f,f,f,f,f,t,f
+8826e2cb-40a2-48cf-bbfd-01d05ef0364e,32TAYLORROADSHARED,32 Taylor Road Shared Driveway,t,charge_up,80.00,charge_up,1,charge_up:maintenance:NULL,,2026-06-02,f,f,f,f,f,f,t,f
+ac3a7f9b-53f8-40c0-9e6d-35710066d88a,HR342,342 Hillsborough Road,t,charge_up,90.00,charge_up,1,charge_up:maintenance:NULL,,2026-07-04,f,f,f,f,f,f,t,f
+f70e501c-740a-4a86-8ca9-2315f9b39e5f,AR34,34B Armadale Road Remuera,t,subscription,90.00,"charge_up,subscription",1,subscription:maintenance:NULL,,2026-05-11,f,f,t,f,t,f,f,f
+46fc37cb-ae26-4a45-aeef-afa5b3df9066,ML4,4 McLean Bob and Val,t,charge_up,90.00,charge_up,1,charge_up:maintenance:NULL,,,f,f,f,f,f,f,t,f
+84811e65-b850-4382-ae2f-17247bc1df64,KR49,49 Kohimarama Road,t,charge_up,90.00,charge_up,1,charge_up:maintenance:NULL,,2026-06-25,f,f,f,f,f,f,t,f
+84d0a9fd-dada-43ee-b109-b283d9e48104,ER5,5 Edgars Road,t,charge_up,90.00,charge_up,1,charge_up:maintenance:NULL,,2026-06-12,f,f,f,f,f,f,t,f
+58a75cf5-6819-419e-b595-f509826c0e1e,58ALLENDALE,58 Allendale Road,t,subscription,,"charge_up,subscription",1,subscription:maintenance:NULL,,2026-07-08,f,f,t,f,t,f,f,f
+6a5287c9-6e33-422c-bc12-c6bd78c30046,707MTEDEN,707 Mt Eden,t,charge_up,90.00,charge_up,1,charge_up:maintenance:NULL,,2026-05-07,f,f,f,f,f,f,t,f
+2e668c80-d15d-4e1c-ad48-e44dfd4f7fbb,747REMUERA,747 Remuera Road,t,subscription,,"charge_up,subscription",1,subscription:Lawn mowing:NULL,,2026-06-05,f,f,t,f,t,f,f,f
+6e2ef5a4-c57f-4b01-b7bf-f507e875b633,STH85,85 Edmund Street,t,charge_up,90.00,charge_up,1,charge_up:maintenance:NULL,,2026-07-03,f,f,f,f,f,f,t,f
+4d68c6ed-9a86-469d-95fe-70b1800bc061,ES85,85 Edmund Street St Heliers,t,charge_up,90.00,charge_up,1,charge_up:maintenance:NULL,,2026-04-30,f,f,f,f,f,f,t,f
+986aecc6-06cf-4eb0-83d9-f31afd2e8d61,AP88,88 Asquith Properties,t,charge_up,90.00,,1,charge_up:maintenance:NULL,,,f,f,f,f,f,f,t,f
+34cc21e0-047d-415b-b75b-9beae84b8b77,ALI1,Ali,t,charge_up,90.00,charge_up,1,charge_up:maintenance:NULL,,2026-06-22,f,f,f,f,f,f,t,f
+7395013a-5d20-4a34-95d4-05ba66a99561,3/36AROHAAVENUE,Alice,t,charge_up,80.00,charge_up,1,charge_up:maintenance:NULL,,2026-07-09,f,f,f,f,f,f,t,f
+d16e7902-6727-4934-87b8-2ccf3ed31fe9,BEV1,Bev,t,charge_up,90.00,charge_up,1,charge_up:maintenance:NULL,,2026-06-04,f,f,f,f,f,f,t,f
+eba8e686-9d2b-4c89-b600-8f46ef3eec6a,BT1,Bob Te Atatu,t,charge_up,90.00,,1,charge_up:maintenance:NULL,,,f,f,f,f,f,f,t,f
+e90d42dc-240a-4845-8e14-4df8d39665f4,19ABLOCKHOUSEBAYROAD,Brett,t,charge_up,80.00,charge_up,1,charge_up:maintenance:NULL,,2025-12-11,f,f,f,f,f,f,t,f
+3f8734a4-44f3-4482-bb35-b85c5026cb60,CC1,Chris Chamberlin,t,charge_up,90.00,charge_up,1,charge_up:maintenance:NULL,,2026-07-17,f,f,f,f,f,f,t,f
+b6e11727-2399-44b1-b352-30c6192c8f6e,9AALLENDALEROAD,Chris Lambert,t,charge_up,95.00,charge_up,1,charge_up:maintenance:NULL,,2026-06-10,f,f,f,f,f,f,t,f
+9a9d0be2-1a71-46df-be25-4b7b4c1131ad,CT1,Christine Thomas,t,charge_up,90.00,charge_up,1,charge_up:maintenance:NULL,,2026-07-09,f,f,f,f,f,f,t,f
+b8060506-f2d9-4a54-b21a-0c2624dc77a8,5MANORPARK,Chrsitine,t,charge_up,80.00,charge_up,1,charge_up:maintenance:NULL,,2026-06-25,f,f,f,f,f,f,t,f
+fd521612-09d5-439c-89c1-488cba4210ad,47CTAKUTAIAVENUEHALF,Claire,t,charge_up,80.00,charge_up,1,charge_up:maintenance:NULL,,,f,f,f,f,f,f,t,f
+6ca7a555-88d8-4d80-b9bf-97270ebb82d6,DS1,Dan Sauer,t,charge_up,90.00,"charge_up,subscription",2,charge_up:maintenance:NULL | subscription:Lawn mowing:191.50,,2026-06-22,f,f,t,f,f,t,t,f
+9f915523-7c36-4714-b564-26baea9a561b,17PAZNICPLACE,Dane,t,charge_up,80.00,quoted,1,charge_up:one_off:NULL,,,f,f,t,f,f,f,t,f
+1a618692-bcc6-4f07-af92-7728ef727f82,88BKURAHAUPOSTREET,Dave Ross,t,charge_up,80.00,quoted,1,charge_up:maintenance:NULL,,,f,f,t,f,f,f,t,f
+cabda9d1-ea5c-4a1c-9a51-53d21a235df8,DP44,Debbie 44 Pine Street,t,charge_up,90.00,,1,charge_up:maintenance:NULL,,,f,f,f,f,f,f,t,f
+30d86559-f86f-4181-99a3-9b4d9eeca28a,DM1,Deborah,t,charge_up,77.50,charge_up,1,charge_up:maintenance:NULL,,2026-07-22,f,f,f,f,f,f,t,f
+d589360c-39eb-48d1-aa13-29f6f39962f0,DEE1,Dee,t,charge_up,90.00,charge_up,1,charge_up:maintenance:NULL,,2026-04-26,f,f,f,f,f,f,t,f
+87c8267f-00a6-4809-8a7f-5d6b73456aa6,DI1,Diana,t,charge_up,90.00,charge_up,1,charge_up:maintenance:NULL,,2026-04-26,f,f,f,f,f,f,t,f
+1ba5597f-1a1a-4789-a01d-059a68fed5f5,24AKINGEDWARDAVENUE,Dinuka,t,charge_up,80.00,charge_up,1,charge_up:one_off:NULL,,2026-07-16,f,f,f,f,f,f,t,f
+3f3a47f0-a7b8-437e-9542-64699f997a8f,6CURZONSTREET,Finn,t,charge_up,80.00,,1,charge_up:maintenance:NULL,,,f,f,f,f,f,f,t,f
+e7702a35-2c85-4f5e-b54d-a5878d753646,FI1,Fiona,t,charge_up,90.00,charge_up,1,charge_up:maintenance:NULL,,2025-10-15,f,f,f,f,f,f,t,f
+b5217e3f-e155-478e-a51b-0869a287bb28,GW1,Gary Walker,t,charge_up,90.00,,1,charge_up:maintenance:NULL,,,f,f,f,f,f,f,t,f
+e620c059-ea4f-475c-a4f5-72aab9fa0bfe,1SHIPTONPLACE,Heena,t,charge_up,80.00,charge_up,1,charge_up:maintenance:NULL,,2026-07-17,f,f,f,f,f,f,t,f
+3c51daf3-abe6-443b-a756-43c767146dd6,143ADONOVANSTREET,Heena,t,charge_up,80.00,charge_up,1,charge_up:maintenance:NULL,,2026-06-19,f,f,f,f,f,f,t,f
+682fd67d-5965-43d5-b790-f60b12a26d1e,HE1,Helen,t,charge_up,90.00,charge_up,1,charge_up:maintenance:NULL,,,f,f,f,f,f,f,t,f
+6c7e45cb-918d-4312-8c2e-d39c8907c6f8,5LOCARNO,Holly,t,subscription,,subscription,1,subscription:maintenance:NULL,,,f,f,f,f,t,f,f,f
+64bf1205-baad-4556-b43c-b2e236b62e3e,HOWELL-01,Howell,t,charge_up,80.00,,1,charge_up:maintenance:NULL,,,f,f,f,f,f,f,t,f
+96bf2d02-b511-4051-82c7-4ab59c341b6c,KA2,Karina,t,charge_up,90.00,charge_up,1,charge_up:maintenance:NULL,,2026-05-28,f,f,f,f,f,f,t,f
+9e449735-7879-417f-8a3d-1c59c31cbd11,KA3,Kathleen,t,charge_up,90.00,charge_up,1,charge_up:maintenance:NULL,,2026-06-12,f,f,f,f,f,f,t,f
+1869999e-9a34-4b9c-8a12-a58fa2c66672,1HGRIFFIN,Kerry,t,charge_up,80.00,quoted,1,charge_up:maintenance:NULL,,,f,f,t,f,f,f,t,f
+6cace0c3-1b2e-4f65-9011-2954fcbf46b2,424REMUERA,Kingsridge 424 Rmeuera Road,t,charge_up,90.00,"charge_up,quoted",1,charge_up:maintenance:NULL,,2026-05-14,f,f,t,f,f,f,t,f
+78266bfa-0890-412b-9e37-7afe739cc5de,7RAETIHICRESCENT,Lauren McCarthy,t,charge_up,80.00,,1,charge_up:maintenance:NULL,,,f,f,f,f,f,f,t,f
+c8ec54b5-6ed7-4f1f-9fdc-f995086d5dca,432TAYLORROAD,Linda Bean,t,charge_up,80.00,charge_up,1,charge_up:maintenance:NULL,,2026-06-02,f,f,f,f,f,f,t,f
+1b0674d3-2960-491c-aefd-c45269bfef05,MR1,Maggie Robertson,t,charge_up,90.00,"charge_up,fixed_recurring,subscription",2,charge_up:maintenance:NULL | fixed_recurring:Lawn mowing:149.00,149.00,2026-07-27,f,f,t,f,f,t,t,f
+3564d153-1b98-4423-ba4c-8e251b94c723,MD1,Mark Derocher,t,charge_up,90.00,charge_up,1,charge_up:maintenance:NULL,,2026-07-17,f,f,f,f,f,f,t,f
+54056c80-76b1-437a-8636-c9d16cbe47aa,MS1,Matt Sumner,t,charge_up,90.00,charge_up,1,charge_up:maintenance:NULL,,2026-06-07,f,f,f,f,f,f,t,f
+16588cdc-fc97-4647-a817-6e19d069d826,MCDLUNN,McDonalds Lunn Ave,t,subscription,,"charge_up,subscription",1,subscription:maintenance:NULL,,,f,f,t,f,t,f,f,f
+87238583-2b2d-411b-a614-51dd57bbe6d7,MCDPENROSE,McDonalds Penrose,t,subscription,,"charge_up,subscription",1,subscription:maintenance:NULL,,,f,f,t,f,t,f,f,f
+9f77473d-22d4-485f-8c66-90a0723aa78a,MCDROYALOAK,McDonalds Royal Oak,t,subscription,,subscription,1,subscription:maintenance:NULL,,,f,f,f,f,t,f,f,f
+4796a6c0-d331-4a0b-b68b-91f083b409a5,MCDSTODDARDROAD,McDonalds Stoddard Road,t,subscription,,subscription,1,subscription:maintenance:NULL,,,f,f,f,f,t,f,f,f
+3a0a8410-142e-4491-8cd5-91f505136e5d,ME1,Megan,t,charge_up,90.00,charge_up,1,charge_up:maintenance:NULL,,2026-06-02,f,f,f,f,f,f,t,f
+4cac0baf-4ffe-44be-849b-c4ab191e33b4,MC1,Michael Cave,t,charge_up,80.00,charge_up,1,charge_up:maintenance:NULL,,2026-07-09,f,f,f,f,f,f,t,f
+258d0b30-9876-4477-b15b-a8e54a438f0a,22ONSLOW,Michelle,t,charge_up,90.00,charge_up,1,charge_up:maintenance:NULL,,2026-05-07,f,f,f,f,f,f,t,f
+8f4c58f1-b131-447e-ba49-59154219a573,9VOLCANICSTREET,MIke Corkill,t,charge_up,80.00,charge_up,1,charge_up:maintenance:NULL,,2026-05-21,f,f,f,f,f,f,t,f
+d2f66058-7719-45c3-ac60-1fccb4fdd3ae,MEAD1A,Nadia,t,charge_up,90.00,charge_up,1,charge_up:one_off:NULL,,,f,f,f,f,f,f,t,f
+618bcd55-c199-4aa9-84ca-438d02e75d81,63SECONDAVE,Natalie,t,charge_up,80.00,charge_up,1,charge_up:maintenance:NULL,,,f,f,f,f,f,f,t,f
+17cb518e-d5e7-4180-8ae5-42ebaff0588e,58SPRINGLEIGHAVENUE,Pat,t,charge_up,80.00,,1,charge_up:maintenance:NULL,,,f,f,f,f,f,f,t,f
+7104b9ee-9f00-492c-8887-2b100b3a797c,PA1,Pooja and Andrew,t,charge_up,90.00,charge_up,1,charge_up:maintenance:NULL,,,f,f,f,f,f,f,t,f
+158b4588-8f50-4c60-8da5-e42fffc415e4,TAIOMA-5,Ren and Amelie,t,charge_up,80.00,,1,charge_up:maintenance:NULL,,,f,f,f,f,f,f,t,f
+daf4e549-60f6-483a-9d13-de087b8ca464,TD201,Richard (201 Tamaki Drive),t,charge_up,90.00,charge_up,1,charge_up:maintenance:NULL,,2026-06-05,f,f,f,f,f,f,t,f
+3151b4b5-df17-4baa-aacb-5cec714e61c5,RS1,Rohit & Siddhi,t,charge_up,90.00,charge_up,1,charge_up:maintenance:NULL,,2026-07-21,f,f,f,f,f,f,t,f
+b128cbf3-7f1e-4652-a914-592f2a4adb1e,RF1,Ruth,t,charge_up,90.00,charge_up,1,charge_up:maintenance:NULL,,2026-07-02,f,f,f,f,f,f,t,f
+d3b74207-bd7a-4423-8209-655c48a99006,3WARWICKSTREET,Ryan,t,charge_up,80.00,,1,charge_up:maintenance:NULL,,,f,f,f,f,f,f,t,f
+743ccb77-1de0-442a-a94f-3a118134b54a,176-SANDSPIT-ROAD-SHELLY,Sarah,t,charge_up,80.00,,1,charge_up:maintenance:NULL,,,f,f,f,f,f,f,t,f
+babde92d-a85b-4c1f-b1a9-b1e43c161b07,SP1,Sarah Philp,t,charge_up,90.00,charge_up,1,charge_up:maintenance:NULL,,2026-07-14,f,f,f,f,f,f,t,f
+da40df61-8735-4b76-b598-3881ccfcd478,SE1,Selina,t,charge_up,90.00,charge_up,1,charge_up:maintenance:NULL,,2026-06-10,f,f,f,f,f,f,t,f
+3004e45c-65fd-474a-b8b3-16369e1d05d5,11BUXTONSTREET,Shannon,t,charge_up,90.00,"charge_up,quoted",1,charge_up:maintenance:NULL,,2026-06-11,f,f,t,f,f,f,t,f
+180f2dbf-123c-4547-b501-30055d8228a8,SH2,Sharyn Eskrigge,t,charge_up,90.00,charge_up,1,charge_up:maintenance:NULL,,2026-07-06,f,f,f,f,f,f,t,f
+3ea66748-313b-4410-b354-6d2efade7d09,ST1,Sonya 1 Telford,t,charge_up,90.00,,1,charge_up:maintenance:NULL,,,f,f,f,f,f,f,t,f
+8fa2e16d-4aff-4d4b-8084-fc674a5f70ce,SG21,Stacey and Greg,t,charge_up,90.00,charge_up,1,charge_up:maintenance:NULL,,2026-04-22,f,f,f,f,f,f,t,f
+4f402703-2f5b-4759-8354-17ce954e0a6c,6TARAWERATERRACE,Stella,t,charge_up,80.00,charge_up,1,charge_up:maintenance:NULL,,2026-06-30,f,f,f,f,f,f,t,f
+28ffb2f3-b347-4db5-9fbc-0205b72c5c22,SR1,Stephanie Riddell,t,charge_up,90.00,charge_up,1,charge_up:maintenance:NULL,,2026-04-26,f,f,f,f,f,f,t,f
+998556f9-a9c6-4283-a225-2fe6cf64e1ac,TI1,Sue Good,t,charge_up,90.00,charge_up,1,charge_up:maintenance:NULL,,2026-06-26,f,f,f,f,f,f,t,f
+68581332-eabf-471a-9252-467aa199ddcc,SS1,Sumit Samant,t,charge_up,90.00,charge_up,1,charge_up:maintenance:NULL,,2026-07-07,f,f,f,f,f,f,t,f
+c650e099-39d7-4982-8e04-b0a874b5eb2e,75-PAH-ROAD-HOWICK,Trevor,t,charge_up,80.00,,0,,,,f,f,f,t,f,f,t,f
+3b464b57-e8e6-4891-a86e-53a98b69dbdf,TC1,Tudor Court Motor Lodge,t,charge_up,90.00,,1,charge_up:maintenance:NULL,,,f,f,f,f,f,f,t,f
+ba831406-d515-45ad-90ab-a7116491a7f4,VM1,Vicki Morganti,t,charge_up,90.00,charge_up,1,charge_up:maintenance:NULL,,2026-05-13,f,f,f,f,f,f,t,f
