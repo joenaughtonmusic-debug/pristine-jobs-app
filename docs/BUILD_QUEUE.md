@@ -108,6 +108,20 @@ and must not duplicate it. Tick items here; git history is the archive.
       half-completed state, or fold the whole sequence into one transactional
       RPC. (The RLS fix does NOT address this — a partial strand can still
       happen from a non-RLS error.)
+      STATUS 28 July: still PARKED, and RETRY-LOCKOUT HAS ZERO CONFIRMED COST
+      IN PROD. Investigation found 6 charge_up visits stuck at not_ready with
+      job status completed (Sue Good 24 Jul, McLean 23 Jul, Natalie 23 Jun,
+      McLean 17 Jun, Diana 12 Jun, McLean 29 Apr) — Joe checked ALL SIX in
+      Xero: every one was invoiced MANUALLY. So the "stuck not_ready + job
+      completed" signature indicates MANUAL HANDLING, not retry-lockout
+      damage — do not read it as lost money. Those 6 flushed to 'excluded'
+      28 July (same treatment as the 21 stranded 'processing' on 27 July); the
+      3 subscription visits with that signature (AR34, POWELL17, SH15) left as
+      not_ready (correct — subscription isn't app-invoiced). ALSO: migration
+      062 (labour RLS) remains UNPROVEN in the wild — no paired-crew
+      completion on prod since it shipped 26 July (last pair was 17 Jul
+      Alex+Graham, pre-062). Keep this RPC parked until a real pair completes
+      a paired visit through the app and proves 062.
 - [ ] **Reconciliation backfills can mask live bugs — surface, don't just
       correct.** The 21 July labour-recon backfill note "cost row was missing"
       WAS the RLS bug above being silently absorbed — recon caught it (earns
