@@ -11,8 +11,17 @@ export const MANUAL_LEAD_SOURCES = [
   { value: "text", label: "Text" },
   { value: "bni", label: "BNI" },
   { value: "bark", label: "Bark" },
+  { value: "messenger", label: "Messenger" },
   { value: "buildercrack", label: "Buildercrack" },
   { value: "facebook", label: "Facebook" },
+  { value: "other", label: "Other" },
+] as const
+
+// Sources offered on the paste-to-extract box (the lead-intake tray). A subset
+// of MANUAL_LEAD_SOURCES — the channels a pasted enquiry actually comes from.
+export const PASTE_INTAKE_SOURCES = [
+  { value: "messenger", label: "Messenger" },
+  { value: "bark", label: "Bark" },
   { value: "other", label: "Other" },
 ] as const
 
@@ -21,6 +30,7 @@ export type ManualLeadInput = {
   email?: string
   phone?: string
   suburb?: string
+  address?: string
   service_needed?: string
   job_type?: string
   source?: string
@@ -32,6 +42,9 @@ export type ManualLeadRow = {
   email: string | null
   phone: string | null
   suburb: string | null
+  // Omitted when unset (never written null) — the manual form doesn't collect a
+  // full address, but the lead-intake approval passes the extracted site_address.
+  address?: string
   service_needed: string | null
   // Optional and OMITTED when unset (never written as null): rows without it
   // keep inserting fine even if migration 047 hasn't been pasted yet — only
@@ -75,7 +88,7 @@ export type ExistingCustomerLeadInput = {
   site_visit_at?: string | null
 }
 
-export type ExistingCustomerLeadRow = Omit<ManualLeadRow, "status"> & {
+export type ExistingCustomerLeadRow = Omit<ManualLeadRow, "status" | "address"> & {
   address: string | null
   status: "visit_booked"
   site_visit_at: string | null
@@ -148,6 +161,7 @@ export function buildManualLeadRow(
       email: trim(input.email) || null,
       phone: trim(input.phone) || null,
       suburb: trim(input.suburb) || null,
+      ...(trim(input.address) ? { address: trim(input.address) } : {}),
       service_needed: trim(input.service_needed) || null,
       ...(normaliseJobType(input.job_type)
         ? { job_type: normaliseJobType(input.job_type) }

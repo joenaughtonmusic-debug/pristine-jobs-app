@@ -8,15 +8,28 @@ import type { AdminNavBadges } from "@/lib/admin-navigation-config"
 export async function getAdminNavBadges(
   supabase: SupabaseClient
 ): Promise<AdminNavBadges> {
-  const { count, error } = await supabase
+  const badges: AdminNavBadges = {}
+
+  const { count: openNotes, error: notesError } = await supabase
     .from("internal_job_notes")
     .select("id", { count: "exact", head: true })
     .eq("status", "open")
-
-  if (error) {
-    console.error("[admin-nav] failed to count open team notes", error)
-    return {}
+  if (notesError) {
+    console.error("[admin-nav] failed to count open team notes", notesError)
+  } else if (openNotes) {
+    badges["/admin/internal-notes"] = openNotes
   }
 
-  return count ? { "/admin/internal-notes": count } : {}
+  // Pending lead-intake cards awaiting approval — a genuine to-do count.
+  const { count: pendingIntake, error: intakeError } = await supabase
+    .from("lead_intake")
+    .select("id", { count: "exact", head: true })
+    .eq("status", "pending_approval")
+  if (intakeError) {
+    console.error("[admin-nav] failed to count pending lead intake", intakeError)
+  } else if (pendingIntake) {
+    badges["/sales-pipeline"] = pendingIntake
+  }
+
+  return badges
 }

@@ -18,6 +18,8 @@ type Props = {
   leads: SalesLead[]
   invoicedJobs?: InvoicedJob[]
   templates?: QuoteTemplateOption[]
+  // The pending lead-intake tray (server-rendered), shown above the board.
+  intakeTray?: React.ReactNode
 }
 
 // Board shell: server-rendered. One row per client across six stage columns.
@@ -27,6 +29,7 @@ export function PipelineBoard({
   leads = [],
   invoicedJobs = [],
   templates = [],
+  intakeTray = null,
 }: Props) {
   const boardLeads = leads.filter(isOnActiveBoard)
 
@@ -44,6 +47,8 @@ export function PipelineBoard({
           the stages already completed. Click a card to expand its details.
         </p>
       </header>
+
+      {intakeTray}
 
       <AddLeadForm />
 
