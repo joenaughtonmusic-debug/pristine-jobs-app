@@ -173,6 +173,20 @@ and must not duplicate it. Tick items here; git history is the archive.
       — none ever persisted on prod (silent INSERT-denied). LESSON in
       SESSION_HANDOFF: live-fire new-table features through a real browser/authed
       session on PROD, not just staging or service-role paths.
+- [x] **Grant-hygiene sweep + anon revoke (migration 069)** — SHIPPED 28 July,
+      prod+staging. Full read-only sweep (all 35 tables, both DBs, queried AS
+      the anon role): post-068 NO table lacks the authenticated grant; the ONLY
+      table anon can actually read is public_suburb_locations (intended public
+      map feed, 63 rows). 7 tables carried a vestigial anon grant that RLS
+      already default-denied (calendar_blockouts, job_board_items,
+      job_board_responses, job_photos, profiles, sales_leads, scheduling_queue)
+      — 069 revokes anon on those 7 (both DBs), leaving public_suburb_locations
+      and all authenticated grants alone. Behaviour no-op (verified anon read 0
+      before, DENIED after; authenticated unchanged). Post-apply re-verified the
+      app via a real PROD browser session (temp admin, self-cleaned): /admin,
+      /sales-pipeline, /admin/job-board, /admin/schedule all render. No
+      genuine anon write exposure existed (only 1 anon/public policy in the
+      whole schema, SELECT on public_suburb_locations).
 - [x] **3. Walk-around resolve/dismiss lifecycle** — SHIPPED (PR #49 merged
       27 July, migrations 065 + 066 on prod). Four states as locked; status set
       from the property dialog only (select + note + confirm); badge, dialog,
