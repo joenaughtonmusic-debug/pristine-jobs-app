@@ -297,8 +297,27 @@ export default async function AdminLabourReconciliationPage({
 
   // VA actions clear-out (Tier 1 item 2): misc-work links are no longer
   // mirrored into admin_actions — the amber "Unscheduled / Misc Work" label
-  // on this page is the home. KNOWN GAP (BUILD_QUEUE): the page's default
-  // Mon-Fri window hides prior-week unlinked misc entries.
+  // on this page is the home. Unlinked misc entries OLDER than the current
+  // window would otherwise be invisible until someone pages back, so they
+  // get a count banner (surface only — nothing is auto-corrected).
+  const { count: outOfWindowMiscCount } = await supabase
+    .from("job_labour_entries")
+    .select("id", { count: "exact", head: true })
+    .eq("job_type", "misc")
+    .is("scheduled_job_id", null)
+    .lt("work_date", startDate)
+
+  const { data: oldestUnlinkedMisc } = (outOfWindowMiscCount || 0) > 0
+    ? await supabase
+        .from("job_labour_entries")
+        .select("work_date")
+        .eq("job_type", "misc")
+        .is("scheduled_job_id", null)
+        .lt("work_date", startDate)
+        .order("work_date", { ascending: true })
+        .limit(1)
+        .maybeSingle()
+    : { data: null }
 
   const warningCount = rows.filter(
     (row) => row.status !== "ok" && row.status !== "non_worked"
@@ -316,6 +335,27 @@ export default async function AdminLabourReconciliationPage({
           Review staff daily timesheet hours against job labour entries.
         </p>
       </header>
+
+      {(outOfWindowMiscCount || 0) > 0 && (
+        <section className="mb-6 rounded-xl border border-amber-400 bg-amber-50 p-4 text-sm text-amber-900">
+          <span className="font-semibold">
+            {outOfWindowMiscCount} unlinked misc-work{" "}
+            {outOfWindowMiscCount === 1 ? "entry sits" : "entries sit"} before
+            this window
+          </span>
+          {oldestUnlinkedMisc?.work_date
+            ? ` (oldest ${oldestUnlinkedMisc.work_date}).`
+            : "."}{" "}
+          <a
+            className="font-medium underline"
+            href={`/admin/labour-reconciliation?start=${
+              oldestUnlinkedMisc?.work_date || startDate
+            }&end=${endDate}`}
+          >
+            Widen the window to review them
+          </a>
+        </section>
+      )}
 
       <section className="mb-6 rounded-xl border bg-white p-4 shadow-sm">
         <form className="grid gap-3 sm:grid-cols-[1fr_1fr_auto]" action="/admin/labour-reconciliation">

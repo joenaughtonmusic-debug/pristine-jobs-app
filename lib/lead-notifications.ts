@@ -71,10 +71,16 @@ export async function sendLeadNotificationToJoe({
   const actorName = await getCurrentActorName(supabase)
   const actionLabel = getLeadActionLabel(action)
   const location = formatLeadLocation(enquiry)
-  const leadUrl =
-    typeof window === "undefined"
-      ? enquiry.link_path || `/admin/enquiries#enquiry-${enquiry.id}`
-      : `${window.location.origin}${enquiry.link_path || `/admin/enquiries#enquiry-${enquiry.id}`}`
+  // The Link line must be a FULL URL or it isn't clickable in the email.
+  // Server-side callers (e.g. the website-lead API route) have no
+  // window.origin, which is how relative paths were leaking through.
+  const appBase = (
+    process.env.NEXT_PUBLIC_APP_URL ||
+    (typeof window !== "undefined" ? window.location.origin : "")
+  ).replace(/\/+$/, "")
+  const leadPath =
+    enquiry.link_path || `/admin/enquiries#enquiry-${enquiry.id}`
+  const leadUrl = appBase ? `${appBase}${leadPath}` : leadPath
   const subject = `${actionLabel} - ${enquiry.name} - ${enquiry.suburb || "No suburb"}`
   const body = [
     `${actionLabel} by ${actorName}`,

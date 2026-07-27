@@ -6,7 +6,8 @@ import { sendPmReport } from "@/lib/pm-report-send"
 // react-pdf renders in Node (not edge); keep it out of the bundler.
 export const runtime = "nodejs"
 
-const CONTACT_LINE = "Pristine Gardens · admin@pristinegardens.co.nz"
+// PM-facing address — contact@, not the VA's admin@ (Joe, 27 July).
+const CONTACT_LINE = "Pristine Gardens · contact@pristinegardens.co.nz"
 
 export async function POST(request: Request) {
   const supabase = await createClient()
