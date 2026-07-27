@@ -4,6 +4,30 @@ Start here for a clean chat. This file is dateless and OVERWRITTEN each session 
 git history is the archive. The tickable work list lives ONLY in
 `docs/BUILD_QUEUE.md`; this file must not duplicate it.
 
+**PM ISSUE-REPORT FEATURE FULLY DONE + PROD-LIVE-FIRED (27 July).** All copy
+amendments shipped (PR #51): report reference number PG-YYYY-NNNN (migration
+067) and contact@ footer. Prod live fire confirmed field-by-field at the inbox:
+PG-2026-0001 in subject + PDF header, contact@ footer, and a RE-SEND correctly
+REUSED PG-2026-0001 (one visit = one ref, forever). Ref sequence reset after
+the test so the first REAL report is PG-2026-0001. Also in #51: lead
+notification Link is now a full URL (NEXT_PUBLIC_APP_URL), and a labour-recon
+out-of-window unlinked-misc banner.
+
+**GRANT BUG FOUND + FIXED (migration 068, prod+staging).** The PM-report prod
+live fire surfaced that three tables shipped with RLS policies but NO grant to
+`authenticated`: `property_managers` (063), `pm_reports` (064),
+`property_billing_lines` (057-059). Every browser-as-admin read of them errored
+"permission denied" on prod; staging hid it (auto-grants new tables) and every
+prod path so far used the service role (Make, the report API route), which
+bypasses grants. CONSEQUENCE: **PM entries never persisted on prod — Joe must
+re-enter real property managers** (property_managers had 0 real rows); the
+property dialog's subscription-line display was also silently blank on prod.
+068 grants authenticated (RLS still gates rows to admins) and REVOKES anon
+(closed a staging-only world-readable hole the auto-grant had left). LESSON:
+verify new-table features through a real BROWSER/authenticated session on PROD,
+not just staging (auto-grant) or service-role paths (bypass grants). Prod
+migrations now through 068.
+
 **THE INVOICE PIPE IS CLOSED (27 July).** Date corruption repaired (108 rows;
 8 pre-app 2025 rows deliberately skipped), Make's 12 visit-writing modules
 converted to raw PATCH, router fixed, and BOTH parallel-run properties proven
