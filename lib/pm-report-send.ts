@@ -173,9 +173,32 @@ export async function sendPmReport(
   const webhookUrl = opts.webhookUrl
   if (!webhookUrl) return { status: "failed", error: "PM report webhook URL not configured" }
 
+  // ONE VISIT = ONE REF, permanently (Joe's rule): a re-send reuses the
+  // visit's original ref; only a first send mints. Minting failure blocks the
+  // send — a report must never leave without a citable reference.
+  let reportRef: string
+  const { data: priorRef } = await supabase
+    .from("pm_reports")
+    .select("report_ref")
+    .eq("visit_id", prepared.visitId)
+    .not("report_ref", "is", null)
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle()
+  if (priorRef?.report_ref) {
+    reportRef = priorRef.report_ref as string
+  } else {
+    const { data: minted, error: mintError } = await supabase.rpc("next_pm_report_ref")
+    if (mintError || !minted) {
+      return { status: "failed", error: `report ref mint failed: ${mintError?.message || "no value"}` }
+    }
+    reportRef = minted as string
+  }
+  prepared.data.reportRef = reportRef
+
   const { pdfPath, signedUrl, filename } = await generateAndStorePmReport(supabase, prepared)
 
-  const subject = `Property visit report — ${prepared.propertyAddress} — ${prepared.visitDate}`
+  const subject = `Property visit report ${reportRef} — ${prepared.propertyAddress} — ${prepared.visitDate}`
   const body = [
     prepared.pmName ? `Hi ${prepared.pmName},` : "Hi,",
     "",
@@ -195,6 +218,7 @@ export async function sendPmReport(
         to_email: prepared.recipientEmail,
         subject,
         body,
+        report_ref: reportRef,
         pdf_url: signedUrl,
         pdf_filename: filename,
         property_address: prepared.propertyAddress,
@@ -228,6 +252,7 @@ export async function sendPmReport(
       property_id: prepared.propertyId,
       property_manager_id: prepared.propertyManagerId,
       recipient_email: prepared.recipientEmail,
+      report_ref: reportRef,
       pdf_path: pdfPath,
       issue_count: prepared.issueCount,
       status: sendError ? "failed" : "sent",

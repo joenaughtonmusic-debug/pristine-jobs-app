@@ -25,6 +25,7 @@ export type PmReportData = {
   businessName: string
   propertyAddress: string
   visitDate: string // pre-formatted, e.g. "17 July 2026"
+  reportRef?: string | null // human-citable, e.g. "PG-2026-0003"
   pmName?: string | null
   contactLine?: string | null // e.g. "Pristine Gardens · 021 xxx xxx · admin@..."
   issues: PmReportIssue[]
@@ -75,6 +76,12 @@ function PmReportDocument({ data }: { data: PmReportData }) {
           <Text style={styles.metaLabel}>Visit date</Text>
           <Text style={styles.metaValue}>{data.visitDate}</Text>
         </View>
+        {data.reportRef ? (
+          <View style={styles.metaRow}>
+            <Text style={styles.metaLabel}>Reference</Text>
+            <Text style={styles.metaValue}>{data.reportRef}</Text>
+          </View>
+        ) : null}
 
         {ordered.length > 0 ? (
           <>
