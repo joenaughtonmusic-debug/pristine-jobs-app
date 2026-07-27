@@ -22,6 +22,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { FieldGroup, Field, FieldLabel } from "@/components/ui/field"
 import { Spinner } from "@/components/ui/spinner"
+import { resizeImageFile } from "@/lib/resize-image"
 
 interface CompleteVisitDialogProps {
   open: boolean
@@ -891,10 +892,17 @@ if (existingVisit) {
                       type="file"
                       accept="image/*"
                       className="block w-full rounded-md border bg-background p-2 text-sm"
-                      onChange={(event) => {
-                        const updated = [...walkAroundIssues]
-                        updated[index].file = event.target.files?.[0] || null
-                        setWalkAroundIssues(updated)
+                      onChange={async (event) => {
+                        const picked = event.target.files?.[0] || null
+                        // Resize at selection (best-effort). The submit/write
+                        // sequence is untouched — it uploads whatever File sits
+                        // in state, now already resized.
+                        const file = picked ? await resizeImageFile(picked) : null
+                        setWalkAroundIssues((current) => {
+                          const updated = [...current]
+                          updated[index] = { ...updated[index], file }
+                          return updated
+                        })
                       }}
                     />
 

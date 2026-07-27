@@ -28,6 +28,7 @@ import {
 
 import type { JobPhoto, ScheduledJob, Visit } from "@/lib/types"
 import { cn } from "@/lib/utils"
+import { resizeImageFiles } from "@/lib/resize-image"
 import {
   formatServiceFrequency,
   formatServiceValue,
@@ -310,12 +311,14 @@ const photoInputRef = useRef<HTMLInputElement | null>(null)
     setPhotos((data as JobPhoto[]) || [])
   }
 
-  const handlePhotoFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoFileChange = async (event: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? [])
-    console.log("selected files", files.length)
-    setSelectedPhotoFiles(files)
     setPhotoError(null)
     setPhotoMessage(null)
+    // Resize at selection (client-side, best-effort). The upload flow below is
+    // unchanged — it just receives smaller, JPEG-normalised files.
+    const resized = await resizeImageFiles(files)
+    setSelectedPhotoFiles(resized)
   }
 
   const handleUploadPhotos = async () => {

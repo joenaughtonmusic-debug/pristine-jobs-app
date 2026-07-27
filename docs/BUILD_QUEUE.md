@@ -238,8 +238,23 @@ pitches before the app supports them.*
       Watch-outs: which quote wins when a property has several; multiple labour
       lines → leave duration blank, don't sum.
 - [ ] Post-job follow-up email (review request, referral ask, maintenance upsell)
-- [ ] Photo attach to Xero invoices — kills the download-resize-attach routine.
-      Job photos now exist, so this is wiring.
+- [~] **Photo attach to Xero invoices — Part A+B BUILT (PR, staging-verified);
+      Part C (Make) + live-fire are Joe's.** Brief: docs/INVOICE_PHOTO_ATTACH_BRIEF.md.
+      Allowlist view `invoice_photos_for_make` (migration 071) = photo_type IN
+      ('after','completion'), jpg/png only, 3 most-recent per scheduled_job_id,
+      filename photo-<photo_id>.jpg, service-role only. Client resize at upload
+      (lib/resize-image.ts, ~1600px JPEG q80, best-effort, forward-only — NO
+      backfill; existing full-size photos stay, hence the view's jpg/png filter).
+      Acceptance test 1 PASSED on staging (issue+after/completion → view returns
+      only after/completion; issue/HEIC/client_instruction excluded). Resize
+      verified 3000px→1600 JPEG; complete-visit 8-write sequence confirmed intact
+      (resize is onChange-only, submit untouched). REMAINING (Joe): extend the
+      "Pristine App to Xero Invoice" Make scenario with the attach branch at
+      draft time (IncludeOnline=true), VERIFY Xero attachment ceilings +
+      IncludeOnline on the live module, then the end-to-end live-fire.
+      KNOWN LIMIT (deferred): association is job-level (scheduled_job_id), so a
+      recurring job's 3 most-recent attach to each visit's invoice; per-visit
+      visit_id preference is a later refinement, not built.
 - [ ] Billing type fix for the 88 mislabelled `charge_up` properties — BLOCKED on
       Joe identifying which are genuinely fixed-price. Not a code problem.
 - [ ] Voice-to-quote integration — design brief written, nothing built.
