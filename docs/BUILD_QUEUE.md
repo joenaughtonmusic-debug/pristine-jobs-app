@@ -230,11 +230,28 @@ pitches before the app supports them.*
       in, no staff_members row) — unused; delete or keep deliberately.
       RULE (recorded in SESSION_HANDOFF): leftover test accounts get deleted,
       not reused.
-- [ ] Arm branch 5 for Maggie + Sunhill, then ONE parallel run before retiring
-      Joe's manual invoice copying. Don't retire the manual copy first.
+- [~] **Maggie + Sunhill fixed-price parallel run — IN FLIGHT (27 July).** Both
+      27-Jul lawn visits queued as `fixed_recurring` per-visit drafts ($149.00
+      MR1 / $84.50 SH15 — two separate services at SH15, never merged with the
+      $329.74 garden line, which stays manual). SH15's $84.50 lawn line
+      reactivated as fixed_recurring. Joe compares the drafts against his
+      manual invoices this cycle before retiring the manual copy. Don't retire
+      the manual copy first.
 - [ ] 9 unconfirmed subscription lines — a VA-in-UI task, NOT a SQL batch
-- [ ] Xero invoice path has never fired on a real job (only test row INV-2382).
-      Needs one real parallel run before it's trusted.
+- [x] ~~"Xero invoice path has never fired on a real job"~~ — WRONG since at
+      least 7 July (corrected 27 July, Joe was planning around it): the Make
+      invoice scenario is ON and has been creating real drafts continuously
+      (INV-2367 → INV-2405+, several PAID). What HADN'T fired before 27 July
+      is the fixed_recurring branch — that's what the parallel run above tests.
+      Separate finding: INV-2352 (Maggie's 29-Jun visit, draft_created in-app)
+      is absent from Joe's Xero list — suspected deleted-in-Xero draft; the app
+      never learns about Xero-side deletions. Confirm via deleted-invoices
+      search before scaling the pipe.
+- [ ] Stranded `processing` visits (21 found 2 Jun–15 Jul; Joe verified all
+      real money was invoiced manually — stale status, not lost work): flush
+      to `excluded` with a note. Root cause worth a look someday: Make marks
+      processing at pickup and never writes back on failure; the zero-line
+      guard (shipped since) prevents new subscription-visit strands.
 - [ ] Make.com webhook URLs are `NEXT_PUBLIC_*`, baked into the public JS bundle.
       Fix: proxy through a server action/API route, drop the prefix. The hardcoded
       `JOE_NOTIFICATION_EMAIL` in lib/lead-notifications.ts moves server-side as
