@@ -4,14 +4,16 @@ Start here for a clean chat. This file is dateless and OVERWRITTEN each session 
 git history is the archive. The tickable work list lives ONLY in
 `docs/BUILD_QUEUE.md`; this file must not duplicate it.
 
-**NEXT WORK: finish the invoice-pipe cleanup, in this order.**
-1. Joe eyeballs the two visit-date lists (8 extreme + 4 no-labour rows — in
-   BUILD_QUEUE's repair item) → run `scripts/repair_visit_dates_20260727.sql`
-   (ID-keyed, guarded, 108 rows).
-2. Queue-view fix for the Sunhill router gap: expose
+**THE DATE ISSUE IS CLOSED** (repair ran 27 July: 108 rows fixed; 8 pre-app
+2025 rows deliberately skipped by Joe — their dates stand; TEST-ALPHA-UI test
+property deleted from prod).
+
+**NEXT WORK, in order:**
+1. Queue-view fix for the Sunhill router gap: expose
    `scheduled_jobs.invoice_method` in `v_invoice_queue` (migration), Joe updates
-   the Make router condition, then reset + requeue the SH15 visit.
-3. Joe closes the parallel-run comparison (INV-2409 vs manual Maggie invoice)
+   the Make router condition, then reset the SH15 visit (stuck at 'invoiced',
+   no Xero id) and requeue it.
+2. Joe closes the parallel-run comparison (INV-2409 vs manual Maggie invoice)
    and the INV-2352 deleted-search.
 Then: PM report copy amendments (contact@ footer + citable ref number), extras
 flow for fixed-price invoices, and the rest of BUILD_QUEUE in tier order.
@@ -71,9 +73,9 @@ flow for fixed-price invoices, and the rest of BUILD_QUEUE in tier order.
   INV-2409, several paid). 27 July: all 12 visits-writing modules across
   "Pristine App to Xero Invoice", "Invoice: Status Paid/Sent", "Xero: Update App
   Invoices" converted to raw PATCH (blueprint JSON edits, re-imported). The
-  visit_date −1/touch corruption is stopped at source but **historic damage is
-  unrepaired until the staged repair runs** (see NEXT WORK; the
-  inference-over-controlled-test caveat is recorded in BUILD_QUEUE).
+  visit_date −1/touch corruption is stopped at source AND the historic damage
+  is repaired (108 rows, 27 July; the inference-over-controlled-test caveat
+  stays recorded in BUILD_QUEUE in case anything ever looks wrong).
 - **Queue hygiene:** 21 stranded 'processing' visits flushed to 'excluded' 27
   July (Joe verified all were manually invoiced — stale status, not lost money).
   v_invoice_queue is currently honest.

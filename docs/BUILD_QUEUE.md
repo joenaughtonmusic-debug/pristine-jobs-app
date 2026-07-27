@@ -248,8 +248,11 @@ pitches before the app supports them.*
       least 7 July: the pipe has created real drafts continuously (INV-2367 →
       INV-2409, several PAID). Corrected 27 July; Joe had been planning around
       the stale claim.
-- [ ] **visit_date corruption repair — STAGED, awaiting Joe's eyeball of two
-      small lists.** Make's visits-upserts round-tripped `visit_date` through
+- [x] **visit_date corruption repair — DONE 27 July (UPDATE 108, all guards
+      held; today's MR1+SH15 visits verified back on the 27th).** By Joe's
+      decision the 8 extreme rows (pre-app 2025 invoices, already paid) were
+      SKIPPED deliberately — their old dates stand; the 2 April setup rows were
+      left as-is. Original finding: Make's visits-upserts round-tripped `visit_date` through
       its timezone handling, shifting it −1 day PER TOUCH (repeat-touching
       payment watcher → drift up to 26 days; all 121 Make-touched visits
       affected, 0 untouched ones). Fixed at source 27 July: all 12 modules
@@ -264,8 +267,9 @@ pitches before the app supports them.*
       those were deliberate catch-up invoices for pre-app work, their old dates
       are REAL and must not be repaired) + 4 no-labour rows (2 are
       TEST-ALPHA-UI debris — delete not repair; SG21 + SS1 April setup rows).
-- [ ] **TEST-ALPHA-UI property + its 2 visits on PROD** — test debris found
-      27 July; delete per the no-reuse/self-clean rule (check FKs first).
+- [x] **TEST-ALPHA-UI property — DELETED from prod 27 July** (property, 2
+      visits, 2 jobs, labour row, billing line, 2 dismissed admin_actions;
+      FK-checked, transactional, verified zero remaining).
 - [ ] **INV-2352 (Maggie 29-Jun, $184) — still unresolved.** App says
       draft_created with a real Xero id; Joe found no invoice. Search Xero with
       "Deleted & voided" filter before scaling the pipe further.
