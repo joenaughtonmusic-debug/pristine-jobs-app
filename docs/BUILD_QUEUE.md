@@ -8,16 +8,15 @@ and must not duplicate it. Tick items here; git history is the archive.
       bin proceeded (branch comms-page-bin), so Send Reply no longer exists.
       Never add `NEXT_PUBLIC_SEND_COMMUNICATION_REPLY_WEBHOOK_URL` to Vercel.
 
-- [ ] **Labour-recon misc-work window gap** — the ONE signal that lost coverage
-      in the VA actions clear-out: the recon page only shows unlinked misc
-      entries inside its default Mon-Fri window, so a prior-week "Link extra
-      work" entry is invisible until someone pages back. Small fix, needs
-      doing (e.g. an out-of-window unlinked-misc count/banner on the page).
+- [x] **Labour-recon misc-work window gap** — SHIPPED 27 July (PR #51). Amber
+      banner counts unlinked misc entries (job_type=misc, no scheduled_job_id)
+      dated before the current window, names the oldest, links to a widened
+      window. Surface only. Staging-verified.
 
-- [ ] **Notification Link field is a relative path** (`/sales-pipeline`) — not
-      clickable in the email. Make it a full URL (NEXT_PUBLIC_APP_URL exists
-      in Vercel). Small; touches lib/lead-notifications.ts (Tier 5 proxy item
-      also touches that file — can ride together).
+- [x] **Notification Link field relative path** — SHIPPED 27 July (PR #51).
+      Full URL via NEXT_PUBLIC_APP_URL; server-side callers (website-lead
+      route) had no window.origin so relative paths leaked. Verified at a
+      capture webhook. Tier 5 proxy item still separate.
 - [x] **VA actions board clear-out (Tier 1 item 2)** — SHIPPED 26 July, PR #37
       + migration 061 (staging 255 / prod 195 rows dismissed, zero refill).
 
@@ -157,12 +156,23 @@ and must not duplicate it. Tick items here; git history is the archive.
       two-step confirm Send; re-send warns with prior date; no-PM-email rows
       warn instead of send. Signed URL TTL now 4h (was 7d). Per-issue exclusion
       deferred to piece 3 by decision. Staging live-verified end-to-end.
-- [ ] **PM report copy amendments** (small, fold into a nearby PR): (a) PDF
-      footer + API contact line show admin@pristinegardens.co.nz (the VA's
-      address) — switch to contact@pristinegardens.co.nz for PM-facing docs;
-      (b) add a human-citable reference number to the report (subject + PDF
-      header) so a PM handling several reports can cite one back to us —
-      pm_reports needs a short unique ref (e.g. PG-2026-0001 style sequence).
+- [x] **PM report copy amendments** — SHIPPED 27 July (PR #51), prod-live-fired.
+      (a) contact@ footer (was admin@). (b) Reference number PG-YYYY-NNNN
+      (migration 067): global sequence, never year-resets, ONE VISIT = ONE REF
+      (a re-send reuses the visit's ref — enforced by lookup-before-mint, so
+      report_ref is deliberately NOT unique across the history rows). In subject
+      + PDF header + webhook payload + pm_reports row. Prod live fire:
+      PG-2026-0001 on both a send and a re-send (reuse proven); sequence reset
+      after so the first REAL report is PG-2026-0001.
+- [x] **Prod grant bug (migration 068)** — SHIPPED 27 July. property_managers
+      (063), pm_reports (064), property_billing_lines (057-059) had RLS but no
+      `authenticated` grant on prod → browser reads errored "permission
+      denied"; staging hid it (auto-grant) and prod paths used service role
+      (bypass). 068 grants authenticated + revokes anon (closed a staging
+      world-readable hole). **ACTION FOR JOE: re-enter real property managers**
+      — none ever persisted on prod (silent INSERT-denied). LESSON in
+      SESSION_HANDOFF: live-fire new-table features through a real browser/authed
+      session on PROD, not just staging or service-role paths.
 - [x] **3. Walk-around resolve/dismiss lifecycle** — SHIPPED (PR #49 merged
       27 July, migrations 065 + 066 on prod). Four states as locked; status set
       from the property dialog only (select + note + confirm); badge, dialog,
