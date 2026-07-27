@@ -72,6 +72,7 @@ export default async function AdminSchedulePage({
   address_line_1,
   suburb,
   property_category,
+  is_rental,
   client_email,
   phone,
   scheduling_notes,

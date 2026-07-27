@@ -455,6 +455,15 @@ const photoInputRef = useRef<HTMLInputElement | null>(null)
                 : status.charAt(0).toUpperCase() + status.slice(1)}
             </Badge>
 
+            {isRentalProperty && (
+              <Badge
+                variant="outline"
+                className="border-amber-500/50 text-amber-600 dark:text-amber-400"
+              >
+                Rental
+              </Badge>
+            )}
+
             {job.time_limit_type === "fixed_time" && (
               <Badge className="border border-amber-300 bg-amber-100 text-amber-900">
                 Time Fixed · {job.planned_duration_hours || "?"}h
