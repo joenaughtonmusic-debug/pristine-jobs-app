@@ -4,19 +4,34 @@ Start here for a clean chat. This file is dateless and OVERWRITTEN each session 
 git history is the archive. The tickable work list lives ONLY in
 `docs/BUILD_QUEUE.md`; this file must not duplicate it.
 
-**THE DATE ISSUE IS CLOSED** (repair ran 27 July: 108 rows fixed; 8 pre-app
-2025 rows deliberately skipped by Joe — their dates stand; TEST-ALPHA-UI test
-property deleted from prod).
+**THE INVOICE PIPE IS CLOSED (27 July).** Date corruption repaired (108 rows;
+8 pre-app 2025 rows deliberately skipped), Make's 12 visit-writing modules
+converted to raw PATCH, router fixed, and BOTH parallel-run properties proven
+on the fixed pipeline: Sunhill INV-2410 ($84.50 lawn, garden line excluded,
+xero_contact_id written back) and Maggie INV-2411 ($149, regenerated after the
+stale pre-repair INV-2409 was deleted — dates print 2026-07-27 on both).
+INV-2352 closed (Joe deleted + re-issued as INV-2408; different visit from
+INV-2411, nothing to void). The v_invoice_queue/invoice_method migration was
+CANCELLED — Make module 1 reads the visits TABLE directly
+(ready_for_invoice=true AND invoice_status='ready'), never the view; the real
+root cause was router 45's condition on {{3.billing_type}}; fixed by Joe in
+the Make UI (route 1: billing_type != subscription OR invoice_method =
+fixed_recurring; route 2 adds invoice_method != fixed_recurring).
 
-**NEXT WORK, in order:**
-1. Queue-view fix for the Sunhill router gap: expose
-   `scheduled_jobs.invoice_method` in `v_invoice_queue` (migration), Joe updates
-   the Make router condition, then reset the SH15 visit (stuck at 'invoiced',
-   no Xero id) and requeue it.
-2. Joe closes the parallel-run comparison (INV-2409 vs manual Maggie invoice)
-   and the INV-2352 deleted-search.
-Then: PM report copy amendments (contact@ footer + citable ref number), extras
-flow for fixed-price invoices, and the rest of BUILD_QUEUE in tier order.
+**NEXT WORK:** PM report copy amendments (contact@ footer + citable ref
+number) → extras flow for fixed-price invoices → the bucket-4 subscription
+test and the rest of BUILD_QUEUE in tier order. One unresolved ruling from 27
+July: the pristinegardens006 ↔ Charles link is BLOCKED on a conflict (see
+BUILD_QUEUE Tier 5) — Charles's staff row already carries pristine528@gmail.com.
+
+**Standing notes (invoice pipe):**
+- Make module 48 stamps visits 'invoiced' WITHOUT creating a Xero invoice — a
+  wrongly subscription-tagged property silently never bills. Same
+  silent-failure class as the retry lockout.
+- A draft generated before a data repair freezes the old value in its line
+  text. Regenerate the draft; never trust its text over the DB.
+- Nothing propagates Xero deletions/voids back to the app (see BUILD_QUEUE) —
+  a deleted draft leaves its visit stamped draft_created forever.
 
 ## Working method
 - **Advisory Claude** (chat): plans, decides, keeps the queue, writes briefs.
@@ -80,8 +95,10 @@ flow for fixed-price invoices, and the rest of BUILD_QUEUE in tier order.
   July (Joe verified all were manually invoiced — stale status, not lost money).
   v_invoice_queue is currently honest.
 - **Parallel run in flight:** see BUILD_QUEUE Tier 5 item for full state.
-- **Fresh session needs:** prod + staging pooler strings from Joe (both
-  re-issued 27 July after the rotation).
+- **Fresh session needs:** prod + staging pooler strings from Joe. The prod
+  password was rotated AGAIN late 27 July (psql auth now fails on the earlier
+  string); service-role REST via .env.local still works for data reads/writes,
+  psql needed for DDL only.
 
 ## Standing decisions / boundaries
 - Xero only via Make. Emails/PDFs leave via Make, never the app directly.
