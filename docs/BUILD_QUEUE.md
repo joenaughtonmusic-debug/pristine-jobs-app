@@ -250,16 +250,34 @@ photo proof); end-of-tenancy 48hr turnaround guarantee.
 pitches before the app supports them.*
 
 ## TIER 4 — validated but not built
-- [ ] **Speed tag** (orange = high speed / yellow = medium / green = detail).
-      Per-job + overridable. Lawn jobs default ORANGE. Non-lawn take the PROPERTY's
-      speed. Property speed does NOT reach into lawns.
-- [ ] **Expected duration per job** — badge at SCHEDULING time on the job card,
-      pulled from the property's quote. Fixed-price jobs are the priority case.
-      VERIFIED: quotes attach via `quote_drafts.property_id`; hours plumbing exists
-      both ends (`quote_drafts.labour_hours`,
+- [x] **Speed tag + real job types + default visit hours — SHIPPED 29 July
+      (PR #63, migration 074 staging+prod).** properties.speed (ALL default
+      yellow — Joe edits from the property dialog) + scheduled_jobs.
+      speed_override; ONE derivation rule in lib/job-speed.ts: override →
+      lawn_mowing ALWAYS orange → property speed → yellow. Badges on admin
+      schedule cards + crew jobs list + crew job detail. Job types
+      one_off/maintenance/lawn_mowing/landscaping, REQUIRED on new jobs
+      (review catch: a silent maintenance default would let lawn jobs dodge
+      the orange rule); 194 legacy rows stay 'job'/untyped; CHECK allowlist
+      covers every existing writer ('estimate' incl.). Default hours: NO new
+      column — exposed the pre-existing properties.default_duration_hours
+      (scheduler always pre-filled from it; only 4/94 set, no UI existed) in
+      the property dialog. Staging browser live-fire proved the full chain.
+      NOTE (Joe, 28 Jul): landscaping is multi-day and hours/billing across
+      multi-day jobs is NOT properly supported — separate open item below.
+- [ ] **Multi-day job support (landscaping)** — raised by Joe 28 Jul while
+      picking job types: a landscaping job spans days but hours recording +
+      billing assume single-visit jobs. Needs scoping before any build.
+- [ ] **Expected duration per job (quote-derived)** — the property-default
+      half shipped in PR #63 (see above); STILL OPEN: pulling hours from the
+      property's QUOTE at scheduling time. Fixed-price jobs the priority.
+      VERIFIED: quotes attach via `quote_drafts.property_id`; hours plumbing
+      exists both ends (`quote_drafts.labour_hours`,
       `scheduled_jobs.planned_duration_hours`). Wiring, not schema.
-      Watch-outs: which quote wins when a property has several; multiple labour
-      lines → leave duration blank, don't sum.
+      Watch-outs: which quote wins when a property has several; multiple
+      labour lines → leave duration blank, don't sum. (Quote-prefill already
+      sets Duration when scheduling FROM a quote — this item is for jobs
+      scheduled outside that seam.)
 - [ ] Post-job follow-up email (review request, referral ask, maintenance upsell)
 - [~] **Photo attach to Xero invoices — Part A+B BUILT (PR, staging-verified);
       Part C (Make) + live-fire are Joe's.** Brief: docs/INVOICE_PHOTO_ATTACH_BRIEF.md.
