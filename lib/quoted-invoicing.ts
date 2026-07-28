@@ -50,15 +50,37 @@ export async function isLegacyQuotedJob(
 }
 
 // 'ready' for everything the invoice view can price — including app-quoted
-// jobs (046 emits the quote's lines). 'excluded' only for legacy quoted
-// jobs, where 'ready' would hand Make an empty invoice.
+// jobs (046 emits the quote's lines). 'excluded' for two classes that must
+// never queue: legacy quoted jobs ('ready' would hand Make an empty invoice)
+// and non_billable jobs (Make route 1 would create a REAL invoice for work
+// that isn't billed — before migration 073 the view emitted a priced labour
+// line for them, so the zero-line guard waved them through).
 export async function readyInvoiceStatusForJob(
   supabase: SupabaseClient,
   scheduledJobId: string | null | undefined,
 ): Promise<"ready" | "excluded"> {
-  return (await isLegacyQuotedJob(supabase, scheduledJobId))
-    ? "excluded"
-    : "ready"
+  if (!scheduledJobId) return "ready"
+
+  const { data } = await supabase
+    .from("scheduled_jobs")
+    .select("invoice_method")
+    .eq("id", scheduledJobId)
+    .maybeSingle()
+
+  if (data?.invoice_method === "non_billable") return "excluded"
+  if (data?.invoice_method !== "quoted") return "ready"
+
+  // Quoted: legacy (no app quote linked) stays excluded — 'ready' would hand
+  // Make an empty invoice. Same test as isLegacyQuotedJob, without refetching
+  // the job row.
+  const { data: quote } = await supabase
+    .from("quote_drafts")
+    .select("id")
+    .eq("first_scheduled_job_id", scheduledJobId)
+    .limit(1)
+    .maybeSingle()
+
+  return quote ? "ready" : "excluded"
 }
 
 // Guard 2 (Brief 05): a visit must never reach Make with a bad invoice —
