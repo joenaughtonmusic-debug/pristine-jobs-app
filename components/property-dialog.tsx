@@ -58,6 +58,8 @@ export function PropertyDialog({
 }: PropertyDialogProps) {
   const [loading, setLoading] = useState(false)
   const [clientName, setClientName] = useState("")
+  const [clientEmail, setClientEmail] = useState("")
+  const [clientPhone, setClientPhone] = useState("")
   const [address, setAddress] = useState("")
   const [accessNotes, setAccessNotes] = useState("")
   const [permanentNotes, setPermanentNotes] = useState("")
@@ -128,6 +130,8 @@ export function PropertyDialog({
 
     if (property) {
       setClientName(property.client_name)
+      setClientEmail(property.client_email || "")
+      setClientPhone(property.phone || "")
       setAddress(property.address_line_1 ?? "")
       setAccessNotes(property.access_notes || "")
       setPermanentNotes(property.permanent_notes || "")
@@ -202,6 +206,8 @@ export function PropertyDialog({
       }
     } else {
       setClientName("")
+      setClientEmail("")
+      setClientPhone("")
       setAddress("")
       setAccessNotes("")
       setPermanentNotes("")
@@ -310,6 +316,8 @@ export function PropertyDialog({
 
     const propertyData = {
   client_name: clientName.trim(),
+  client_email: clientEmail.trim() || null,
+  phone: clientPhone.trim() || null,
   address_line_1: address.trim(),
   access_notes: accessNotes.trim() || null,
   permanent_notes: permanentNotes.trim() || null,
@@ -422,6 +430,30 @@ export function PropertyDialog({
                 value={clientName}
                 onChange={(e) => setClientName(e.target.value)}
                 required
+                className="h-12"
+              />
+            </Field>
+
+            <Field>
+              <FieldLabel htmlFor="clientEmail">Client Email</FieldLabel>
+              <Input
+                id="clientEmail"
+                type="email"
+                placeholder="e.g. john@example.com"
+                value={clientEmail}
+                onChange={(e) => setClientEmail(e.target.value)}
+                className="h-12"
+              />
+            </Field>
+
+            <Field>
+              <FieldLabel htmlFor="clientPhone">Client Phone</FieldLabel>
+              <Input
+                id="clientPhone"
+                type="tel"
+                placeholder="e.g. 021 123 4567"
+                value={clientPhone}
+                onChange={(e) => setClientPhone(e.target.value)}
                 className="h-12"
               />
             </Field>
