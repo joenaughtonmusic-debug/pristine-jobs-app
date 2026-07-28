@@ -9,7 +9,7 @@ import {
   getCostCaptureStatus,
 } from "@/lib/cost-capture"
 import {
-  isLegacyQuotedJob,
+  readyInvoiceStatusForJob,
   readyInvoiceStatusForVisit,
   zeroLineRefusalForVisit,
 } from "@/lib/quoted-invoicing"
@@ -264,15 +264,18 @@ async function addVisitMaterialCost(formData: FormData) {
 
   // Brief 04: extras on an app-quoted job are VARIATIONS — genuinely in
   // addition to the agreed price — so they invoice per-visit like any other
-  // extra (the view labels them and posts to materials). Only legacy quoted
-  // jobs (hand-invoiced from Xero, no app quote) keep the old exclusion:
-  // their visits never fire Make, so a 'ready' extra would just dangle.
-  const legacyQuoted = await isLegacyQuotedJob(supabase, scheduledJobId)
-  const invoiceStatus = legacyQuoted
-    ? "excluded"
-    : billableStatus === "needs_review"
-      ? "review"
-      : "ready"
+  // extra (the view labels them and posts to materials). Excluded classes:
+  // legacy quoted jobs (hand-invoiced from Xero, no app quote — their visits
+  // never fire Make, so a 'ready' extra would just dangle) and non_billable
+  // jobs (073 — a 'ready' extra was the one line the view still emitted for
+  // them, enough to pass the zero-line guard and invoice unbillable work).
+  const jobStatus = await readyInvoiceStatusForJob(supabase, scheduledJobId)
+  const invoiceStatus =
+    jobStatus === "excluded"
+      ? "excluded"
+      : billableStatus === "needs_review"
+        ? "review"
+        : "ready"
 
   await supabase.from("visit_extra_charges").insert({
     visit_id: visitId,
