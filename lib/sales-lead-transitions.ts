@@ -630,3 +630,26 @@ export async function markLost(
     )
   )
 }
+
+// Soft delete (migration 072): spam/junk leaves the board without destroying
+// the row — recoverable via DB, no restore UI. Distinct from markLost, which
+// is a real customer outcome and stays in reporting.
+export async function deleteLead(
+  supabase: SupabaseClient,
+  leadId: string,
+  deletedBy: string
+): Promise<TransitionResult> {
+  const found = await getLead(supabase, leadId)
+  if ("error" in found) return found
+
+  if (found.lead.deleted_at) {
+    return { error: "This lead has already been deleted." }
+  }
+
+  return updateLead(
+    supabase,
+    found.lead,
+    { deleted_at: new Date().toISOString(), deleted_by: deletedBy },
+    createActivity("status_change", `Lead deleted by ${deletedBy}.`)
+  )
+}

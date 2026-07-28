@@ -25,6 +25,7 @@ export async function findDuplicateMatch(
   const { data: leads } = await supabase
     .from("sales_leads")
     .select("name, suburb, phone, email, address")
+    .is("deleted_at", null)
     .limit(1000)
   for (const l of leads || []) {
     if (email && (l.email || "").trim().toLowerCase() === email) {

@@ -39,10 +39,25 @@ export default async function SalesPipelinePage() {
   const { data: leads, error } = await supabase
     .from("sales_leads")
     .select("*")
+    .is("deleted_at", null)
     .order("created_at", { ascending: false })
 
   if (error) {
     console.error("[sales-pipeline] failed to load leads", error)
+
+    // Fail honestly: a leads-query error (e.g. code deployed before its
+    // migration) must show AS an error, never as an empty board.
+    return (
+      <div className="mx-auto max-w-xl p-8">
+        <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+          <p className="font-semibold">The pipeline couldn&apos;t load leads.</p>
+          <p className="mt-1">
+            Nothing is lost — this is a loading error, not an empty pipeline.
+            Error: {error.message}
+          </p>
+        </div>
+      </div>
+    )
   }
 
   // Slice 5: invoiced jobs (Make writes xero_invoice_number back onto
