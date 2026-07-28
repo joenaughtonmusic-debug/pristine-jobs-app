@@ -17,6 +17,7 @@ import {
   advanceStageAction,
   contactLeadAction,
   confirmVisitAction,
+  deleteLeadAction,
   markJobScheduledAction,
   markLostAction,
   markQuoteAcceptedAction,
@@ -61,6 +62,7 @@ type ModalKind =
   | "schedule_job"
   | "follow_up"
   | "mark_lost"
+  | "delete_lead"
   | null
 
 type ActionResult = { ok: true } | { error: string }
@@ -472,6 +474,17 @@ export function PipelineRow({
               type="button"
               variant="outline"
               size="sm"
+              className="text-red-600 hover:bg-red-50 hover:text-red-700"
+              disabled={pending}
+              title="Remove spam or junk from the board. For a real customer who didn't go ahead, use Mark lost."
+              onClick={() => openModal("delete_lead")}
+            >
+              Delete
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
               disabled
               title="Coming in a later slice"
             >
@@ -777,6 +790,35 @@ export function PipelineRow({
                 onClick={() => run(() => markLostAction(lead.id, lostReason))}
               >
                 {pending ? "Saving…" : "Mark lost"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      ) : null}
+
+      {modal === "delete_lead" ? (
+        <Dialog open onOpenChange={(open) => !open && closeModal()}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete {lead.name}?</DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-gray-600">
+              The lead disappears from the pipeline. Use this for spam or
+              junk enquiries — for a real customer who didn&apos;t go ahead,
+              use Mark lost instead so it stays in your numbers.
+            </p>
+            {error ? <p className="text-sm text-red-600">{error}</p> : null}
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={closeModal}>
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={pending}
+                onClick={() => run(() => deleteLeadAction(lead.id))}
+              >
+                {pending ? "Deleting…" : "Delete lead"}
               </Button>
             </DialogFooter>
           </DialogContent>

@@ -52,6 +52,9 @@ export type SalesLead = {
   // (quote_drafts.first_scheduled_job_id), never a direct job link.
   property_id: string | null
   quote_draft_id: string | null
+  // Soft delete (migration 072): set = hidden from the board, row kept.
+  deleted_at?: string | null
+  deleted_by?: string | null
   // Structured service type (migration 047). Nullable — website leads arrive
   // unset; service_needed stays free text. When set, it replaces the
   // wording guess everywhere a quote type is suggested.

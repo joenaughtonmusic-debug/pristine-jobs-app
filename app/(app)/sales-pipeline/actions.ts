@@ -13,6 +13,7 @@ import {
 import {
   advanceStageWithoutAction,
   confirmVisit,
+  deleteLead,
   linkQuoteDraft,
   markJobScheduled,
   markJobScheduledForDraft,
@@ -324,6 +325,20 @@ export async function markLostAction(
   reason: string
 ): Promise<TransitionResult> {
   return runTransition((supabase) => markLost(supabase, leadId, reason))
+}
+
+// Soft delete — for spam/junk. The board query filters deleted rows out;
+// the row survives for recovery (no restore UI by design).
+export async function deleteLeadAction(
+  leadId: string
+): Promise<TransitionResult> {
+  return runTransition(async (supabase) => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+
+    return deleteLead(supabase, leadId, user?.email || "admin")
+  })
 }
 
 // --- Slice 5: invoiced jobs section ----------------------------------------
