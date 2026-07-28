@@ -89,7 +89,11 @@ and must not duplicate it. Tick items here; git history is the archive.
 - [x] **2. VA actions board clear-out** — SHIPPED 26 July (PR #37 + migration
       061; see the [x] entry above).
 - [x] **3. Capture page → VA action board** — SHIPPED 26 July (PR #39),
-      live-fired through real prod triage; VA inbox confirmation pending.
+      live-fired through real prod triage; VA CONFIRMED the notification
+      email arrived (28 July) — chain proven at every link. All 4 early
+      captures were Joe's tests; the Kennards test action dismissed 28 July,
+      board starts clean. Only VA-task-shaped recordings reach the board
+      (triage type annoying_task); other captures stay in the capture list.
 - [x] **4. Fix stale `docs/HANDOFF_for_VS_Code_Claude.md`** — DONE 26 July: the
       false "no staging DB, test against PRODUCTION" section replaced with the
       staging-first flow; shipped ledger now defers to BUILD_QUEUE (was stuck at
