@@ -34,6 +34,11 @@ import {
   formatServiceValue,
 } from "@/lib/service-frequency"
 import { CompleteVisitDialog } from "./complete-visit-dialog"
+import {
+  SPEED_BADGE_CLASSES,
+  SPEED_BADGE_LABELS,
+  deriveJobSpeed,
+} from "@/lib/job-speed"
 
 type LabourEntry = {
   id: string
@@ -60,6 +65,14 @@ function formatPropertyAddress(property: ScheduledJob["properties"]) {
 function getJobTypeLabel(job: ScheduledJob) {
   const serviceType = job.properties?.service_type
   const serviceFrequency = job.properties?.service_frequency
+
+  if (job.job_type === "lawn_mowing") {
+    return "Lawn Mowing"
+  }
+
+  if (job.job_type === "maintenance") {
+    return "Maintenance"
+  }
 
   if (job.job_type === "one_off" || serviceFrequency === "one_off") {
     return "One-off Job"
@@ -139,6 +152,11 @@ const photoInputRef = useRef<HTMLInputElement | null>(null)
     hasServiceValue(property?.service_type) ||
     hasServiceValue(property?.service_frequency)
   const jobTypeLabel = getJobTypeLabel(job)
+  const jobSpeed = deriveJobSpeed({
+    jobType: job.job_type,
+    speedOverride: job.speed_override,
+    propertySpeed: job.properties?.speed,
+  })
   const isQuotedJob =
     job.invoice_method === "quoted" || job.billing_mode === "quoted"
   const isChargeUpJob =
@@ -501,6 +519,12 @@ const photoInputRef = useRef<HTMLInputElement | null>(null)
             {jobTypeLabel && (
               <Badge variant="outline">{jobTypeLabel}</Badge>
             )}
+
+            <span
+              className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${SPEED_BADGE_CLASSES[jobSpeed]}`}
+            >
+              {SPEED_BADGE_LABELS[jobSpeed]}
+            </span>
 
             {!jobTypeLabel && hasServiceDetails && (
               <Badge variant="outline" className="capitalize">

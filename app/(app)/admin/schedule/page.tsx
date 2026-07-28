@@ -76,6 +76,7 @@ export default async function AdminSchedulePage({
   client_email,
   phone,
   scheduling_notes,
+  speed,
   service_type,
   service_frequency,
   service_interval_weeks
@@ -127,6 +128,7 @@ export default async function AdminSchedulePage({
       is_active,
       billing_type,
       client_email,
+      speed,
       service_type,
       service_frequency,
       service_interval_weeks

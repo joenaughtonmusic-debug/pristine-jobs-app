@@ -25,6 +25,10 @@ export interface Property {
   subscription_amount?: number | null
   subscription_invoice_confirmed_at?: string | null
   subscription_invoice_confirmed_by?: string | null
+  // 074: crew pace tag (orange|yellow|green, default yellow). The scheduler
+  // hours pre-fill uses the pre-existing default_duration_hours column.
+  speed?: string | null
+  default_duration_hours?: number | null
 }
 
 export interface ScheduledJob {
@@ -39,6 +43,8 @@ export interface ScheduledJob {
   planned_start_time?: string | null
   billing_mode?: string | null
   invoice_method?: string | null
+  // 074: per-job speed exception; NULL = derive via lib/job-speed.
+  speed_override?: string | null
 time_limit_type?: string | null
 quoted_scope?: string | null
 quoted_materials?: string | null

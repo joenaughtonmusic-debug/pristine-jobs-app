@@ -2,6 +2,11 @@
 
 import Link from "next/link"
 import type { ScheduledJob } from "@/lib/types"
+import {
+  SPEED_BADGE_CLASSES,
+  SPEED_BADGE_LABELS,
+  deriveJobSpeed,
+} from "@/lib/job-speed"
 
 type JobWithStaff = ScheduledJob & {
   scheduled_job_staff?: {
@@ -17,6 +22,14 @@ interface JobsListProps {
 function getJobTypeLabel(job: ScheduledJob) {
   const serviceType = job.properties?.service_type
   const serviceFrequency = job.properties?.service_frequency
+
+  if (job.job_type === "lawn_mowing") {
+    return "Lawn Mowing"
+  }
+
+  if (job.job_type === "maintenance") {
+    return "Maintenance"
+  }
 
   if (job.job_type === "one_off" || serviceFrequency === "one_off") {
     return "One-off Job"
@@ -73,6 +86,11 @@ export function JobsList({ jobs }: JobsListProps) {
           (job.invoice_method === "charge_up" || job.billing_mode === "charge_up")
         const isTimeFlexible = job.time_limit_type === "flexible"
         const jobTypeLabel = getJobTypeLabel(job)
+        const jobSpeed = deriveJobSpeed({
+          jobType: job.job_type,
+          speedOverride: job.speed_override,
+          propertySpeed: job.properties?.speed,
+        })
         const propertyAddress = formatPropertyAddress(job.properties)
 
         const crewSize =
@@ -137,6 +155,12 @@ const endTime = calculateEndTime(
                       {jobTypeLabel}
                     </span>
                   )}
+
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-xs font-semibold ${SPEED_BADGE_CLASSES[jobSpeed]}`}
+                  >
+                    {SPEED_BADGE_LABELS[jobSpeed]}
+                  </span>
                 </div>
 
                 <p className="mt-1 whitespace-normal break-words text-sm text-muted-foreground">

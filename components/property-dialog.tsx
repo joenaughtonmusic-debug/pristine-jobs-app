@@ -19,6 +19,7 @@ import {
   getServiceIntervalWeeks,
   serviceFrequencyOptions,
 } from "@/lib/service-frequency"
+import { JOB_SPEED_OPTIONS } from "@/lib/job-speed"
 import {
   ISSUE_STATUSES,
   ISSUE_STATUS_LABELS,
@@ -60,6 +61,8 @@ export function PropertyDialog({
   const [clientName, setClientName] = useState("")
   const [clientEmail, setClientEmail] = useState("")
   const [clientPhone, setClientPhone] = useState("")
+  const [speed, setSpeed] = useState("yellow")
+  const [defaultVisitHours, setDefaultVisitHours] = useState("")
   const [address, setAddress] = useState("")
   const [accessNotes, setAccessNotes] = useState("")
   const [permanentNotes, setPermanentNotes] = useState("")
@@ -132,6 +135,12 @@ export function PropertyDialog({
       setClientName(property.client_name)
       setClientEmail(property.client_email || "")
       setClientPhone(property.phone || "")
+      setSpeed(property.speed || "yellow")
+      setDefaultVisitHours(
+        property.default_duration_hours != null
+          ? String(property.default_duration_hours)
+          : ""
+      )
       setAddress(property.address_line_1 ?? "")
       setAccessNotes(property.access_notes || "")
       setPermanentNotes(property.permanent_notes || "")
@@ -208,6 +217,8 @@ export function PropertyDialog({
       setClientName("")
       setClientEmail("")
       setClientPhone("")
+      setSpeed("yellow")
+      setDefaultVisitHours("")
       setAddress("")
       setAccessNotes("")
       setPermanentNotes("")
@@ -325,6 +336,8 @@ export function PropertyDialog({
   service_type: serviceType.trim() || null,
   service_frequency: serviceFrequency || null,
   service_interval_weeks: getServiceIntervalWeeks(serviceFrequency),
+  speed,
+  default_duration_hours: defaultVisitHours ? Number(defaultVisitHours) : null,
   is_rental: isRental,
   property_manager_id: propertyManagerId || null,
   updated_at: new Date().toISOString(),
@@ -643,6 +656,38 @@ export function PropertyDialog({
                   </option>
                 ))}
               </select>
+            </Field>
+
+            <Field>
+              <FieldLabel htmlFor="propertySpeed">Speed</FieldLabel>
+              <select
+                id="propertySpeed"
+                className="h-12 w-full rounded-md border bg-background px-3 text-sm"
+                value={speed}
+                onChange={(e) => setSpeed(e.target.value)}
+              >
+                {JOB_SPEED_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </Field>
+
+            <Field>
+              <FieldLabel htmlFor="defaultVisitHours">
+                Default Visit Hours
+              </FieldLabel>
+              <Input
+                id="defaultVisitHours"
+                type="number"
+                min="0"
+                step="0.25"
+                placeholder="Pre-fills the scheduler, e.g. 4"
+                value={defaultVisitHours}
+                onChange={(e) => setDefaultVisitHours(e.target.value)}
+                className="h-12"
+              />
             </Field>
 
             <Field>
