@@ -4,24 +4,25 @@ The ONLY tickable list. The session handoff (docs/SESSION_HANDOFF.md) points her
 and must not duplicate it. Tick items here; git history is the archive.
 
 ## NEXT UP — one-line fix, live-fire to verify
-- [ ] **Property client email not editable in UI (VA blocked, 28 Jul).**
-      `client_email` is settable at creation (new-property-modal.tsx) but the
-      edit dialog (property-dialog.tsx) edits client_name only — no email
-      field, so the VA can't fix a wrong/changed email. Fix: add client email
-      (and phone, same pattern) to the property edit dialog under
-      /admin/properties. Small, well-scoped.
-- [ ] **Guarded admin-only lead delete on /sales-pipeline (promoted from
-      Tier 4, 28 Jul).** Website spam is landing in the pipeline with no way
-      to remove it. Delete must be admin-only + confirm step; prefer
-      soft-delete/archive over hard DELETE so a mis-click isn't data loss.
-- [ ] **Website contact-form spam (WordPress theme repo, NOT this app).**
-      Joe: "heaps of spam coming through". NOTE: the form is the custom pgv2
-      plugin, NOT Contact Form 7 — and it ALREADY has a honeypot
-      (`pgv2_ref_code`) + per-IP rate limit (5/hr, since 0.21.2/26 Jul), so
-      the spam is beating those. Next step up: Cloudflare Turnstile on the
-      form (free, invisible to humans, no puzzle). Work happens in
-      ~/Desktop/pristine-wordpress-theme; tracked here because the spam
-      lands in this app's pipeline. Pairs with the lead-delete item above.
+- [x] **Property client email not editable in UI — SHIPPED 28 July (PR #59).**
+      Client Email + Client Phone fields added to the property edit dialog
+      (both save on edit AND add; empty saves NULL; add-mode resets both —
+      review caught stale values leaking into new properties). Live column is
+      `phone`, NOT client_phone. Staging browser live-fire passed, DB-verified.
+- [x] **Guarded admin-only lead delete — SHIPPED 28 July (PR #60, migration
+      072 staging+prod).** Soft delete (`deleted_at`/`deleted_by` on
+      sales_leads): red Delete button + confirm on the expanded card; deleted
+      leads hidden from the board and from lead-intake duplicate matching,
+      recoverable via DB (no restore UI by design). Confirm copy steers real
+      customers to Mark lost so reporting stays honest. Board leads-query
+      errors now render a visible banner, never an empty board. Staging
+      browser live-fire passed end-to-end.
+- [~] **Website contact-form spam (WordPress theme repo, NOT this app).**
+      The form is the custom pgv2 plugin, NOT Contact Form 7. Honeypot +
+      per-IP rate limit (0.21.2) are being beaten. Cloudflare Turnstile is
+      ALREADY CODED in the theme repo (0.22.0 + 0.22.1 script-URL fix, off
+      until keys are set) — REMAINING: Joe creates the Turnstile keys and
+      turns it on. Pairs with lead delete above for the spam already landed.
 - [x] **Comms-reply webhook env var — MOOT, closed 26 July.** The comms page
       bin proceeded (branch comms-page-bin), so Send Reply no longer exists.
       Never add `NEXT_PUBLIC_SEND_COMMUNICATION_REPLY_WEBHOOK_URL` to Vercel.
@@ -280,8 +281,8 @@ pitches before the app supports them.*
 - [ ] Billing-change audit log (who, when, from → to)
 - [ ] Verify: is billing method locked when a job comes from a quote?
 - [ ] Billing type mandatory on property at creation (no default); jobs inherit
-- [ ] Quote export (clipboard or CSV) · quote log book · crew runbook ·
-      guarded admin-only lead delete
+- [ ] Quote export (clipboard or CSV) · quote log book · crew runbook
+      (lead delete SHIPPED 28 July — see NEXT UP)
 - [ ] Calendly-style booking slots with geography clustering (respect the GCal
       boundary — this is its own scoping job)
 
@@ -324,19 +325,26 @@ pitches before the app supports them.*
 - [x] **Trevor (75 Pah Rd, Howick) — property marked INACTIVE 27 July** (Joe's
       ruling: no work done, none intended; was the audit's only
       active-with-no-billing-line property).
-- [~] **Verify the app never sets ready_for_invoice=true on a non_billable
-      visit — VERIFIED 28 Jul: the guard DOES NOT EXIST, but zero exposure
-      today.** Crew complete-dialog stamps ready with no billing check
-      (complete-visit-dialog.tsx:205); readyInvoiceStatusForJob excludes only
-      legacy quoted; the view's labour branch excludes only quoted/
-      subscription — a non_billable visit with hours + a property hourly_rate
-      would invoice via Make route 1. Checked LIVE prod: 0 non_billable jobs
-      exist, 0 ever queued/invoiced; live view matches script 049. So: real
-      hole, never walked through. Proposed fix (not built, awaiting Joe):
-      (a) readyInvoiceStatusForJob returns 'excluded' for non_billable —
-      covers all 3 write paths; (b) migration adding non_billable to the
-      view's branch 1+2 exclusions so a hand-set ready visit hands Make zero
-      lines. Cheap insurance, low urgency.
+- [x] **Non_billable invoice guard — SHIPPED 28 July (PR #61, migration 073
+      staging+prod).** The 28-Jul verification found the guard DID NOT EXIST
+      (crew dialog stamped ready with no billing check; the view's visit
+      branches didn't exclude non_billable) but zero prod exposure (0
+      non_billable jobs ever). Fix, two independent layers, deploy-order
+      safe: (a) readyInvoiceStatusForJob returns 'excluded' for non_billable
+      — single choke point behind all 3 ready-stamp paths, and cost-capture's
+      extras insert now uses it too; (b) 073: the view emits NOTHING for
+      non_billable — both visit branches AND the extras branch (review catch:
+      a 'ready' extra charge was the one line still emitted, enough to pass
+      the zero-line guard). Staging acceptance 4/4 incl. charge_up /
+      fixed_recurring / legacy-quoted controls unchanged.
+      ⚠️ CORRECTION of this entry's earlier text + STANDING LESSON: the live
+      view did NOT "match script 049" — it had a 5th fixed_recurring branch
+      and wider exclusions that exist only live (a substring grep had
+      "confirmed" the match). The 049-built first cut of 073 clobbered that
+      branch on STAGING; caught by diffing pg_get_viewdef against prod
+      before prod was touched. 073's body is the live prod viewdef verbatim;
+      when replacing ANY view, diff pg_get_viewdef live-vs-live, never trust
+      scripts/ or a substring check.
 - [ ] **Extras flow for fixed-price invoices** — petrol/greenwaste etc. as
       visit_extra_charges lines appended under the fixed line; the view
       already supports it (sort_order 10); needs the office add-extras flow.
