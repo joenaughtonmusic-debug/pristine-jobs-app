@@ -3,6 +3,7 @@ export interface Property {
   property_code?: string
   client_name: string
   client_email?: string | null
+  phone?: string | null
   address_line_1?: string | null
   suburb?: string | null
   city?: string | null
