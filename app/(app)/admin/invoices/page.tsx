@@ -895,7 +895,9 @@ export default async function AdminInvoicesPage({
                       <WarningBadge tone="red">Labour mismatch</WarningBadge>
                     )}
                     {costCaptureFlags.missingMaterialReview && (
-                      <WarningBadge tone="amber">Missing material review</WarningBadge>
+                      <WarningBadge tone="amber">
+                        Materials note — check billing
+                      </WarningBadge>
                     )}
                     {costCaptureFlags.missingWorkNotes && (
                       <WarningBadge tone="amber">No work notes</WarningBadge>

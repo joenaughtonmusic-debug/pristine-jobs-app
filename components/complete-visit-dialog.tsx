@@ -56,9 +56,21 @@ export function CompleteVisitDialog({
   const [nextVisitNotes, setNextVisitNotes] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [primaryStaffId, setPrimaryStaffId] = useState(assignedStaffId || "")
-  const [extraMaterialsState, setExtraMaterialsState] = useState<
-    "none" | "needs_admin_review"
-  >("none")
+  // Materials (non-blocking, by decision 29 Jul): known priced items are
+  // picked with a quantity and auto-bill as invoice lines; anything typed in
+  // the freeform box is a NOTE for the office — flagged for review but it
+  // NEVER holds the visit back from invoicing.
+  const [knownMaterials, setKnownMaterials] = useState<
+    {
+      id: string
+      item_code: string
+      staff_label: string
+      invoice_description: string
+      unit_price: number
+      unit: string | null
+    }[]
+  >([])
+  const [materialQty, setMaterialQty] = useState<Record<string, string>>({})
   const [extraMaterialsNote, setExtraMaterialsNote] = useState("")
 
   const [helpers, setHelpers] = useState<
@@ -76,6 +88,32 @@ export function CompleteVisitDialog({
   // silently upload photos the crew can no longer see.
   useEffect(() => {
     if (open) setWalkAroundIssues([])
+  }, [open])
+
+  // Price list for the known-materials quick-pick (crew have SELECT on
+  // extra_charge_items). Load failure degrades to freeform-only — materials
+  // must never block completion, including when this fetch fails.
+  useEffect(() => {
+    if (!open) return
+    setMaterialQty({})
+    createClient()
+      .from("extra_charge_items")
+      .select("id, item_code, staff_label, invoice_description, unit_price, unit")
+      .eq("is_active", true)
+      .order("staff_label", { ascending: true })
+      .then(({ data, error: itemsError }) => {
+        if (itemsError) {
+          console.error("extra_charge_items load failed", itemsError)
+          setKnownMaterials([])
+          return
+        }
+        setKnownMaterials(
+          (data || []).map((row) => ({
+            ...row,
+            unit_price: Number(row.unit_price),
+          })) as typeof knownMaterials
+        )
+      })
   }, [open])
 
   const [staffOptions, setStaffOptions] = useState<
@@ -201,15 +239,20 @@ if (assignedError) {
     (total, helper) => total + helper.parsedHours,
     0
   )
-  const materialReviewComplete = extraMaterialsState === "none"
-  const readyForInvoice = materialReviewComplete
+  // Decision 29 Jul: materials NEVER block invoicing. Known picks auto-bill;
+  // a freeform note is flagged for office review but the visit still goes
+  // ready. (Sue Good 24 Jul sat unbilled behind the old manual gate.)
+  const readyForInvoice = true
+  const selectedMaterials = knownMaterials
+    .map((item) => ({ item, qty: parseFloat(materialQty[item.id] || "0") }))
+    .filter(({ qty }) => !isNaN(qty) && qty > 0)
   const costCaptureWarnings = [
     !workNotes.trim() ? "Work notes are required for back-costing context." : null,
     Math.abs(totalHours - labourEntryTotal) > 0.01
       ? "Staff labour entry hours do not match total visit hours."
       : null,
-    !materialReviewComplete
-      ? "Materials/extras need admin review."
+    extraMaterialsNote.trim()
+      ? "Your materials note will be flagged for the office to check billing."
       : null,
   ].filter(Boolean)
 
@@ -369,10 +412,9 @@ if (existingVisit) {
       }
     }
 
-    const materialsReviewNote =
-      extraMaterialsState === "needs_admin_review"
-        ? extraMaterialsNote.trim() || "Extras/materials used - needs admin review"
-        : extraMaterialsNote.trim() || null
+    // Freeform text only — known picks become priced charge rows below and
+    // need no office review.
+    const materialsReviewNote = extraMaterialsNote.trim() || null
 
     // Quoted jobs are invoiced once from the quote, never per visit — exclude
     // a ready visit so it can't become its own per-visit invoice.
@@ -402,9 +444,11 @@ if (existingVisit) {
       // becomes 'ready', not even for an instant.
       ready_for_invoice: false,
       invoice_status: "not_ready",
-      cost_capture_reviewed_at: materialReviewComplete
-        ? new Date().toISOString()
-        : null,
+      // Reviewed = nothing left for the office to price: known picks carry
+      // their own prices; only a freeform note leaves the review flag open.
+      cost_capture_reviewed_at: materialsReviewNote
+        ? null
+        : new Date().toISOString(),
       materials_review_note: materialsReviewNote,
     }
 
@@ -551,6 +595,47 @@ if (existingVisit) {
   }
 }
 
+    }
+
+    // Known materials -> priced invoice lines, written before the ready stamp
+    // so the invoice picks them up in the same pass. Prices come from
+    // extra_charge_items (never typed by crew).
+    if (createdVisit && selectedMaterials.length > 0) {
+      const chargeRows = selectedMaterials.map(({ item, qty }) => ({
+        visit_id: createdVisit.id,
+        scheduled_job_id: jobId,
+        property_id: propertyId,
+        extra_charge_item_id: item.id,
+        item_code: item.item_code,
+        staff_label: item.staff_label,
+        invoice_description: item.invoice_description,
+        category: item.item_code.startsWith("SPRAY")
+          ? "spray"
+          : item.item_code.startsWith("FERT")
+            ? "fertiliser"
+            : "other",
+        quantity: qty,
+        unit_price: item.unit_price,
+        unit_sell_price: item.unit_price,
+        // total_price is a DB-generated column (qty x unit_price) — never insert it.
+        total_sell_price: qty * item.unit_price,
+        billable_status: "billable",
+        invoice_status: "ready",
+      }))
+
+      const { error: chargesError } = await supabase
+        .from("visit_extra_charges")
+        .insert(chargeRows)
+
+      if (chargesError) {
+        await removeIssueUploads()
+        setError(
+          `Visit saved, but the materials charges failed (${chargesError.message}). ` +
+            "Tell the office — do not complete this job again."
+        )
+        setLoading(false)
+        return
+      }
     }
 
     // Guard 2 (crew path): stamp the invoice queue state last. A refusal keeps
@@ -832,47 +917,65 @@ if (existingVisit) {
             </div>
 
             <Field>
-              <FieldLabel>Extra materials / admin note</FieldLabel>
-              <div className="grid gap-2">
-                <label className="flex items-start gap-2 rounded-md border p-3 text-sm">
-                  <input
-                    type="radio"
-                    className="mt-1"
-                    name="extraMaterialsState"
-                    checked={extraMaterialsState === "none"}
-                    onChange={() => setExtraMaterialsState("none")}
-                  />
-                  <span>
-                    No extras/materials used
-                    <span className="block text-xs text-muted-foreground">
-                      Green waste bags are recorded separately above.
-                    </span>
-                  </span>
-                </label>
+              <FieldLabel>Materials used</FieldLabel>
+              <p className="text-xs text-muted-foreground">
+                Tap the products you used — they bill automatically at the set
+                price. Green waste bags are recorded separately above.
+              </p>
 
-                <label className="flex items-start gap-2 rounded-md border p-3 text-sm">
-                  <input
-                    type="radio"
-                    className="mt-1"
-                    name="extraMaterialsState"
-                    checked={extraMaterialsState === "needs_admin_review"}
-                    onChange={() => setExtraMaterialsState("needs_admin_review")}
-                  />
-                  <span>
-                    Extras/materials used - needs admin review
-                    <span className="block text-xs text-muted-foreground">
-                      Add a short note below. Admin will cost or invoice it later.
-                    </span>
-                  </span>
-                </label>
-              </div>
+              {knownMaterials.length > 0 && (
+                <div className="mt-2 grid gap-2">
+                  {knownMaterials.map((item) => {
+                    const qty = materialQty[item.id] || ""
+                    const selected = parseFloat(qty) > 0
+                    return (
+                      <div
+                        key={item.id}
+                        className={`flex items-center justify-between gap-3 rounded-md border p-2.5 text-sm ${
+                          selected ? "border-green-400 bg-green-50" : ""
+                        }`}
+                      >
+                        <span className="min-w-0">
+                          {item.staff_label}
+                          <span className="block text-xs text-muted-foreground">
+                            ${item.unit_price.toFixed(2)}
+                            {item.unit ? ` ${item.unit}` : ""}
+                          </span>
+                        </span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="1"
+                          inputMode="numeric"
+                          className="h-10 w-20 rounded-md border px-2 text-center"
+                          placeholder="0"
+                          value={qty}
+                          onChange={(event) =>
+                            setMaterialQty((prev) => ({
+                              ...prev,
+                              [item.id]: event.target.value,
+                            }))
+                          }
+                        />
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+
+              <FieldLabel className="mt-3">
+                Other materials / note for the office
+              </FieldLabel>
               <Textarea
-                className="mt-3"
                 value={extraMaterialsNote}
                 onChange={(event) => setExtraMaterialsNote(event.target.value)}
                 rows={2}
-                placeholder="Example: used 6 stakes and ties, half bag fertiliser, extra spray, etc."
+                placeholder="Anything not in the list above — e.g. 6 stakes and ties, half bag fertiliser."
               />
+              <p className="text-xs text-muted-foreground">
+                Notes never hold up the invoice — the office checks them
+                afterwards for anything that should be charged.
+              </p>
             </Field>
 
             {propertyIsRental && (

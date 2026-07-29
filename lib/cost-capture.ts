@@ -113,7 +113,9 @@ export function getCostCaptureIssueLabels(input: CostCaptureInput) {
     flags.missingLabour ? "Missing visit labour entries" : null,
     flags.labourMismatch ? "Labour entries do not match total hours" : null,
     flags.missingWorkNotes ? "Missing work notes" : null,
-    flags.missingMaterialReview ? "Missing material review" : null,
+    // Non-blocking by decision 29 Jul: a freeform materials note flags the
+    // visit for a billing check but never holds it out of the invoice queue.
+    flags.missingMaterialReview ? "Materials note — check billing" : null,
     flags.readyForInvoiceWithWarnings
       ? "Ready for invoice but incomplete"
       : null,
