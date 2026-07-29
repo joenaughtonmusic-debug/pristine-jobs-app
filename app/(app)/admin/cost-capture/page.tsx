@@ -151,7 +151,7 @@ function statusLabel(status: CostCaptureStatus) {
     complete: "Complete",
     missing_labour: "Missing labour",
     labour_mismatch: "Labour mismatch",
-    missing_material_review: "Missing material review",
+    missing_material_review: "Materials note — check billing",
     ready_for_invoice_with_warnings: "Ready with warnings",
   }
 

@@ -345,6 +345,20 @@ pitches before the app supports them.*
       before prod was touched. 073's body is the live prod viewdef verbatim;
       when replacing ANY view, diff pg_get_viewdef live-vs-live, never trust
       scripts/ or a substring check.
+- [~] **Crew materials non-blocking (approved 29 Jul, built, staging-verified
+      as NON-ADMIN; Joe's real-phone gate pending before merge).** Known
+      priced items (extra_charge_items) quick-picked in the crew Complete
+      dialog auto-bill as invoice lines; freeform text is a NOTE only —
+      flagged "Materials note — check billing" on cost-capture + invoices,
+      NEVER blocks ready (the old needs-admin-review radio gate lost Sue
+      Good's visit). No migration: the job-member RLS policy + grants
+      already existed on both DBs. total_price is a GENERATED column —
+      never insert it. Joe's ruling: ship without cost prices (see next).
+- [ ] **Cost prices for the 8 extra_charge_items** — the table has sell
+      prices only, so quick-picked materials count as $0 COST in margin
+      reports (revenue correct; GP slightly overstated). Joe accepted this
+      29 Jul to ship; fix = add a unit_cost column + Joe's real costs, then
+      have the crew insert copy it. Small migration + dialog tweak.
 - [ ] **Extras flow for fixed-price invoices** — petrol/greenwaste etc. as
       visit_extra_charges lines appended under the fixed line; the view
       already supports it (sort_order 10); needs the office add-extras flow.
