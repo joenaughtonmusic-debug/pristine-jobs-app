@@ -7,6 +7,13 @@ import { createClient } from "@/lib/supabase/client"
 import { NewPropertyModal } from "@/components/new-property-modal"
 import { markJobScheduledForDraftAction } from "@/app/(app)/sales-pipeline/actions"
 import {
+  JOB_SPEED_OPTIONS,
+  JOB_TYPE_CHOICES,
+  SPEED_BADGE_CLASSES,
+  SPEED_BADGE_LABELS,
+  deriveJobSpeed,
+} from "@/lib/job-speed"
+import {
   buildCrewMaterialsList,
   getQuoteLabourHours,
 } from "@/lib/quote-materials"
@@ -44,6 +51,7 @@ type Property = {
   billing_modes?: string[] | null
   client_email?: string | null
   scheduling_notes?: string | null
+  speed?: string | null
   service_type?: string | null
   service_frequency?: string | null
   service_interval_weeks?: number | null
@@ -86,6 +94,7 @@ type Job = {
   id: string
   property_id: string
   job_type?: string | null
+  speed_override?: string | null
   scheduled_date: string
   status: string
   job_order: number | null
@@ -126,6 +135,7 @@ admin_note?: string | null
   client_email?: string | null
   phone?: string | null
 scheduling_notes?: string | null
+speed?: string | null
 service_type?: string | null
 service_frequency?: string | null
 service_interval_weeks?: number | null
@@ -255,6 +265,14 @@ function getScheduleJobTypeLabel(job: Job) {
   const serviceType = job.properties?.service_type
   const serviceFrequency = job.properties?.service_frequency
 
+  if (job.job_type === "lawn_mowing") {
+    return "Lawn Mowing"
+  }
+
+  if (job.job_type === "maintenance") {
+    return "Maintenance"
+  }
+
   if (job.job_type === "one_off" || serviceFrequency === "one_off") {
     return "One-off Job"
   }
@@ -308,6 +326,12 @@ export function AdminScheduleClient({
   const [selectedStaffIds, setSelectedStaffIds] = useState<string[]>([])
   const [jobOrder, setJobOrder] = useState("")
   const [plannedDuration, setPlannedDuration] = useState("")
+  // 074: real job type + per-job speed exception ("" = derive automatically).
+  // jobType starts "" and a NEW job must pick one — a silent default would
+  // let lawn jobs save as maintenance and dodge the orange lawn rule. On a
+  // legacy untyped job, "" means: keep the stored value untouched.
+  const [jobType, setJobType] = useState("")
+  const [speedOverride, setSpeedOverride] = useState("")
   const [plannedStartTime, setPlannedStartTime] = useState("")
   const [quotedScope, setQuotedScope] = useState("")
 const [quotedMaterials, setQuotedMaterials] = useState("")
@@ -701,6 +725,8 @@ scheduling_notes: updateSchedulingNotes.trim() || null,
     setQuotedScope(firstTemplate?.default_job_notes || "")
 setQuotedMaterials("")
 setAdminNote("")
+    setJobType("")
+    setSpeedOverride("")
 setInvoiceMethod(getDefaultInvoiceMethod(property))
     setOverrideMethodMismatch(false)
     setXeroQuoteNumber("")
@@ -724,6 +750,14 @@ setInvoiceMethod(getDefaultInvoiceMethod(property))
 
     setInvoiceMethod(
       activeQuotePrefill.quote_type === "maintenance" ? "charge_up" : "quoted"
+    )
+
+    setJobType(
+      activeQuotePrefill.quote_type === "maintenance"
+        ? "maintenance"
+        : activeQuotePrefill.quote_type === "landscaping"
+          ? "landscaping"
+          : "one_off"
     )
 
     if (activeQuotePrefill.customer_scope) {
@@ -780,6 +814,12 @@ setInvoiceMethod(getDefaultInvoiceMethod(property))
     setQuotedScope(job.quoted_scope || "")
 setQuotedMaterials(job.quoted_materials || "")
 setAdminNote(job.admin_note || "")
+    setJobType(
+      JOB_TYPE_CHOICES.some((c) => c.value === job.job_type)
+        ? (job.job_type as string)
+        : ""
+    )
+    setSpeedOverride(job.speed_override || "")
 setInvoiceMethod(job.invoice_method || "")
     setOverrideMethodMismatch(false)
     setXeroQuoteNumber(job.xero_quote_number || "")
@@ -966,6 +1006,13 @@ setInvoiceMethod(job.invoice_method || "")
       return
     }
 
+    // New jobs must carry a real type (lawn jobs depend on it for the orange
+    // speed rule). Editing a legacy untyped job is exempt — "" keeps 'job'.
+    if (!jobType && !selectedJob) {
+      setError("Choose a job type.")
+      return
+    }
+
     if (
       isMethodMismatch(selectedProperty, invoiceMethod) &&
       !overrideMethodMismatch
@@ -1020,14 +1067,13 @@ setInvoiceMethod(job.invoice_method || "")
       quoted_scope: quotedScope || null,
 quoted_materials: quotedMaterials || null,
 admin_note: adminNote || null,
+      // 074: type comes from the select (quote prefill just pre-picks it).
+      // "" = editing a legacy untyped job with no type chosen — keep what's
+      // stored rather than guessing.
+      job_type: jobType || selectedJob?.job_type || "job",
+      speed_override: speedOverride || null,
       ...(schedulingFromQuote
         ? {
-            job_type:
-              prefillQuoteType === "maintenance"
-                ? "maintenance"
-                : prefillQuoteType === "landscaping"
-                  ? "landscaping"
-                  : "job",
             quoted_amount:
               prefillQuoteType === "maintenance"
                 ? null
@@ -1334,6 +1380,11 @@ const handleSendClientEmail = async () => {
     const openInternalNotes = getOpenInternalNotes(job)
     const isNotesExpanded = expandedNoteJobIds.includes(job.id)
     const jobTypeLabel = getScheduleJobTypeLabel(job)
+    const jobSpeed = deriveJobSpeed({
+      jobType: job.job_type,
+      speedOverride: job.speed_override,
+      propertySpeed: job.properties?.speed,
+    })
     const propertyAddress = formatPropertyAddress(job.properties)
     const hasServiceDetails =
       hasServiceValue(job.properties?.service_type) ||
@@ -1374,6 +1425,12 @@ const handleSendClientEmail = async () => {
                 : ""}
             </span>
           )}
+
+          <span
+            className={`rounded-full px-2 py-0.5 font-medium ${SPEED_BADGE_CLASSES[jobSpeed]}`}
+          >
+            {SPEED_BADGE_LABELS[jobSpeed]}
+          </span>
 
           {job.properties?.is_rental && (
             <span className="rounded-full bg-amber-200 px-2 py-0.5 font-semibold text-amber-900">
@@ -2129,6 +2186,55 @@ const handleSendClientEmail = async () => {
                     onChange={(e) => setPlannedDuration(e.target.value)}
                     placeholder="e.g. 3"
                   />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1 block text-sm font-medium">
+                    Job Type
+                  </label>
+
+                  <select
+                    className="h-11 w-full rounded-md border px-3"
+                    value={jobType}
+                    onChange={(e) => setJobType(e.target.value)}
+                  >
+                    {jobType === "" &&
+                      (selectedJob ? (
+                        <option value="">Untyped (legacy)</option>
+                      ) : (
+                        <option value="" disabled>
+                          Choose type…
+                        </option>
+                      ))}
+                    {JOB_TYPE_CHOICES.map((choice) => (
+                      <option key={choice.value} value={choice.value}>
+                        {choice.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-sm font-medium">
+                    Speed
+                  </label>
+
+                  <select
+                    className="h-11 w-full rounded-md border px-3"
+                    value={speedOverride}
+                    onChange={(e) => setSpeedOverride(e.target.value)}
+                  >
+                    <option value="">
+                      Auto (lawns orange, else property)
+                    </option>
+                    {JOB_SPEED_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
