@@ -10,6 +10,7 @@ import {
   setLeadPropertyForDraftAction,
 } from "@/app/(app)/sales-pipeline/actions"
 import { getTemplateQuoteType } from "@/lib/sales-leads"
+import { createMaintenanceCalendarEvent } from "@/app/(app)/admin/actions/maintenance-calendar-actions"
 import { getPublicQuoteUrl } from "@/lib/public-quote-url"
 import {
   buildCrewMaterialsList,
@@ -712,6 +713,13 @@ export function AdminQuoteBuilderClient({
     useState<string | null>(null)
   const [copyingQuoteId, setCopyingQuoteId] = useState<string | null>(null)
   const [convertingQuoteId, setConvertingQuoteId] = useState<string | null>(null)
+  // Recurring maintenance calendar event (078): keyed by the converted property
+  // id so each card tracks its own state in this list.
+  const [calendarSavingId, setCalendarSavingId] = useState<string | null>(null)
+  const [calendarDoneIds, setCalendarDoneIds] = useState<Set<string>>(new Set())
+  const [calendarMsgById, setCalendarMsgById] = useState<
+    Record<string, string>
+  >({})
   const [markingRecurringInvoiceId, setMarkingRecurringInvoiceId] =
     useState<string | null>(null)
   const [markingFollowUp, setMarkingFollowUp] = useState<string | null>(null)
@@ -1676,6 +1684,19 @@ Pristine Gardens`)
 
     await loadQuoteDrafts()
     setMessage("Quote marked accepted.")
+  }
+
+  const handleAddCalendarForProperty = async (propertyId: string) => {
+    setCalendarSavingId(propertyId)
+    setCalendarMsgById((prev) => ({ ...prev, [propertyId]: "" }))
+    const result = await createMaintenanceCalendarEvent(propertyId)
+    setCalendarSavingId(null)
+    if (result.ok) {
+      setCalendarDoneIds((prev) => new Set(prev).add(propertyId))
+      setCalendarMsgById((prev) => ({ ...prev, [propertyId]: result.message }))
+    } else {
+      setCalendarMsgById((prev) => ({ ...prev, [propertyId]: result.error }))
+    }
   }
 
   const convertAcceptedQuoteToProperty = async (draft: QuoteDraftSummary) => {
@@ -3656,6 +3677,39 @@ Pristine Gardens`)
                       {getScheduleActionLabel(draft.quote_type)}
                     </button>
                   )}
+
+                  {/* 078: once a maintenance quote is a property, add its
+                      recurring visit to Google Calendar right here — no need to
+                      open the property window. Guarded server-side + per-card. */}
+                  {convertedPropertyId &&
+                    getNormalisedQuoteType(draft.quote_type) ===
+                      "maintenance" && (
+                      <>
+                        {calendarDoneIds.has(convertedPropertyId) ? (
+                          <span className="text-xs font-medium text-green-700">
+                            ✓ Added to Google Calendar
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleAddCalendarForProperty(convertedPropertyId)
+                            }
+                            disabled={calendarSavingId === convertedPropertyId}
+                            className="h-10 rounded-md bg-black px-3 text-sm font-medium text-white disabled:opacity-50"
+                          >
+                            {calendarSavingId === convertedPropertyId
+                              ? "Adding…"
+                              : "Add recurring visit to Calendar"}
+                          </button>
+                        )}
+                        {calendarMsgById[convertedPropertyId] && (
+                          <span className="text-xs text-gray-600">
+                            {calendarMsgById[convertedPropertyId]}
+                          </span>
+                        )}
+                      </>
+                    )}
 
                   {recurringInvoiceRequired && (
                     <button
