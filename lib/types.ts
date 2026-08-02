@@ -29,6 +29,8 @@ export interface Property {
   // hours pre-fill uses the pre-existing default_duration_hours column.
   speed?: string | null
   default_duration_hours?: number | null
+  // 078: set when the recurring maintenance Google Calendar event was fired.
+  gcal_recurring_event_created_at?: string | null
   // 076: opt-in for the VA photo-email review pile.
   send_photos?: boolean | null
 }
