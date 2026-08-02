@@ -440,6 +440,7 @@ async function createCustomerProperty(
     frequency: string | null
     labour_rate?: number | null
     greenwaste_rate?: number | null
+    labour_hours?: number | null
   }
 ) {
   const propertyCode =
@@ -496,6 +497,14 @@ async function createCustomerProperty(
         getNormalisedQuoteType(quote.quote_type) === "maintenance"
           ? quote.greenwaste_rate ?? 26.5
           : 26.5,
+      // A maintenance quote's per-visit hours become the property's default
+      // visit hours, so the scheduler pre-fills the right duration from then on.
+      // Non-maintenance quotes have no standing visit length — leave it unset.
+      default_duration_hours:
+        getNormalisedQuoteType(quote.quote_type) === "maintenance" &&
+        quote.labour_hours
+          ? Number(quote.labour_hours)
+          : null,
       is_active: true,
     })
     .select("id")
@@ -2138,6 +2147,7 @@ Pristine Gardens`)
             // stamp the decorative panel defaults as the billing rate.
             labour_rate: hasMaintenancePricing ? labourRate : null,
             greenwaste_rate: hasMaintenancePricing ? greenwasteRate : null,
+            labour_hours: hasMaintenancePricing ? labourHours : null,
           }
         )
 

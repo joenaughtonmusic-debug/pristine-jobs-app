@@ -19,6 +19,7 @@ import {
   getServiceIntervalWeeks,
   serviceFrequencyOptions,
 } from "@/lib/service-frequency"
+import { createMaintenanceCalendarEvent } from "@/app/(app)/admin/actions/maintenance-calendar-actions"
 import { JOB_SPEED_OPTIONS, JOB_TYPE_CHOICES } from "@/lib/job-speed"
 import {
   ISSUE_STATUSES,
@@ -104,6 +105,11 @@ export function PropertyDialog({
   const [billingLines, setBillingLines] = useState<BillingLineDraft[]>([])
   // Persisted line ids removed in this session → retired (active=false) on save.
   const [removedLineIds, setRemovedLineIds] = useState<string[]>([])
+  // Recurring maintenance calendar event (078): fired via a button, guarded so
+  // it can't be created twice.
+  const [calendarSaving, setCalendarSaving] = useState(false)
+  const [calendarCreated, setCalendarCreated] = useState(false)
+  const [calendarMsg, setCalendarMsg] = useState<string | null>(null)
   const [isRental, setIsRental] = useState(false)
   // Property manager: shared contact (one PM -> many properties). Pick an
   // existing PM or add one inline; the property stores property_manager_id.
@@ -162,6 +168,20 @@ export function PropertyDialog({
       return prev.filter((l) => l.key !== key)
     })
 
+  const handleAddCalendarEvent = async () => {
+    if (!property) return
+    setCalendarSaving(true)
+    setCalendarMsg(null)
+    const result = await createMaintenanceCalendarEvent(property.id)
+    setCalendarSaving(false)
+    if (result.ok) {
+      setCalendarCreated(true)
+      setCalendarMsg(result.message)
+    } else {
+      setCalendarMsg(result.error)
+    }
+  }
+
   useEffect(() => {
     if (!open) return
 
@@ -195,6 +215,8 @@ export function PropertyDialog({
       setServiceFrequency(property.service_frequency || "")
       setIsRental(property.is_rental ?? false)
       setPropertyManagerId(property.property_manager_id ?? "")
+      setCalendarCreated(Boolean(property.gcal_recurring_event_created_at))
+      setCalendarMsg(null)
       setError(null)
 
       // Phase B: load the property's active billing lines. Subscription lines
@@ -280,6 +302,8 @@ export function PropertyDialog({
       setServiceFrequency("")
       setBillingLines([])
       setRemovedLineIds([])
+      setCalendarCreated(false)
+      setCalendarMsg(null)
       setIsRental(false)
       setPropertyManagerId("")
       setAddingPm(false)
@@ -923,6 +947,42 @@ export function PropertyDialog({
                       )}
                     </div>
                   ))
+                )}
+              </div>
+            )}
+
+            {isEditing && getServiceIntervalWeeks(serviceFrequency) && (
+              <div className="rounded-md border p-3">
+                <p className="mb-1 text-sm font-medium">
+                  Recurring maintenance calendar
+                </p>
+                {calendarCreated ? (
+                  <p className="text-sm text-green-700">
+                    ✓ A recurring maintenance visit has been added to Google
+                    Calendar for this property.
+                  </p>
+                ) : (
+                  <>
+                    <p className="mb-2 text-xs text-gray-500">
+                      Adds a recurring visit to Google Calendar — the next Monday,
+                      repeating on this property&apos;s frequency, using its
+                      default visit hours. You can move or adjust it in Calendar
+                      afterwards.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleAddCalendarEvent}
+                      disabled={calendarSaving}
+                      className="rounded-md bg-black px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
+                    >
+                      {calendarSaving
+                        ? "Adding…"
+                        : "Add recurring maintenance visit to Google Calendar"}
+                    </button>
+                  </>
+                )}
+                {calendarMsg && (
+                  <p className="mt-2 text-sm text-gray-700">{calendarMsg}</p>
                 )}
               </div>
             )}
