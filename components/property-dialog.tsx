@@ -63,6 +63,7 @@ export function PropertyDialog({
   const [clientPhone, setClientPhone] = useState("")
   const [speed, setSpeed] = useState("yellow")
   const [defaultVisitHours, setDefaultVisitHours] = useState("")
+  const [sendPhotos, setSendPhotos] = useState(false)
   const [address, setAddress] = useState("")
   const [accessNotes, setAccessNotes] = useState("")
   const [permanentNotes, setPermanentNotes] = useState("")
@@ -141,6 +142,7 @@ export function PropertyDialog({
           ? String(property.default_duration_hours)
           : ""
       )
+      setSendPhotos(property.send_photos ?? false)
       setAddress(property.address_line_1 ?? "")
       setAccessNotes(property.access_notes || "")
       setPermanentNotes(property.permanent_notes || "")
@@ -219,6 +221,7 @@ export function PropertyDialog({
       setClientPhone("")
       setSpeed("yellow")
       setDefaultVisitHours("")
+      setSendPhotos(false)
       setAddress("")
       setAccessNotes("")
       setPermanentNotes("")
@@ -338,6 +341,7 @@ export function PropertyDialog({
   service_interval_weeks: getServiceIntervalWeeks(serviceFrequency),
   speed,
   default_duration_hours: defaultVisitHours ? Number(defaultVisitHours) : null,
+  send_photos: sendPhotos,
   is_rental: isRental,
   property_manager_id: propertyManagerId || null,
   updated_at: new Date().toISOString(),
@@ -512,6 +516,22 @@ export function PropertyDialog({
                 onChange={(e) => setIsRental(e.target.checked)}
               />
               Rental / PM-managed property
+            </label>
+
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={sendPhotos}
+                onChange={(e) => setSendPhotos(e.target.checked)}
+              />
+              <span>
+                Send photos to customer
+                <span className="block text-xs text-muted-foreground">
+                  Completed visits appear in the photo-email review pile.
+                  Photos are captured on every job regardless.
+                </span>
+              </span>
             </label>
 
             {isRental && (

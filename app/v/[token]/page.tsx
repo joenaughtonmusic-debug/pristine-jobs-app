@@ -1,5 +1,6 @@
 import type { Metadata } from "next"
 import { createServiceClient } from "@/lib/supabase/service"
+import { loadCustomerPhotos } from "@/lib/photo-email"
 import { VisitPhotoGrid } from "@/components/visit-photo-grid"
 
 // Public visit photo page (Brief_Public_Visit_Photo_Page): the link printed
@@ -66,32 +67,22 @@ async function lookupVisit(token: string): Promise<PageData | null> {
     .eq("id", visit.property_id)
     .maybeSingle()
 
-  // Customer-safe allowlist, same boundary as invoice attachments: after and
-  // completion ONLY — issue photos, client instructions and internal shots
-  // structurally cannot appear. Photos tagged to this visit, plus untagged
-  // after/completion photos of the same job (photos uploaded before
-  // completion have no visit link; accepted job-level nuance per plan).
-  let query = supabase
-    .from("job_photos")
-    .select("public_url, visit_id, scheduled_job_id, created_at")
-    .in("photo_type", ["after", "completion"])
-    .not("public_url", "is", null)
-    .order("created_at", { ascending: true })
-
-  query = visit.scheduled_job_id
-    ? query.or(
-        `visit_id.eq.${visit.id},and(visit_id.is.null,scheduled_job_id.eq.${visit.scheduled_job_id})`
-      )
-    : query.eq("visit_id", visit.id)
-
-  const { data: photos } = await query
+  // ONE definition of "customer-visible photo" (loadCustomerPhotos, shared
+  // with the photo-email review) — the brief forbids a second definition.
+  // Here we drop the VA-hidden ones for the public view; the review keeps them
+  // greyed so the VA can unhide. force-dynamic (top of file) means this runs
+  // live on every load, so a hide takes effect on this page immediately.
+  const photos = await loadCustomerPhotos(supabase, {
+    id: visit.id as string,
+    scheduled_job_id: visit.scheduled_job_id as string | null,
+  })
 
   return {
     address: [property?.address_line_1, property?.suburb]
       .filter(Boolean)
       .join(", "),
     visitDate: formatVisitDate(visit.visit_date),
-    photoUrls: (photos || []).map((p) => p.public_url as string),
+    photoUrls: photos.filter((p) => !p.hidden).map((p) => p.public_url),
   }
 }
 
