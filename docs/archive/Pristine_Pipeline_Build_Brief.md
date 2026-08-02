@@ -1,3 +1,5 @@
+> ⚠️ **ARCHIVED / SUPERSEDED (2 Aug 2026).** This master plan was reshaped by the shipped Briefs 01–04 and the built pipeline (row-per-client, not Kanban; enquiries stayed separate). For current behaviour see `docs/OPERATING_MANUAL.md`. Kept for history.
+
 # Pristine Jobs — Lead-to-Invoice Pipeline Build Brief
 
 A single source of truth for building the full lead → estimate → quote → job → invoice pipeline

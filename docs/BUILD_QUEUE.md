@@ -127,20 +127,41 @@ and must not duplicate it. Tick items here; git history is the archive.
       half-completed state, or fold the whole sequence into one transactional
       RPC. (The RLS fix does NOT address this — a partial strand can still
       happen from a non-RLS error.)
-      STATUS 28 July: still PARKED, and RETRY-LOCKOUT HAS ZERO CONFIRMED COST
-      IN PROD. Investigation found 6 charge_up visits stuck at not_ready with
-      job status completed (Sue Good 24 Jul, McLean 23 Jul, Natalie 23 Jun,
-      McLean 17 Jun, Diana 12 Jun, McLean 29 Apr) — Joe checked ALL SIX in
-      Xero: every one was invoiced MANUALLY. So the "stuck not_ready + job
-      completed" signature indicates MANUAL HANDLING, not retry-lockout
-      damage — do not read it as lost money. Those 6 flushed to 'excluded'
-      28 July (same treatment as the 21 stranded 'processing' on 27 July); the
-      3 subscription visits with that signature (AR34, POWELL17, SH15) left as
-      not_ready (correct — subscription isn't app-invoiced). ALSO: migration
-      062 (labour RLS) remains UNPROVEN in the wild — no paired-crew
-      completion on prod since it shipped 26 July (last pair was 17 Jul
-      Alex+Graham, pre-062). Keep this RPC parked until a real pair completes
-      a paired visit through the app and proves 062.
+      STATUS 2 Aug: PARKED. Bug is CONFIRMED LIVE IN CODE (the guard + 8
+      unwrapped writes are still there). **Prod cost is UNKNOWN — not "zero".**
+      TRIGGER REALITY (found 2 Aug — corrects earlier notes): there is an
+      AFTER INSERT trigger on `visits`, `handle_visit_completion`, that flips
+      `scheduled_jobs.status='completed'` the instant a visit row is inserted
+      — BEFORE the later completion writes run. Consequences:
+        - The signature "completed visit whose job was never flipped to
+          completed" is STRUCTURALLY IMPOSSIBLE (the trigger always flips it),
+          so it can never detect a strand. An earlier "clean signature returns
+          0 → zero strands" reading was FALSE COMFORT — that 0 is guaranteed by
+          the trigger, not by health. Do not treat it as an all-clear.
+        - A real strand therefore looks like: visit exists + job='completed'
+          (by trigger) + LATER writes missing — tell-tale is on the VISIT:
+          `invoice_status='not_ready'` (ready-stamp step never ran) and/or no
+          labour rows. This is the SAME in-app signature as a
+          manually-handled visit — the two are INDISTINGUISHABLE without a
+          Xero cross-check. So there is no clean app-only detector.
+        - The earlier "6 stuck visits were all manual, therefore not strands"
+          conclusion is weaker than stated: that signature can't tell manual
+          from strand; the Xero check is the only disambiguator.
+      CHECKED (Joe, 2 Aug): the two current not_ready charge_up visits (15
+      Sunhill Rd, 17/19 Powell St) are NOT strands — both properties are
+      billing_type='subscription', billed by a Xero repeating invoice, so a
+      not_ready/uncompleted visit costs nothing. So retry-lockout still has NO
+      confirmed prod instance — but per the trigger reality above, that's
+      because the signature is uninterpretable, not because we've proven none
+      exist. The signature is now known to be DOMINATED by mislabelled-
+      subscription visits (see the mismatch item below), making it even less
+      usable as a detector. Detector + guard fix (branch on VISIT
+      completeness, not job.status) DEFERRED indefinitely — don't build around
+      a signature this noisy.
+      ALSO: migration 062 (labour RLS) remains UNPROVEN in the wild — no
+      paired-crew completion on prod since it shipped 26 July (last pair 17
+      Jul Alex+Graham, pre-062). Keep the RPC parked until a real pair
+      completes a paired visit through the app and proves 062.
 - [ ] **Reconciliation backfills can mask live bugs — surface, don't just
       correct.** The 21 July labour-recon backfill note "cost row was missing"
       WAS the RLS bug above being silently absorbed — recon caught it (earns
@@ -149,8 +170,9 @@ and must not duplicate it. Tick items here; git history is the archive.
       days and nobody knew. Principle: if a backfill fires to fix a missing
       row, something upstream failed — it should raise a flag, not just patch
       the data.
-- [ ] **App audit — 8 questions** (in IDEAS.md). Start from `docs/PAGE_AUDIT.md`
-      and check what's stale. Includes cost-capture redesign (overwhelming),
+- [ ] **App audit — 8 questions** (in IDEAS.md). PAGE_AUDIT was archived stale
+      2 Aug (`docs/archive/PAGE_AUDIT.md`); `docs/OPERATING_MANUAL.md` is now
+      the as-built reference. Check what else is stale. Includes cost-capture redesign (overwhelming),
       new-customer capture fields, gaps in the build.
 
 ## TIER 2 additions (26 July audit findings)
@@ -159,7 +181,7 @@ and must not duplicate it. Tick items here; git history is the archive.
       billing ripple + photo-gate/walk-around). Two recs dead (quotes split
       DONE; labour-recon exceptions→actions REVERSED). Refresh when the app
       audit runs.
-- [~] **Cost Capture page: 1,237 lines** — audited (docs/COST_CAPTURE_AUDIT.md,
+- [~] **Cost Capture page: 1,237 lines** — audited (docs/archive/COST_CAPTURE_AUDIT.md,
       PR #43) and partly fixed: labour cost now reads staff_cost_rates and the
       fabricating backfill button is gone (PR #44). STILL OPEN: the broader
       simplification (drop the inline correction forms, fold back-costing into
@@ -258,7 +280,7 @@ pitches before the app supports them.*
       lines → leave duration blank, don't sum.
 - [ ] Post-job follow-up email (review request, referral ask, maintenance upsell)
 - [~] **Photo attach to Xero invoices — Part A+B BUILT (PR, staging-verified);
-      Part C (Make) + live-fire are Joe's.** Brief: docs/INVOICE_PHOTO_ATTACH_BRIEF.md.
+      Part C (Make) + live-fire are Joe's.** Brief: docs/archive/INVOICE_PHOTO_ATTACH_BRIEF.md.
       Allowlist view `invoice_photos_for_make` (migration 071) = photo_type IN
       ('after','completion'), jpg/png only, 3 most-recent per scheduled_job_id,
       filename photo-<photo_id>.jpg, service-role only. Client resize at upload
@@ -276,6 +298,20 @@ pitches before the app supports them.*
       visit_id preference is a later refinement, not built.
 - [ ] Billing type fix for the 88 mislabelled `charge_up` properties — BLOCKED on
       Joe identifying which are genuinely fixed-price. Not a code problem.
+      CONCRETE EXAMPLES found 2 Aug: 15 Sunhill Rd + 17/19 Powell St are
+      properties.billing_type='subscription' but their SCHEDULED_JOBS are
+      invoice_method='charge_up'. Benign only while their visits sit
+      not_ready; if either visit is ever marked ready (Cost Capture "Mark
+      ready" / Invoices "Reset to Ready") the app creates a per-visit invoice
+      ON TOP of the Xero repeating invoice = DOUBLE BILL. Safe fix per visit:
+      set invoice_status='excluded' (as the earlier 6 were), and/or retag the
+      job invoice_method to subscription so it's structurally excluded from
+      per-visit invoicing. DONE 2 Aug: both visits SET TO 'excluded' (guarded
+      on not_ready; each carries an invoice_note saying why). This is why they
+      look odd — a subscription property with an 'excluded' charge_up visit —
+      it's deliberate double-bill insurance, NOT a bug. Reverse it only as
+      part of the proper billing-type fix (retag the jobs/property to
+      subscription, then the exclusion is redundant).
 - [ ] Voice-to-quote integration — design brief written, nothing built.
 - [ ] 48h follow-up "F" flag on sent quotes — a BADGE, not an actions row
 - [ ] Billing-change audit log (who, when, from → to)

@@ -1,3 +1,10 @@
+> ⚠️ **ARCHIVED — STALE, DO NOT TRUST (moved 2 Aug 2026).** This audit
+> documents a Communications Hub page (`/admin/communications`) that was
+> **removed 26 July 2026**, omits four live pages (cost-capture, pm-reports,
+> team-hub, internal-notes), and several of its recommendations are already
+> done or reversed. Kept only for historical reference. For how the app works
+> today, see **`docs/OPERATING_MANUAL.md`**.
+
 # Pristine Jobs Page Audit
 
 This audit covers the admin-facing routes in the Pristine Jobs repository, with notes on adjacent team/staff routes where they affect the admin operating flow. It focuses on purpose, ownership, information flow, current fit, and recommended product direction. No code or database changes are included here.

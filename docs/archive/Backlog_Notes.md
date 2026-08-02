@@ -1,3 +1,5 @@
+> ⚠️ **ARCHIVED / SUPERSEDED (2 Aug 2026).** Point-in-time backlog (mid-July); several items shipped, the rest live in `docs/BUILD_QUEUE.md`, which is now the tickable list. Kept for history.
+
 # Pristine Jobs — Backlog notes
 
 Captured during the 17–18 July build. **None of these are in Brief 04.** They are

@@ -18,7 +18,7 @@ soft-delete (spam clear-out), and the non_billable invoice guard.
    DRAFT time (`IncludeOnline=true`) reading `invoice_photos_for_make` per
    visit — read the VIEW, never job_photos. Verify Xero ceilings +
    IncludeOnline on the live module, then one end-to-end live fire. Brief:
-   `docs/INVOICE_PHOTO_ATTACH_BRIEF.md`.
+   `docs/archive/INVOICE_PHOTO_ATTACH_BRIEF.md`.
 2. **Website spam:** Turnstile is COMMITTED in the theme repo (0.22.0/0.22.1,
    off until keys exist) — Joe is creating the Cloudflare keys and enabling.
    Once spam stops, the VA clears the backlog with the new lead Delete button.

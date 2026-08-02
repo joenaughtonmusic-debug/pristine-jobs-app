@@ -1,3 +1,5 @@
+> ⚠️ **ARCHIVED / SUPERSEDED (2 Aug 2026).** The page was reworked after this audit (backfill button removed; now reads `staff_cost_rates`). For current behaviour see `docs/OPERATING_MANUAL.md`. Kept for history.
+
 # Cost Capture Page — What It Does & A Simpler Version
 
 Investigation only (27 July 2026). No code changed. Findings + a simplification
