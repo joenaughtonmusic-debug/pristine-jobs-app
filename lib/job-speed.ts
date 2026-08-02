@@ -16,6 +16,7 @@ export const JOB_TYPE_CHOICES: { value: string; label: string }[] = [
   { value: "maintenance", label: "Maintenance" },
   { value: "one_off", label: "One-off" },
   { value: "lawn_mowing", label: "Lawn mowing" },
+  { value: "spray", label: "Spray" },
   { value: "landscaping", label: "Landscaping" },
 ]
 

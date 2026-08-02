@@ -144,23 +144,45 @@ export default async function AdminSchedulePage({
     propertyIdsForModes.length > 0
       ? await supabase
           .from("property_billing_lines")
-          .select("property_id, billing_mode")
+          .select("property_id, job_type, billing_mode, subscription_amount")
           .eq("active", true)
           .in("property_id", propertyIdsForModes)
       : { data: [] }
   const modesByProperty = new Map<string, string[]>()
+  // Phase B (Stage 3): full lines let the scheduler inherit a line's price +
+  // mode when its job type is chosen. Modes list stays for the invoice-method
+  // default + mismatch guard.
+  const linesByProperty = new Map<
+    string,
+    {
+      job_type: string | null
+      billing_mode: string | null
+      subscription_amount: number | null
+    }[]
+  >()
   for (const line of (billingLines || []) as {
     property_id: string
+    job_type: string | null
     billing_mode: string | null
+    subscription_amount: number | null
   }[]) {
-    if (!line.billing_mode) continue
-    const arr = modesByProperty.get(line.property_id) ?? []
-    if (!arr.includes(line.billing_mode)) arr.push(line.billing_mode)
-    modesByProperty.set(line.property_id, arr)
+    if (line.billing_mode) {
+      const arr = modesByProperty.get(line.property_id) ?? []
+      if (!arr.includes(line.billing_mode)) arr.push(line.billing_mode)
+      modesByProperty.set(line.property_id, arr)
+    }
+    const lines = linesByProperty.get(line.property_id) ?? []
+    lines.push({
+      job_type: line.job_type,
+      billing_mode: line.billing_mode,
+      subscription_amount: line.subscription_amount,
+    })
+    linesByProperty.set(line.property_id, lines)
   }
   const propertiesWithModes = (properties || []).map((property) => ({
     ...property,
     billing_modes: modesByProperty.get(property.id) ?? [],
+    billing_lines: linesByProperty.get(property.id) ?? [],
   }))
 
   const { data: staff } = await supabase
