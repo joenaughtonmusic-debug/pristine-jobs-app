@@ -306,8 +306,12 @@ pitches before the app supports them.*
       ON TOP of the Xero repeating invoice = DOUBLE BILL. Safe fix per visit:
       set invoice_status='excluded' (as the earlier 6 were), and/or retag the
       job invoice_method to subscription so it's structurally excluded from
-      per-visit invoicing. Awaiting Joe's go on whether to flush these two to
-      excluded now.
+      per-visit invoicing. DONE 2 Aug: both visits SET TO 'excluded' (guarded
+      on not_ready; each carries an invoice_note saying why). This is why they
+      look odd — a subscription property with an 'excluded' charge_up visit —
+      it's deliberate double-bill insurance, NOT a bug. Reverse it only as
+      part of the proper billing-type fix (retag the jobs/property to
+      subscription, then the exclusion is redundant).
 - [ ] Voice-to-quote integration — design brief written, nothing built.
 - [ ] 48h follow-up "F" flag on sent quotes — a BADGE, not an actions row
 - [ ] Billing-change audit log (who, when, from → to)
