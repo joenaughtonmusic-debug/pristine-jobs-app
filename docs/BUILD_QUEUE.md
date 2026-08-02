@@ -127,20 +127,36 @@ and must not duplicate it. Tick items here; git history is the archive.
       half-completed state, or fold the whole sequence into one transactional
       RPC. (The RLS fix does NOT address this — a partial strand can still
       happen from a non-RLS error.)
-      STATUS 28 July: still PARKED, and RETRY-LOCKOUT HAS ZERO CONFIRMED COST
-      IN PROD. Investigation found 6 charge_up visits stuck at not_ready with
-      job status completed (Sue Good 24 Jul, McLean 23 Jul, Natalie 23 Jun,
-      McLean 17 Jun, Diana 12 Jun, McLean 29 Apr) — Joe checked ALL SIX in
-      Xero: every one was invoiced MANUALLY. So the "stuck not_ready + job
-      completed" signature indicates MANUAL HANDLING, not retry-lockout
-      damage — do not read it as lost money. Those 6 flushed to 'excluded'
-      28 July (same treatment as the 21 stranded 'processing' on 27 July); the
-      3 subscription visits with that signature (AR34, POWELL17, SH15) left as
-      not_ready (correct — subscription isn't app-invoiced). ALSO: migration
-      062 (labour RLS) remains UNPROVEN in the wild — no paired-crew
-      completion on prod since it shipped 26 July (last pair was 17 Jul
-      Alex+Graham, pre-062). Keep this RPC parked until a real pair completes
-      a paired visit through the app and proves 062.
+      STATUS 2 Aug: PARKED. Bug is CONFIRMED LIVE IN CODE (the guard + 8
+      unwrapped writes are still there). **Prod cost is UNKNOWN — not "zero".**
+      TRIGGER REALITY (found 2 Aug — corrects earlier notes): there is an
+      AFTER INSERT trigger on `visits`, `handle_visit_completion`, that flips
+      `scheduled_jobs.status='completed'` the instant a visit row is inserted
+      — BEFORE the later completion writes run. Consequences:
+        - The signature "completed visit whose job was never flipped to
+          completed" is STRUCTURALLY IMPOSSIBLE (the trigger always flips it),
+          so it can never detect a strand. An earlier "clean signature returns
+          0 → zero strands" reading was FALSE COMFORT — that 0 is guaranteed by
+          the trigger, not by health. Do not treat it as an all-clear.
+        - A real strand therefore looks like: visit exists + job='completed'
+          (by trigger) + LATER writes missing — tell-tale is on the VISIT:
+          `invoice_status='not_ready'` (ready-stamp step never ran) and/or no
+          labour rows. This is the SAME in-app signature as a
+          manually-handled visit — the two are INDISTINGUISHABLE without a
+          Xero cross-check. So there is no clean app-only detector.
+        - The earlier "6 stuck visits were all manual, therefore not strands"
+          conclusion is weaker than stated: that signature can't tell manual
+          from strand; the Xero check is the only disambiguator.
+      OPEN ACTION (Joe, 2 Aug): hand-checking the current not_ready charge_up
+      visits (15 Sunhill Rd, 17/19 Powell St) against Xero to learn what the
+      ambiguous cases actually are. A detector + the guard fix (branch on
+      VISIT completeness, not job.status — job.status is useless here because
+      of the trigger) are DEFERRED until that's known. Do not design around a
+      signature we can't yet interpret.
+      ALSO: migration 062 (labour RLS) remains UNPROVEN in the wild — no
+      paired-crew completion on prod since it shipped 26 July (last pair 17
+      Jul Alex+Graham, pre-062). Keep the RPC parked until a real pair
+      completes a paired visit through the app and proves 062.
 - [ ] **Reconciliation backfills can mask live bugs — surface, don't just
       correct.** The 21 July labour-recon backfill note "cost row was missing"
       WAS the RLS bug above being silently absorbed — recon caught it (earns
