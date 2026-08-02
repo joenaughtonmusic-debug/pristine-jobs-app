@@ -279,15 +279,17 @@ offloads "get the VA to ring X" without messaging.)
 - **Crew** (`/team/job-board`): **"Available" / "Claim job" / "Not available"**
   to respond. Claiming assigns it to them.
 
-### Customer photos · VA · two surfaces
+### Customer photos · VA · three surfaces
 
-Both consume the **After/Completion** photos the crew take:
+These consume the **After/Completion** photos the crew take:
 
 - **Photo email** (on the **Admin Actions** page, "Photo emails to review"):
   for opted-in properties, the VA reviews a visit's photos, hides any that
   shouldn't go out, and sends the customer a link to their photo page. PM
-  properties copy Joe. (Opt in per property with "Send photos to customer" on
-  the property screen.)
+  properties copy Joe; a PM property with **no PM email recorded shows an
+  error instead of sending** (never falls back to the property contact). Opt
+  in per property with "Send photos to customer" on the property screen —
+  **off by default**, so nothing enters this pile until you tick it.
 - **Public photo page** (`/v/{token}`): the link customers receive — a clean
   page of that visit's photos, no prices or names. Also printable on invoices.
 - **PM Reports** (`/admin/pm-reports`): sends a property manager a PDF of the
@@ -379,6 +381,16 @@ guesses; where intent is genuinely unclear it says so.
 11. **`completed_by_staff_id` on a visit points at the profile/login id, not
     the `staff_members` id**, despite the name. Don't join it to
     `staff_members`.
+
+11a. **Completing a visit flips the job to "completed" via a DB trigger, not
+    the app.** `handle_visit_completion` (AFTER INSERT on `visits`) sets the
+    parent job to `completed` the instant the visit row is inserted — *before*
+    the later completion writes (labour, ready-stamp, photos) run. So a
+    partial completion still shows the job as **completed**, and **job status
+    cannot reveal a stranded visit** (a half-finished completion). To spot a
+    strand you have to look at the visit itself (e.g. stuck at `not_ready`, or
+    missing labour rows) and cross-check Xero — see the retry-lockout item in
+    BUILD_QUEUE.
 
 12. **Two billing columns disagree.** `scheduled_jobs.billing_mode` and
     `invoice_method` don't match in the data (4 vs 38 "subscription"). The
