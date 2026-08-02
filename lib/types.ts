@@ -29,6 +29,8 @@ export interface Property {
   // hours pre-fill uses the pre-existing default_duration_hours column.
   speed?: string | null
   default_duration_hours?: number | null
+  // 076: opt-in for the VA photo-email review pile.
+  send_photos?: boolean | null
 }
 
 export interface ScheduledJob {
