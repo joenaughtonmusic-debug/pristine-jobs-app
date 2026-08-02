@@ -147,12 +147,17 @@ and must not duplicate it. Tick items here; git history is the archive.
         - The earlier "6 stuck visits were all manual, therefore not strands"
           conclusion is weaker than stated: that signature can't tell manual
           from strand; the Xero check is the only disambiguator.
-      OPEN ACTION (Joe, 2 Aug): hand-checking the current not_ready charge_up
-      visits (15 Sunhill Rd, 17/19 Powell St) against Xero to learn what the
-      ambiguous cases actually are. A detector + the guard fix (branch on
-      VISIT completeness, not job.status — job.status is useless here because
-      of the trigger) are DEFERRED until that's known. Do not design around a
-      signature we can't yet interpret.
+      CHECKED (Joe, 2 Aug): the two current not_ready charge_up visits (15
+      Sunhill Rd, 17/19 Powell St) are NOT strands — both properties are
+      billing_type='subscription', billed by a Xero repeating invoice, so a
+      not_ready/uncompleted visit costs nothing. So retry-lockout still has NO
+      confirmed prod instance — but per the trigger reality above, that's
+      because the signature is uninterpretable, not because we've proven none
+      exist. The signature is now known to be DOMINATED by mislabelled-
+      subscription visits (see the mismatch item below), making it even less
+      usable as a detector. Detector + guard fix (branch on VISIT
+      completeness, not job.status) DEFERRED indefinitely — don't build around
+      a signature this noisy.
       ALSO: migration 062 (labour RLS) remains UNPROVEN in the wild — no
       paired-crew completion on prod since it shipped 26 July (last pair 17
       Jul Alex+Graham, pre-062). Keep the RPC parked until a real pair
@@ -293,6 +298,16 @@ pitches before the app supports them.*
       visit_id preference is a later refinement, not built.
 - [ ] Billing type fix for the 88 mislabelled `charge_up` properties — BLOCKED on
       Joe identifying which are genuinely fixed-price. Not a code problem.
+      CONCRETE EXAMPLES found 2 Aug: 15 Sunhill Rd + 17/19 Powell St are
+      properties.billing_type='subscription' but their SCHEDULED_JOBS are
+      invoice_method='charge_up'. Benign only while their visits sit
+      not_ready; if either visit is ever marked ready (Cost Capture "Mark
+      ready" / Invoices "Reset to Ready") the app creates a per-visit invoice
+      ON TOP of the Xero repeating invoice = DOUBLE BILL. Safe fix per visit:
+      set invoice_status='excluded' (as the earlier 6 were), and/or retag the
+      job invoice_method to subscription so it's structurally excluded from
+      per-visit invoicing. Awaiting Joe's go on whether to flush these two to
+      excluded now.
 - [ ] Voice-to-quote integration — design brief written, nothing built.
 - [ ] 48h follow-up "F" flag on sent quotes — a BADGE, not an actions row
 - [ ] Billing-change audit log (who, when, from → to)
