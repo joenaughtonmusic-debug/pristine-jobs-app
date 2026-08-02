@@ -1396,7 +1396,7 @@ export default async function AdminInvoicesPage({
                       </Link>
                       ) : (
                       <p className="text-xs text-gray-500">
-                        TODO: Add a visit detail route before linking directly to visits.
+                        No linked job for this visit.
                       </p>
                       )}
 

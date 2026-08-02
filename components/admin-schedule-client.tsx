@@ -1565,16 +1565,6 @@ const handleSendClientEmail = async () => {
               </div>
             ))}
 
-            <div className="pt-1">
-              {/* TODO: Wire this to send open internal notes to the staff assigned to this scheduled job. */}
-              <button
-                type="button"
-                disabled
-                className="rounded-md border border-amber-200 bg-white px-2 py-1 text-[11px] font-medium text-amber-700 opacity-60"
-              >
-                Notify assigned staff
-              </button>
-            </div>
           </div>
         )}
       </div>
@@ -1904,6 +1894,20 @@ const handleSendClientEmail = async () => {
       <button
         type="button"
         disabled={!isReady}
+        onClick={() => {
+          // Wired 2 Aug (was a dead button): open the same Quick Add modal a
+          // property click uses, then lay the queue item's specifics on top.
+          const property = properties.find((p) => p.id === item.property_id)
+          if (!property) {
+            alert("Could not find this queue item's property.")
+            return
+          }
+          openAddModal(property)
+          if (item.scope_notes) setQuotedScope(item.scope_notes)
+          if (item.estimated_duration_hours) {
+            setPlannedDuration(String(item.estimated_duration_hours))
+          }
+        }}
         className="h-10 w-full rounded-md bg-green-600 text-sm font-medium text-white disabled:cursor-not-allowed disabled:bg-gray-300"
       >
         {isReady ? "Schedule Job" : "Update Property First"}
