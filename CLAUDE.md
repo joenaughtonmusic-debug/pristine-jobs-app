@@ -45,8 +45,8 @@ Next.js 16 (App Router), React 19, Tailwind v4 + shadcn/ui (`components/ui/`), P
 
 **Routes** (`app/`):
 - `(app)/` — authed layout (redirects to `/` if signed out). Field/crew surfaces: `jobs/`, `labour/`, `capture/` (voice-note PWA), `team/job-board`.
-- `(app)/admin/` — additionally gated on the `is_admin` RPC (source of truth is `profiles.role = 'admin'`, **not** `staff_members.staff_type`). All the office surfaces: enquiries, quotes, quoted-jobs, schedule, invoices, properties, cost-capture, communications, labour-reconciliation, team-hub, profitability, quote-templates. Nav groups live in `lib/admin-navigation-config.ts`.
-- `sales-pipeline/` — top-level (not under `/admin`) but admin-gated via its own layout; server actions in `sales-pipeline/actions.ts`.
+- `(app)/admin/` — additionally gated on the `is_admin` RPC (source of truth is `profiles.role = 'admin'`, **not** `staff_members.staff_type`). All the office surfaces: enquiries, quotes, quoted-jobs, schedule, invoices, properties, cost-capture, pm-reports, actions, internal-notes, job-board, labour-reconciliation, team-hub, profitability, quote-templates. Nav groups live in `lib/admin-navigation-config.ts`. (The old `communications` page was removed 26 July — no `/admin/communications` route exists.)
+- `(app)/sales-pipeline/` — inside the `(app)` group (NOT a top-level `app/sales-pipeline/`), admin-gated via its own layout; nav treats it as top-level. Server actions in `app/(app)/sales-pipeline/actions.ts`.
 - `public/quote/[token]` — customer-facing quote view (unauthed).
 - `api/` — external endpoints: `POST /api/capture` (voice capture → Whisper → triage), `POST /api/public/sales-leads` (website/Make.com lead ingestion, auth via `x-pristine-leads-secret` header), `GET /api/public/working-today` (public map feed for the marketing site).
 
@@ -83,11 +83,12 @@ Session refresh happens in `middleware.ts` → `lib/supabase/proxy.ts` (standard
 - `docs/HANDOFF_for_VS_Code_Claude.md` — standing technical rulebook and landmines: settled billing model, "recently shipped, don't rebuild" ledger, verification patterns.
 - `docs/CODING_AGENT_RULES.md` — behaviour checklist: no `"use server"` on plain pages; `await` async `params`; no `toLocaleString()` in SSR text (hydration); verify real table names against the live DB.
 - `docs/SESSION_HANDOFF_*.md` — most recent session state; the newest one supersedes older handoffs.
-- `docs/PAGE_AUDIT.md` — per-route purpose and product recommendations.
+- `docs/OPERATING_MANUAL.md` — how the app works today, by workflow (lead→paid, recurring cycle), grounded in code + live DB. The current source of truth for behaviour.
+- `docs/archive/PAGE_AUDIT.md` — ARCHIVED/stale (documents a removed page); kept for history only.
 
 ## Main areas
 
-Sales/lead pipeline · Schedule · Estimates Calendar · VA Actions · Communications Hub · Properties · Quotes & quote templates · Quoted Jobs · Invoices · Labour Reconciliation · Profitability reporting · Admin Enquiries · Job Board · Team Hub.
+Sales/lead pipeline · Schedule · Estimates Calendar · VA/Admin Actions · Cost Capture · PM Reports · Properties · Quotes & quote templates · Quoted Jobs · Invoices · Labour Reconciliation · Profitability reporting · Admin Enquiries · Job Board · Team Hub · Internal Notes.
 
 ## Sales pipeline direction (current focus)
 
@@ -98,9 +99,13 @@ Visually simple, card-based pipeline — simple and easy to use without visual c
 - Eventually the system generates an appropriate customer response from the service + enquiry; initially the VA reviews/edits then clicks send. Fully automatic messages are NOT the first priority.
 - **New website leads should ideally be added straight to the sales pipeline** (avoid relying on Zoho for those).
 
-## Communications Hub
+## Customer communications (no Communications Hub)
 
-Receives messages via Zoho + Make.com, stores in Supabase. **Joe is unsure about this hub — it's messy.** Possibly better to filter in Zoho first. Near-term need: a way to flag important customer communication. AI categories: quote request, scheduling, maintenance query, invoice/payment, complaint, general, internal note. AI assists with classification and draft responses but **must not confidently invent missing information.**
+There is **no** Communications Hub / `/admin/communications` page — it was
+removed 26 July 2026. Outbound customer email is queued into
+`client_contact_messages` (status `ready_to_send`) and sent by Make/Zoho; the
+app has no inbound-message store or AI classification of customer messages.
+(Historic intent for a hub is in git history if ever revived.)
 
 ## Schedule
 

@@ -149,8 +149,9 @@ and must not duplicate it. Tick items here; git history is the archive.
       days and nobody knew. Principle: if a backfill fires to fix a missing
       row, something upstream failed — it should raise a flag, not just patch
       the data.
-- [ ] **App audit — 8 questions** (in IDEAS.md). Start from `docs/PAGE_AUDIT.md`
-      and check what's stale. Includes cost-capture redesign (overwhelming),
+- [ ] **App audit — 8 questions** (in IDEAS.md). PAGE_AUDIT was archived stale
+      2 Aug (`docs/archive/PAGE_AUDIT.md`); `docs/OPERATING_MANUAL.md` is now
+      the as-built reference. Check what else is stale. Includes cost-capture redesign (overwhelming),
       new-customer capture fields, gaps in the build.
 
 ## TIER 2 additions (26 July audit findings)
