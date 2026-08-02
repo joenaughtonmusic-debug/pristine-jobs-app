@@ -12,6 +12,7 @@ import {
   SPEED_BADGE_CLASSES,
   SPEED_BADGE_LABELS,
   deriveJobSpeed,
+  jobTypeLabel,
 } from "@/lib/job-speed"
 import {
   buildCrewMaterialsList,
@@ -49,6 +50,13 @@ type Property = {
   // Phase B: active billing-line modes for this property (per-job-type model).
   // Falls back to [billing_type] when absent.
   billing_modes?: string[] | null
+  // Phase B (Stage 3): full active lines so Quick Add can inherit a line's
+  // mode + price when its job type is picked.
+  billing_lines?: {
+    job_type: string | null
+    billing_mode: string | null
+    subscription_amount: number | null
+  }[] | null
   client_email?: string | null
   scheduling_notes?: string | null
   speed?: string | null
@@ -104,6 +112,8 @@ type Job = {
   billing_mode: string | null
   time_limit_type: string | null
   invoice_method?: string | null
+  fixed_visit_amount?: number | string | null
+  fixed_visit_label?: string | null
   xero_quote_number?: string | null
   quoted_amount?: number | string | null
   quoted_scope?: string | null
@@ -331,6 +341,10 @@ export function AdminScheduleClient({
   // let lawn jobs save as maintenance and dodge the orange lawn rule. On a
   // legacy untyped job, "" means: keep the stored value untouched.
   const [jobType, setJobType] = useState("")
+  // Phase B (Stage 3): fixed-price fields inherited from a fixed_recurring
+  // billing line when its job type is picked (operator can still edit).
+  const [fixedVisitAmount, setFixedVisitAmount] = useState("")
+  const [fixedVisitLabel, setFixedVisitLabel] = useState("")
   const [speedOverride, setSpeedOverride] = useState("")
   const [plannedStartTime, setPlannedStartTime] = useState("")
   const [quotedScope, setQuotedScope] = useState("")
@@ -392,6 +406,7 @@ const [savingSchedulingNote, setSavingSchedulingNote] = useState(false)
 
   const INVOICE_METHOD_LABELS: Record<string, string> = {
     charge_up: "Charge Up",
+    fixed_recurring: "Fixed price per visit",
     subscription: "Subscription",
     quoted: "Quoted / Fixed Quote",
     non_billable: "Non Billable",
@@ -422,6 +437,34 @@ const [savingSchedulingNote, setSavingSchedulingNote] = useState(false)
   ) => {
     if (!property || !method) return false
     return isMethodMismatchForModes(modesOf(property), method)
+  }
+
+  // Phase B (Stage 3): when a job type is chosen, inherit the property's
+  // matching active billing line — its mode/invoice method, and for a
+  // fixed_recurring line its price + label. A prefill the operator can see and
+  // change; never a silent write. No matching line → leave the method as-is.
+  const applyLineForJobType = (
+    property: Property | null,
+    chosenJobType: string,
+  ) => {
+    if (!property || !chosenJobType) return
+    const line = (property.billing_lines ?? []).find(
+      (l) => l.job_type === chosenJobType,
+    )
+    if (!line || !line.billing_mode) return
+
+    setInvoiceMethod(line.billing_mode)
+    setOverrideMethodMismatch(false)
+
+    if (line.billing_mode === "fixed_recurring") {
+      setFixedVisitAmount(
+        line.subscription_amount != null ? String(line.subscription_amount) : "",
+      )
+      setFixedVisitLabel(jobTypeLabel(chosenJobType) || "")
+    } else {
+      setFixedVisitAmount("")
+      setFixedVisitLabel("")
+    }
   }
 
   const thisWeekDays = [0, 1, 2, 3, 4].map((day) =>
@@ -726,6 +769,8 @@ scheduling_notes: updateSchedulingNotes.trim() || null,
 setQuotedMaterials("")
 setAdminNote("")
     setJobType("")
+    setFixedVisitAmount("")
+    setFixedVisitLabel("")
     setSpeedOverride("")
 setInvoiceMethod(getDefaultInvoiceMethod(property))
     setOverrideMethodMismatch(false)
@@ -821,6 +866,10 @@ setAdminNote(job.admin_note || "")
     )
     setSpeedOverride(job.speed_override || "")
 setInvoiceMethod(job.invoice_method || "")
+    setFixedVisitAmount(
+      job.fixed_visit_amount != null ? String(job.fixed_visit_amount) : ""
+    )
+    setFixedVisitLabel(job.fixed_visit_label || "")
     setOverrideMethodMismatch(false)
     setXeroQuoteNumber(job.xero_quote_number || "")
 
@@ -1058,11 +1107,25 @@ setInvoiceMethod(job.invoice_method || "")
         ? parseFloat(plannedDuration)
         : null,
       planned_start_time: plannedStartTime || null,
-      billing_mode: schedulingFromQuote
-        ? invoiceMethod === "quoted" || invoiceMethod === "subscription"
-          ? invoiceMethod
-          : "charge_up"
-        : selectedTemplate?.billing_mode || "charge_up",
+      billing_mode:
+        invoiceMethod === "fixed_recurring"
+          ? "fixed_recurring"
+          : schedulingFromQuote
+            ? invoiceMethod === "quoted" || invoiceMethod === "subscription"
+              ? invoiceMethod
+              : "charge_up"
+            : selectedTemplate?.billing_mode || "charge_up",
+      // Phase B (Stage 3): the fixed price the invoice view emits (qty 1).
+      // Only meaningful for fixed_recurring; cleared otherwise so switching
+      // method away from fixed can never leave a stale price behind.
+      fixed_visit_amount:
+        invoiceMethod === "fixed_recurring" && fixedVisitAmount
+          ? Number(fixedVisitAmount)
+          : null,
+      fixed_visit_label:
+        invoiceMethod === "fixed_recurring"
+          ? fixedVisitLabel.trim() || jobTypeLabel(jobType) || null
+          : null,
       time_limit_type: selectedTemplate?.time_limit_type || "flexible",
       quoted_scope: quotedScope || null,
 quoted_materials: quotedMaterials || null,
@@ -2202,7 +2265,10 @@ const handleSendClientEmail = async () => {
                   <select
                     className="h-11 w-full rounded-md border px-3"
                     value={jobType}
-                    onChange={(e) => setJobType(e.target.value)}
+                    onChange={(e) => {
+                      setJobType(e.target.value)
+                      applyLineForJobType(selectedProperty, e.target.value)
+                    }}
                   >
                     {jobType === "" &&
                       (selectedJob ? (
@@ -2272,10 +2338,32 @@ const handleSendClientEmail = async () => {
                     Select invoice method…
                   </option>
                   <option value="charge_up">Charge Up</option>
+                  <option value="fixed_recurring">Fixed price per visit</option>
                   <option value="subscription">Subscription</option>
                   <option value="quoted">Quoted / Fixed Quote</option>
                   <option value="non_billable">Non Billable</option>
                 </select>
+
+                {invoiceMethod === "fixed_recurring" && (
+                  <div className="mt-2">
+                    <label className="mb-1 block text-sm font-medium">
+                      Fixed price per visit ($ incl GST)
+                    </label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      className="h-11 w-full rounded-md border px-3"
+                      placeholder="e.g. 220.40"
+                      value={fixedVisitAmount}
+                      onChange={(e) => setFixedVisitAmount(e.target.value)}
+                    />
+                    <p className="mt-1 text-xs text-gray-500">
+                      Billed as a set amount — hours are recorded but don&apos;t
+                      change the invoice. Pre-filled from the property&apos;s
+                      billing line; adjust if this visit differs.
+                    </p>
+                  </div>
+                )}
 
                 {invoiceMethod === "subscription" && (
                   <p className="mt-1.5 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800">

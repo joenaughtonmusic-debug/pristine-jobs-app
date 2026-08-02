@@ -19,7 +19,7 @@ import {
   getServiceIntervalWeeks,
   serviceFrequencyOptions,
 } from "@/lib/service-frequency"
-import { JOB_SPEED_OPTIONS } from "@/lib/job-speed"
+import { JOB_SPEED_OPTIONS, JOB_TYPE_CHOICES } from "@/lib/job-speed"
 import {
   ISSUE_STATUSES,
   ISSUE_STATUS_LABELS,
@@ -42,6 +42,31 @@ type PropertyManager = {
   name: string
   email: string | null
   company: string | null
+}
+
+type BillingLineDraft = {
+  key: string // stable React key (persisted id, or a temp key for new lines)
+  id: string | null // null until saved
+  jobType: string
+  mode: string // charge_up | fixed_recurring | subscription
+  amount: string // price — used by fixed_recurring + subscription only
+  confirmed: boolean // subscription only: "I saw the Xero repeating invoice"
+}
+
+const BILLING_MODE_OPTIONS: { value: string; label: string }[] = [
+  { value: "charge_up", label: "Charge up (per visit, by hours)" },
+  { value: "fixed_recurring", label: "Fixed price per visit" },
+  { value: "subscription", label: "Subscription (Xero repeating invoice)" },
+]
+
+// A price applies to the two fixed modes; charge_up bills on hours, no price.
+const modeHasPrice = (mode: string) =>
+  mode === "fixed_recurring" || mode === "subscription"
+
+let billingLineKeySeq = 0
+function newBillingLineKey() {
+  billingLineKeySeq += 1
+  return `new-${billingLineKeySeq}`
 }
 
 function makePropertyCode(value: string) {
@@ -72,11 +97,13 @@ export function PropertyDialog({
   const [serviceFrequency, setServiceFrequency] = useState("")
   const [hourlyRate, setHourlyRate] = useState("80")
   const [greenwasteRate, setGreenwasteRate] = useState("26.5")
-  // Phase B: confirmation + amount are per subscription billing LINE, so a
-  // property can hold several, each confirmed independently.
-  const [subscriptionLines, setSubscriptionLines] = useState<
-    { id: string; amount: string; confirmed: boolean }[]
-  >([])
+  // Phase B: a property's billing identity is a set of per-job-type LINES. This
+  // editor manages all of them — job type, mode (charge_up / fixed price per
+  // visit / subscription), price, and (subscription only) the Xero-confirmation
+  // tick. `id: null` = a line added in this session, not yet persisted.
+  const [billingLines, setBillingLines] = useState<BillingLineDraft[]>([])
+  // Persisted line ids removed in this session → retired (active=false) on save.
+  const [removedLineIds, setRemovedLineIds] = useState<string[]>([])
   const [isRental, setIsRental] = useState(false)
   // Property manager: shared contact (one PM -> many properties). Pick an
   // existing PM or add one inline; the property stores property_manager_id.
@@ -110,13 +137,30 @@ export function PropertyDialog({
 
   const isEditing = !!property
 
-  const updateLine = (
-    id: string,
-    patch: Partial<{ amount: string; confirmed: boolean }>
-  ) =>
-    setSubscriptionLines((prev) =>
-      prev.map((line) => (line.id === id ? { ...line, ...patch } : line))
+  const updateLine = (key: string, patch: Partial<BillingLineDraft>) =>
+    setBillingLines((prev) =>
+      prev.map((line) => (line.key === key ? { ...line, ...patch } : line))
     )
+
+  const addLine = () =>
+    setBillingLines((prev) => [
+      ...prev,
+      {
+        key: newBillingLineKey(),
+        id: null,
+        jobType: "",
+        mode: "charge_up",
+        amount: "",
+        confirmed: false,
+      },
+    ])
+
+  const removeLine = (key: string) =>
+    setBillingLines((prev) => {
+      const line = prev.find((l) => l.key === key)
+      if (line?.id) setRemovedLineIds((ids) => [...ids, line.id as string])
+      return prev.filter((l) => l.key !== key)
+    })
 
   useEffect(() => {
     if (!open) return
@@ -153,33 +197,39 @@ export function PropertyDialog({
       setPropertyManagerId(property.property_manager_id ?? "")
       setError(null)
 
-      // Phase B: load the property's active subscription lines so each can be
-      // confirmed independently. A line is ticked only when it's currently,
-      // validly confirmed — a stale/unconfirmed line starts unticked so it
-      // requires an active re-confirmation.
+      // Phase B: load the property's active billing lines. Subscription lines
+      // start ticked only when currently, validly confirmed — a stale/unconfirmed
+      // one starts unticked so it needs an active re-confirmation.
       let cancelled = false
+      setRemovedLineIds([])
       const supabase = createClient()
       supabase
         .from("property_billing_lines")
-        .select("id, subscription_amount, subscription_invoice_confirmed_at")
+        .select(
+          "id, job_type, billing_mode, subscription_amount, subscription_invoice_confirmed_at"
+        )
         .eq("property_id", property.id)
         .eq("active", true)
-        .eq("billing_mode", "subscription")
         .order("created_at", { ascending: true })
         .then(({ data }) => {
           if (cancelled) return
-          setSubscriptionLines(
+          setBillingLines(
             (data || []).map((line) => ({
+              key: line.id as string,
               id: line.id as string,
+              jobType: (line.job_type as string) || "",
+              mode: (line.billing_mode as string) || "charge_up",
               amount:
                 line.subscription_amount != null
                   ? String(line.subscription_amount)
                   : "",
-              confirmed: !isSubscriptionUnconfirmed({
-                billing_mode: "subscription",
-                subscription_invoice_confirmed_at:
-                  line.subscription_invoice_confirmed_at,
-              }),
+              confirmed:
+                line.billing_mode === "subscription" &&
+                !isSubscriptionUnconfirmed({
+                  billing_mode: "subscription",
+                  subscription_invoice_confirmed_at:
+                    line.subscription_invoice_confirmed_at,
+                }),
             }))
           )
         })
@@ -228,7 +278,8 @@ export function PropertyDialog({
       setInvoiceHandlingNote("")
       setServiceType("")
       setServiceFrequency("")
-      setSubscriptionLines([])
+      setBillingLines([])
+      setRemovedLineIds([])
       setIsRental(false)
       setPropertyManagerId("")
       setAddingPm(false)
@@ -361,24 +412,51 @@ export function PropertyDialog({
         return
       }
 
-      // Phase B: confirmation + amount write to each subscription LINE, not the
-      // property. Ticking stamps a fresh confirmed_at on that line (clearing its
-      // staleness and only its own VA action); unticking un-confirms that line.
+      // Phase B: write each billing LINE. Price applies to the two fixed modes;
+      // the confirmation tick + timestamp is subscription-only (it means "I saw
+      // the Xero repeating invoice"). Ticking stamps a fresh confirmed_at
+      // (clearing staleness); unticking un-confirms. New lines insert; removed
+      // lines retire (active=false) rather than hard-delete, to keep history.
       const nowIso = new Date().toISOString()
-      for (const line of subscriptionLines) {
-        const { error: lineError } = await supabase
-          .from("property_billing_lines")
-          .update({
-            subscription_amount: line.amount ? Number(line.amount) : null,
-            subscription_invoice_confirmed_at: line.confirmed ? nowIso : null,
-            subscription_invoice_confirmed_by: line.confirmed
+      for (const line of billingLines) {
+        const payload = {
+          property_id: property.id,
+          job_type: line.jobType.trim() || null,
+          billing_mode: line.mode,
+          subscription_amount:
+            modeHasPrice(line.mode) && line.amount ? Number(line.amount) : null,
+          subscription_invoice_confirmed_at:
+            line.mode === "subscription" && line.confirmed ? nowIso : null,
+          subscription_invoice_confirmed_by:
+            line.mode === "subscription" && line.confirmed
               ? user.email || "admin"
               : null,
-            updated_at: nowIso,
-          })
-          .eq("id", line.id)
+          updated_at: nowIso,
+        }
+
+        const { error: lineError } = line.id
+          ? await supabase
+              .from("property_billing_lines")
+              .update(payload)
+              .eq("id", line.id)
+          : await supabase
+              .from("property_billing_lines")
+              .insert({ ...payload, active: true })
+
         if (lineError) {
           setError(lineError.message)
+          setLoading(false)
+          return
+        }
+      }
+
+      if (removedLineIds.length > 0) {
+        const { error: retireError } = await supabase
+          .from("property_billing_lines")
+          .update({ active: false, updated_at: nowIso })
+          .in("id", removedLineIds)
+        if (retireError) {
+          setError(retireError.message)
           setLoading(false)
           return
         }
@@ -723,55 +801,129 @@ export function PropertyDialog({
               />
             </Field>
 
-            {subscriptionLines.length > 0 && (
-              <div className="rounded-md border border-blue-200 bg-blue-50 p-3">
-                <p className="mb-2 text-sm font-medium text-blue-900">
-                  Subscription billing (Xero repeating invoice)
-                </p>
-                {subscriptionLines.map((line, index) => (
-                  <div
-                    key={line.id}
-                    className={
-                      index > 0
-                        ? "mt-3 border-t border-blue-200 pt-3"
-                        : undefined
-                    }
+            {isEditing && (
+              <div className="rounded-md border p-3">
+                <div className="mb-2 flex items-center justify-between">
+                  <p className="text-sm font-medium">Billing lines</p>
+                  <button
+                    type="button"
+                    onClick={addLine}
+                    className="rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium"
                   >
-                    {subscriptionLines.length > 1 && (
-                      <p className="mb-1 text-xs font-medium text-blue-800">
-                        Subscription line {index + 1}
-                      </p>
-                    )}
-                    <Field>
-                      <FieldLabel htmlFor={`subscriptionAmount-${line.id}`}>
-                        Repeating invoice amount ($ per period)
-                      </FieldLabel>
-                      <Input
-                        id={`subscriptionAmount-${line.id}`}
-                        type="number"
-                        step="0.01"
-                        placeholder="e.g. 544"
-                        value={line.amount}
-                        onChange={(e) =>
-                          updateLine(line.id, { amount: e.target.value })
-                        }
-                        className="h-12"
-                      />
-                    </Field>
-                    <label className="mt-2 flex items-start gap-2 text-sm text-blue-900">
-                      <input
-                        type="checkbox"
-                        className="mt-1"
-                        checked={line.confirmed}
-                        onChange={(e) =>
-                          updateLine(line.id, { confirmed: e.target.checked })
-                        }
-                      />
-                      I&apos;ve confirmed a live Xero repeating invoice exists for
-                      this line.
-                    </label>
-                  </div>
-                ))}
+                    + Add line
+                  </button>
+                </div>
+                <p className="mb-3 text-xs text-gray-500">
+                  One line per job type. Charge-up bills on hours; fixed price
+                  per visit bills a set amount (hours still recorded, but don&apos;t
+                  drive the invoice). Prices include GST.
+                </p>
+
+                {billingLines.length === 0 ? (
+                  <p className="rounded border border-dashed p-2 text-xs text-gray-400">
+                    No billing lines. Add one to set how this property is billed.
+                  </p>
+                ) : (
+                  billingLines.map((line, index) => (
+                    <div
+                      key={line.key}
+                      className={
+                        index > 0 ? "mt-3 border-t pt-3" : undefined
+                      }
+                    >
+                      <div className="flex items-start gap-2">
+                        <div className="flex-1">
+                          <Field>
+                            <FieldLabel htmlFor={`lineJobType-${line.key}`}>
+                              Job type
+                            </FieldLabel>
+                            <select
+                              id={`lineJobType-${line.key}`}
+                              value={line.jobType}
+                              onChange={(e) =>
+                                updateLine(line.key, { jobType: e.target.value })
+                              }
+                              className="h-12 w-full rounded-md border border-gray-300 bg-white px-3 text-sm"
+                            >
+                              <option value="">General / any</option>
+                              {JOB_TYPE_CHOICES.map((c) => (
+                                <option key={c.value} value={c.value}>
+                                  {c.label}
+                                </option>
+                              ))}
+                            </select>
+                          </Field>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeLine(line.key)}
+                          className="mt-7 rounded-md border border-red-200 bg-white px-2 py-2 text-xs font-medium text-red-700"
+                          aria-label="Remove line"
+                        >
+                          Remove
+                        </button>
+                      </div>
+
+                      <Field className="mt-2">
+                        <FieldLabel htmlFor={`lineMode-${line.key}`}>
+                          Billing
+                        </FieldLabel>
+                        <select
+                          id={`lineMode-${line.key}`}
+                          value={line.mode}
+                          onChange={(e) =>
+                            updateLine(line.key, { mode: e.target.value })
+                          }
+                          className="h-12 w-full rounded-md border border-gray-300 bg-white px-3 text-sm"
+                        >
+                          {BILLING_MODE_OPTIONS.map((m) => (
+                            <option key={m.value} value={m.value}>
+                              {m.label}
+                            </option>
+                          ))}
+                        </select>
+                      </Field>
+
+                      {modeHasPrice(line.mode) && (
+                        <Field className="mt-2">
+                          <FieldLabel htmlFor={`lineAmount-${line.key}`}>
+                            {line.mode === "subscription"
+                              ? "Repeating invoice amount ($ incl GST)"
+                              : "Fixed price per visit ($ incl GST)"}
+                          </FieldLabel>
+                          <Input
+                            id={`lineAmount-${line.key}`}
+                            type="number"
+                            step="0.01"
+                            placeholder="e.g. 220.40"
+                            value={line.amount}
+                            onChange={(e) =>
+                              updateLine(line.key, { amount: e.target.value })
+                            }
+                            className="h-12"
+                          />
+                        </Field>
+                      )}
+
+                      {line.mode === "subscription" && (
+                        <label className="mt-2 flex items-start gap-2 text-sm text-blue-900">
+                          <input
+                            type="checkbox"
+                            className="mt-1"
+                            checked={line.confirmed}
+                            onChange={(e) =>
+                              updateLine(line.key, {
+                                confirmed: e.target.checked,
+                              })
+                            }
+                          />
+                          I&apos;ve confirmed a live Xero repeating invoice exists
+                          for this line.
+                        </label>
+                      )}
+                    </div>
+                  ))
+                )}
               </div>
             )}
 
