@@ -1,3 +1,5 @@
+> ⚠️ **ARCHIVED / SUPERSEDED (2 Aug 2026).** The Xero-attach approach (Part C) was abandoned — replaced by the public visit photo page (`/v/[token]`, see `docs/Brief_Public_Visit_Photo_Page.md`). Parts A+B shipped; Part C never will. Kept for history.
+
 # Build brief — completed-work photos on the customer's Xero invoice
 
 Status: APPROVED (Joe, this session). Part A + B built here in Pristine Jobs;

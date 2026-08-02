@@ -160,7 +160,7 @@ and must not duplicate it. Tick items here; git history is the archive.
       billing ripple + photo-gate/walk-around). Two recs dead (quotes split
       DONE; labour-recon exceptions→actions REVERSED). Refresh when the app
       audit runs.
-- [~] **Cost Capture page: 1,237 lines** — audited (docs/COST_CAPTURE_AUDIT.md,
+- [~] **Cost Capture page: 1,237 lines** — audited (docs/archive/COST_CAPTURE_AUDIT.md,
       PR #43) and partly fixed: labour cost now reads staff_cost_rates and the
       fabricating backfill button is gone (PR #44). STILL OPEN: the broader
       simplification (drop the inline correction forms, fold back-costing into
@@ -259,7 +259,7 @@ pitches before the app supports them.*
       lines → leave duration blank, don't sum.
 - [ ] Post-job follow-up email (review request, referral ask, maintenance upsell)
 - [~] **Photo attach to Xero invoices — Part A+B BUILT (PR, staging-verified);
-      Part C (Make) + live-fire are Joe's.** Brief: docs/INVOICE_PHOTO_ATTACH_BRIEF.md.
+      Part C (Make) + live-fire are Joe's.** Brief: docs/archive/INVOICE_PHOTO_ATTACH_BRIEF.md.
       Allowlist view `invoice_photos_for_make` (migration 071) = photo_type IN
       ('after','completion'), jpg/png only, 3 most-recent per scheduled_job_id,
       filename photo-<photo_id>.jpg, service-role only. Client resize at upload
