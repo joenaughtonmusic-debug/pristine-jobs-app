@@ -352,11 +352,12 @@ guesses; where intent is genuinely unclear it says so.
 
 ### Half-built or non-functional (don't rely on these)
 
-5. **"Schedule Job" button in the schedule's "Ready To Schedule" queue does
-   nothing.** It has no action wired to it (`admin-schedule-client.tsx:1904`).
-   Also, that queue (`scheduling_queue`) has **no code in this app that fills
-   it** — rows would have to come from something outside the repo. Treat the
-   whole "Ready To Schedule" panel as non-working today.
+5. **The "Ready To Schedule" queue has never been used.** It IS fed from the
+   app (the estimates calendar's "Ready to Schedule" action) — an earlier
+   version of this flag wrongly said it had no writer — but production has
+   zero queue rows ever, and its "Schedule Job" button was dead until wired
+   on 2 Aug 2026 (it now opens Quick Add pre-filled). Treat it as an unused
+   but now-working path.
 
 6. **"Edit details" on a lead card is disabled** ("Coming in a later slice",
    `pipeline-row.tsx:488`). You can't edit a lead's details from the board yet.
