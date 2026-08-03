@@ -736,18 +736,47 @@ export function PipelineRow({
             <DialogHeader>
               <DialogTitle>Schedule job for {lead.name}</DialogTitle>
             </DialogHeader>
-            <p className="text-sm text-gray-500">
-              Book the job from the accepted quote in the{" "}
-              <Link
-                href="/admin/quotes"
-                className="font-medium text-gray-900 underline"
-                target="_blank"
-              >
-                quote builder
-              </Link>{" "}
-              (its Schedule action creates the scheduled job), then confirm
-              here to move this lead to Job scheduled.
-            </p>
+            <div className="space-y-2 text-sm text-gray-500">
+              <p>First create the scheduled job, then confirm here to move this
+                lead to Job scheduled.</p>
+              <p>
+                <span className="font-medium text-gray-900">
+                  Quoted in the app?
+                </span>{" "}
+                Use its Schedule action in the{" "}
+                <Link
+                  href="/admin/quotes"
+                  className="font-medium text-gray-900 underline"
+                  target="_blank"
+                >
+                  quote builder
+                </Link>{" "}
+                — that creates the job for you.
+              </p>
+              <p>
+                <span className="font-medium text-gray-900">
+                  Quoted in Xero (no quote in the app)?
+                </span>{" "}
+                Add the customer in{" "}
+                <Link
+                  href="/admin/properties"
+                  className="font-medium text-gray-900 underline"
+                  target="_blank"
+                >
+                  Properties
+                </Link>{" "}
+                if they&apos;re new, then create the job in the{" "}
+                <Link
+                  href="/admin/schedule"
+                  className="font-medium text-gray-900 underline"
+                  target="_blank"
+                >
+                  Schedule
+                </Link>{" "}
+                (Quick Add Job).
+              </p>
+              <p>Either way, come back and confirm below.</p>
+            </div>
             {error ? <p className="text-sm text-red-600">{error}</p> : null}
             <DialogFooter>
               <Button type="button" variant="outline" onClick={closeModal}>
