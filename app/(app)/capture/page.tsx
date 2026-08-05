@@ -3,6 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { Mic, Square, X, Loader2 } from "lucide-react"
+import {
+  approveCaptureAction,
+  type CaptureDestination,
+} from "@/app/(app)/capture/actions"
 
 type Capture = {
   id: string
@@ -20,6 +24,19 @@ const TYPE_LABELS: Record<string, string> = {
   unsorted: "Unsorted",
 }
 const TYPE_ORDER = ["commercial_lead", "property_followup", "annoying_task", "unsorted"]
+
+// The AI's type suggests where a capture should go; Joe confirms/changes it.
+const DEFAULT_DEST: Record<string, CaptureDestination> = {
+  commercial_lead: "quote",
+  property_followup: "follow_up",
+  annoying_task: "va",
+  unsorted: "va",
+}
+const DEST_OPTIONS: { value: CaptureDestination; label: string }[] = [
+  { value: "va", label: "VA task" },
+  { value: "quote", label: "Quote (my list)" },
+  { value: "follow_up", label: "Follow-up (my list)" },
+]
 
 // Non-blocking geolocation — resolves to null if denied, slow, or unsupported.
 function getCoords(): Promise<{ lat: number; lng: number } | null> {
@@ -41,6 +58,12 @@ export default function CapturePage() {
   const [captures, setCaptures] = useState<Capture[]>([])
   const [typed, setTyped] = useState("")
   const [error, setError] = useState<string | null>(null)
+  // Per-capture review state.
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editText, setEditText] = useState("")
+  const [destById, setDestById] = useState<Record<string, CaptureDestination>>({})
+  const [approvingId, setApprovingId] = useState<string | null>(null)
+  const [noteById, setNoteById] = useState<Record<string, string>>({})
 
   const recorderRef = useRef<MediaRecorder | null>(null)
   const chunksRef = useRef<Blob[]>([])
@@ -157,7 +180,46 @@ export default function CapturePage() {
     await supabase.from("captures").update({ status: "dismissed" }).eq("id", id)
   }
 
-  const visible = captures.filter((c) => c.status !== "dismissed")
+  // Re-record: drop this capture and start a fresh recording in its place.
+  const reRecord = async (id: string) => {
+    await dismiss(id)
+    if (!recording && !busy) startRecording()
+  }
+
+  const startEdit = (c: Capture) => {
+    setEditingId(c.id)
+    setEditText(c.transcript ?? "")
+  }
+
+  const saveEdit = async (id: string) => {
+    const text = editText.trim()
+    setCaptures((prev) =>
+      prev.map((c) => (c.id === id ? { ...c, transcript: text } : c))
+    )
+    setEditingId(null)
+    await supabase.from("captures").update({ transcript: text }).eq("id", id)
+  }
+
+  const approve = async (c: Capture) => {
+    const dest = destById[c.id] ?? DEFAULT_DEST[c.type] ?? "va"
+    setApprovingId(c.id)
+    setNoteById((prev) => ({ ...prev, [c.id]: "" }))
+    const result = await approveCaptureAction(c.id, dest, c.transcript ?? undefined)
+    setApprovingId(null)
+    if (result.ok) {
+      // Leaves the review list (now actioned); show any warning briefly.
+      setCaptures((prev) =>
+        prev.map((x) => (x.id === c.id ? { ...x, status: "actioned" } : x))
+      )
+      if (result.warning) setNoteById((prev) => ({ ...prev, [c.id]: result.warning as string }))
+    } else {
+      setNoteById((prev) => ({ ...prev, [c.id]: result.error }))
+    }
+  }
+
+  const visible = captures.filter(
+    (c) => c.status !== "dismissed" && c.status !== "actioned"
+  )
   const grouped = TYPE_ORDER.map((type) => ({
     type,
     rows: visible.filter((c) => c.type === type),
@@ -228,40 +290,125 @@ export default function CapturePage() {
         </button>
       </form>
 
-      {/* Today's captures, grouped by type — the "folders" view. */}
+      {/* Today's captures, grouped by type. Each waits for you to review
+          (edit / re-record) and approve to a destination. */}
       <div className="flex flex-col gap-5">
-        <h2 className="text-sm font-medium text-muted-foreground">Today</h2>
+        <h2 className="text-sm font-medium text-muted-foreground">
+          To review today
+        </h2>
         {grouped.length === 0 && (
-          <p className="text-sm text-muted-foreground">Nothing captured yet today.</p>
+          <p className="text-sm text-muted-foreground">
+            Nothing to review — captures you approve move to their list.
+          </p>
         )}
         {grouped.map((g) => (
           <div key={g.type} className="flex flex-col gap-2">
             <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               {TYPE_LABELS[g.type] ?? g.type} ({g.rows.length})
             </h3>
-            {g.rows.map((c) => (
-              <div
-                key={c.id}
-                className="flex items-start gap-2 rounded-xl border border-border bg-card p-3"
-              >
-                <p className="flex-1 text-sm">
-                  {c.transcript}
-                  {c.triage_confidence === "low" && (
-                    <span className="ml-1 text-xs text-amber-600 dark:text-amber-400">
-                      · check
-                    </span>
-                  )}
-                </p>
-                <button
-                  type="button"
-                  onClick={() => dismiss(c.id)}
-                  aria-label="Dismiss"
-                  className="shrink-0 rounded-lg p-1 text-muted-foreground active:bg-muted"
+            {g.rows.map((c) => {
+              const dest = destById[c.id] ?? DEFAULT_DEST[c.type] ?? "va"
+              const note = noteById[c.id]
+              return (
+                <div
+                  key={c.id}
+                  className="flex flex-col gap-2 rounded-xl border border-border bg-card p-3"
                 >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-            ))}
+                  <div className="flex items-start gap-2">
+                    {editingId === c.id ? (
+                      <textarea
+                        value={editText}
+                        onChange={(e) => setEditText(e.target.value)}
+                        rows={3}
+                        className="flex-1 rounded-lg border border-input bg-background p-2 text-sm"
+                      />
+                    ) : (
+                      <p className="flex-1 text-sm">
+                        {c.transcript}
+                        {c.triage_confidence === "low" && (
+                          <span className="ml-1 text-xs text-amber-600 dark:text-amber-400">
+                            · check
+                          </span>
+                        )}
+                      </p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => dismiss(c.id)}
+                      aria-label="Dismiss"
+                      className="shrink-0 rounded-lg p-1 text-muted-foreground active:bg-muted"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+
+                  {editingId === c.id ? (
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => saveEdit(c.id)}
+                        className="rounded-lg bg-foreground px-3 py-1.5 text-xs font-medium text-background"
+                      >
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingId(null)}
+                        className="rounded-lg border px-3 py-1.5 text-xs font-medium"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <select
+                          value={dest}
+                          onChange={(e) =>
+                            setDestById((prev) => ({
+                              ...prev,
+                              [c.id]: e.target.value as CaptureDestination,
+                            }))
+                          }
+                          className="h-8 rounded-lg border border-input bg-background px-2 text-xs"
+                        >
+                          {DEST_OPTIONS.map((o) => (
+                            <option key={o.value} value={o.value}>
+                              {o.label}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => approve(c)}
+                          disabled={approvingId === c.id}
+                          className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                        >
+                          {approvingId === c.id ? "Approving…" : "Approve"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => startEdit(c)}
+                          className="rounded-lg border px-3 py-1.5 text-xs font-medium"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => reRecord(c.id)}
+                          className="rounded-lg border px-3 py-1.5 text-xs font-medium"
+                        >
+                          Re-record
+                        </button>
+                      </div>
+                      {note && (
+                        <p className="text-xs text-muted-foreground">{note}</p>
+                      )}
+                    </>
+                  )}
+                </div>
+              )
+            })}
           </div>
         ))}
       </div>
