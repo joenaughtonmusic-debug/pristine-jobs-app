@@ -450,10 +450,34 @@ async function createCustomerProperty(
       [details.address_line_1, details.suburb].filter(Boolean).join(" ")
     ) || makePropertyCode(details.client_name)
 
-  // Idempotent by design: these writes aren't transaction-wrapped with their
-  // callers, so a retry after a downstream failure must reuse the property it
-  // already created rather than duplicate it (the "phantom rows" failure mode
-  // Brief 03 exists because of). Same code + same name = same customer.
+  // Reuse an existing property rather than duplicate it. Match on the ADDRESS,
+  // not the property_code: the code varies by route (pipeline vs quote builder,
+  // manual entry, with/without suburb), so a code match misses a property the
+  // same customer already has (this is how "Symone" got created twice). Address
+  // is the property's real identity.
+  const addr = (details.address_line_1 || "").trim()
+  const suburbNorm = (details.suburb || "").trim().toLowerCase()
+  if (addr) {
+    const { data: sameAddr, error: addrError } = await supabase
+      .from("properties")
+      .select("id, suburb")
+      .ilike("address_line_1", addr) // no wildcards in a street address = case-insensitive exact
+      .eq("is_active", true)
+    if (addrError) {
+      return { data: null, error: addrError }
+    }
+    const match = (sameAddr || []).find((p) => {
+      const ps = (p.suburb || "").trim().toLowerCase()
+      // Same suburb, or either side left the suburb blank — still the same place.
+      return !suburbNorm || !ps || ps === suburbNorm
+    })
+    if (match) {
+      return { data: { id: match.id }, error: null }
+    }
+  }
+
+  // Fallback (address unknown): the original code + name idempotency check —
+  // keeps retries after a downstream failure from duplicating.
   const { data: existing, error: existingError } = await supabase
     .from("properties")
     .select("id")
@@ -2708,7 +2732,7 @@ Pristine Gardens`)
 
             <div className="md:col-span-2">
               <label className="mb-1 block text-sm font-medium">
-                Quote Title
+                Internal name (not shown to the customer)
               </label>
               <input
                 className="h-11 w-full rounded-md border px-3"
@@ -2716,6 +2740,10 @@ Pristine Gardens`)
                 onChange={(event) => setQuoteTitle(event.target.value)}
                 placeholder="e.g. Garden tidy and planting quote"
               />
+              <p className="mt-1 text-xs text-gray-500">
+                Just for finding this quote in your list. The customer-facing
+                heading + photo are set in &ldquo;Proposal look&rdquo;.
+              </p>
             </div>
 
             <div className="md:col-span-2">
