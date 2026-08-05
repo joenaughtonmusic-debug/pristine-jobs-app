@@ -3650,7 +3650,7 @@ Pristine Gardens`)
                     onClick={() => openPhotosModal(draft)}
                     className="h-10 rounded-md border px-3 text-sm font-medium hover:bg-gray-50"
                   >
-                    Photos
+                    Proposal look
                   </button>
 
                   <button
