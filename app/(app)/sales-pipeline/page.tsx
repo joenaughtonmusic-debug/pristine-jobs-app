@@ -60,6 +60,69 @@ export default async function SalesPipelinePage() {
     )
   }
 
+  // Quick visual check on scheduled cards: the property's soonest upcoming job
+  // (date + staff). Leads link to a job via their property, so match on
+  // property_id and take the earliest job from today onward. Read-only.
+  const scheduledPropertyIds = Array.from(
+    new Set(
+      (leads || [])
+        .filter((l) => l.status === "scheduled" && l.property_id)
+        .map((l) => l.property_id as string)
+    )
+  )
+  const scheduledByProperty: Record<
+    string,
+    { label: string; staff: string[] }
+  > = {}
+  if (scheduledPropertyIds.length > 0) {
+    const todayYmd = new Date().toISOString().slice(0, 10)
+    const { data: upcomingJobs } = await supabase
+      .from("scheduled_jobs")
+      .select(
+        "property_id, scheduled_date, planned_start_time, scheduled_job_staff(staff_members(name))"
+      )
+      .in("property_id", scheduledPropertyIds)
+      .gte("scheduled_date", todayYmd)
+      .order("scheduled_date", { ascending: true })
+
+    const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+    const MONTHS = [
+      "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ]
+    const formatJobDate = (ymd: string, startTime: string | null) => {
+      const [y, m, d] = ymd.split("-").map(Number)
+      const wd = WEEKDAYS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]
+      let label = `${wd} ${d} ${MONTHS[m - 1]}`
+      if (startTime) label += ` ${startTime.slice(0, 5)}`
+      return label
+    }
+
+    for (const job of (upcomingJobs || []) as Array<{
+      property_id: string
+      scheduled_date: string
+      planned_start_time: string | null
+      scheduled_job_staff?:
+        | { staff_members?: { name?: string } | { name?: string }[] | null }[]
+        | null
+    }>) {
+      // First (soonest) job per property wins — the list is date-ascending.
+      if (scheduledByProperty[job.property_id]) continue
+      const staff = (job.scheduled_job_staff || [])
+        .map((s) => {
+          const m = Array.isArray(s.staff_members)
+            ? s.staff_members[0]
+            : s.staff_members
+          return m?.name || null
+        })
+        .filter((n): n is string => Boolean(n))
+      scheduledByProperty[job.property_id] = {
+        label: formatJobDate(job.scheduled_date, job.planned_start_time),
+        staff,
+      }
+    }
+  }
+
   // Slice 5: invoiced jobs (Make writes xero_invoice_number back onto
   // scheduled_jobs). Archived rows have been cleared off the page.
   const { data: invoicedJobs, error: invoicedError } = await supabase
@@ -140,6 +203,7 @@ export default async function SalesPipelinePage() {
       leads={(leads || []) as SalesLead[]}
       invoicedJobs={(invoicedJobs || []) as unknown as InvoicedJob[]}
       templates={(templates || []) as QuoteTemplateOption[]}
+      scheduledByProperty={scheduledByProperty}
       intakeTray={<LeadIntakeTray cards={intakeCards} dismissed={dismissedCards} />}
     />
   )
