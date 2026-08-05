@@ -73,9 +73,11 @@ type ActionResult = { ok: true } | { error: string }
 export function PipelineRow({
   lead,
   templates = [],
+  scheduledInfo,
 }: {
   lead: SalesLead
   templates?: QuoteTemplateOption[]
+  scheduledInfo?: { label: string; staff: string[] }
 }) {
   const [expanded, setExpanded] = useState(false)
   const [modal, setModal] = useState<ModalKind>(null)
@@ -253,8 +255,19 @@ export function PipelineRow({
             )}
           </>
         )
+      case "scheduled":
+        // Read-only: a quick visual check of when the job is on and who's on it.
+        if (!scheduledInfo) return null
+        return (
+          <div className="mt-2 rounded-md bg-gray-50 px-2 py-1.5 text-xs text-gray-700">
+            <div className="font-medium text-gray-900">{scheduledInfo.label}</div>
+            {scheduledInfo.staff.length > 0 && (
+              <div className="mt-0.5">{scheduledInfo.staff.join(", ")}</div>
+            )}
+          </div>
+        )
       default:
-        // scheduled / won / completed: read-only visibility, no card action.
+        // won / completed: read-only visibility, no card action.
         return null
     }
   }

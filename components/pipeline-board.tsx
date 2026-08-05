@@ -14,10 +14,14 @@ import {
   type SalesLead,
 } from "@/lib/sales-leads"
 
+export type ScheduledInfo = { label: string; staff: string[] }
+
 type Props = {
   leads: SalesLead[]
   invoicedJobs?: InvoicedJob[]
   templates?: QuoteTemplateOption[]
+  // property_id -> soonest upcoming job (date + staff), for scheduled cards.
+  scheduledByProperty?: Record<string, ScheduledInfo>
   // The pending lead-intake tray (server-rendered), shown above the board.
   intakeTray?: React.ReactNode
 }
@@ -29,6 +33,7 @@ export function PipelineBoard({
   leads = [],
   invoicedJobs = [],
   templates = [],
+  scheduledByProperty = {},
   intakeTray = null,
 }: Props) {
   const boardLeads = leads.filter(isOnActiveBoard)
@@ -72,7 +77,16 @@ export function PipelineBoard({
             </div>
           ) : (
             boardLeads.map((lead) => (
-              <PipelineRow key={lead.id} lead={lead} templates={templates} />
+              <PipelineRow
+                key={lead.id}
+                lead={lead}
+                templates={templates}
+                scheduledInfo={
+                  lead.property_id
+                    ? scheduledByProperty[lead.property_id]
+                    : undefined
+                }
+              />
             ))
           )}
         </div>
