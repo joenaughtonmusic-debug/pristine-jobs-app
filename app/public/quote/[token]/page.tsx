@@ -60,6 +60,7 @@ type QuoteDraft = {
   customer_name: string
   customer_email: string | null
   quote_title: string
+  proposal_heading: string | null
   quote_type: string | null
   hero_image_url: string | null
   photos: unknown
@@ -292,7 +293,7 @@ export default async function PublicQuotePage({ params, searchParams }: Props) {
   const supabase = await createAdminClient()
   let { data: quote, error } = await supabase
     .from("quote_drafts")
-    .select(`hero_image_url, photos, ${QUOTE_BASE_COLUMNS}`)
+    .select(`hero_image_url, photos, proposal_heading, ${QUOTE_BASE_COLUMNS}`)
     .eq("public_accept_token", token)
     .maybeSingle()
 
@@ -307,7 +308,12 @@ export default async function PublicQuotePage({ params, searchParams }: Props) {
       .maybeSingle()
 
     quote = legacy.data
-      ? ({ ...legacy.data, hero_image_url: null, photos: [] } as typeof quote)
+      ? ({
+          ...legacy.data,
+          hero_image_url: null,
+          photos: [],
+          proposal_heading: null,
+        } as typeof quote)
       : null
     error = legacy.error
   }
@@ -363,7 +369,7 @@ export default async function PublicQuotePage({ params, searchParams }: Props) {
           />
           <div className="bg-[#123d2a] px-5 py-7 text-center text-white sm:px-8">
             <h1 className="text-3xl font-semibold sm:text-4xl">
-              {proposalCopy.title}
+              {quoteDraft.proposal_heading?.trim() || proposalCopy.title}
             </h1>
             <p className="mx-auto mt-3 max-w-2xl text-sm leading-6 text-green-50 sm:text-base">
               {proposalCopy.preamble}

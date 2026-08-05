@@ -108,6 +108,7 @@ type QuoteDraftSummary = {
   customer_name: string
   customer_email: string | null
   quote_title: string
+  proposal_heading?: string | null
   quote_type: QuoteType | null
   status: string
   frequency: string | null
@@ -512,6 +513,18 @@ async function createCustomerProperty(
     .single()
 }
 
+// 079: customer-facing heading presets per quote type. The first entry is the
+// default the public page falls back to when no heading is chosen — must match
+// PROPOSAL_COPY in app/public/quote/[token]/page.tsx.
+const HEADING_PRESETS: Record<string, string[]> = {
+  one_off: ["Garden Tidy Proposal", "One-off Job Proposal"],
+  maintenance: ["Garden Maintenance Proposal"],
+  landscaping: ["Landscaping Proposal"],
+}
+function headingPresetsFor(quoteType: string | null | undefined): string[] {
+  return HEADING_PRESETS[quoteType ?? "one_off"] ?? HEADING_PRESETS.one_off
+}
+
 function getLeadDetailNotes(lead: LeadOption) {
   return [
     `Customer: ${lead.name}`,
@@ -745,6 +758,8 @@ export function AdminQuoteBuilderClient({
   // stay editable after the draft is saved).
   const [photosDraft, setPhotosDraft] = useState<QuoteDraftSummary | null>(null)
   const [heroImageUrl, setHeroImageUrl] = useState("")
+  // 079: chooseable customer-facing proposal heading (empty = type default).
+  const [proposalHeading, setProposalHeading] = useState("")
   const [galleryPhotos, setGalleryPhotos] = useState<QuotePhoto[]>([])
   const [uploadingQuotePhoto, setUploadingQuotePhoto] = useState(false)
   const [savingPhotos, setSavingPhotos] = useState(false)
@@ -1428,6 +1443,7 @@ export function AdminQuoteBuilderClient({
     setError(null)
     setPhotosDraft(draft)
     setHeroImageUrl(draft.hero_image_url || "")
+    setProposalHeading(draft.proposal_heading || "")
     setGalleryPhotos(parseQuotePhotos(draft.photos))
   }
 
@@ -1533,6 +1549,7 @@ export function AdminQuoteBuilderClient({
       .from("quote_drafts")
       .update({
         hero_image_url: heroImageUrl || null,
+        proposal_heading: proposalHeading.trim() || null,
         photos: galleryPhotos.map((photo, index) => ({
           url: photo.url,
           caption: photo.caption.trim(),
@@ -3882,10 +3899,36 @@ Pristine Gardens`)
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-5 shadow-xl">
             <h2 className="text-xl font-semibold">
-              Photos — {photosDraft.quote_title}
+              Proposal look — {photosDraft.quote_title}
             </h2>
 
             <div className="mt-4">
+              <div className="text-sm font-medium">Proposal heading</div>
+              <p className="text-xs text-gray-500">
+                The big title the customer sees. Leave empty to use the default
+                for this quote type.
+              </p>
+              <input
+                className="mt-2 h-10 w-full rounded-md border px-3 text-sm"
+                value={proposalHeading}
+                onChange={(e) => setProposalHeading(e.target.value)}
+                placeholder={headingPresetsFor(photosDraft.quote_type)[0]}
+              />
+              <div className="mt-2 flex flex-wrap gap-2">
+                {headingPresetsFor(photosDraft.quote_type).map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => setProposalHeading(preset)}
+                    className="rounded-full border px-3 py-1 text-xs font-medium hover:bg-gray-50"
+                  >
+                    {preset}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="mt-6">
               <div className="text-sm font-medium">Hero image</div>
               <p className="text-xs text-gray-500">
                 Shown at the top of the proposal. Leave empty to use the
