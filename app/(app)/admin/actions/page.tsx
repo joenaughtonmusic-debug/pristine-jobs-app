@@ -125,6 +125,9 @@ export default async function AdminActionsPage() {
     // Default to open actions only — hide terminal states (done, and
     // dismissed, which is what auto-closed labour-recon clutter uses).
     .not("status", "in", "(done,dismissed)")
+    // Quote / follow-up to-dos live on Joe's own Quotes & Follow-ups page,
+    // not on this shared board.
+    .not("action_type", "in", "(quote,follow_up)")
     .order("due_date", { ascending: true, nullsFirst: false })
     .order("created_at", { ascending: false })
 

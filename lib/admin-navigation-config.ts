@@ -40,6 +40,7 @@ export const adminNavGroups: AdminNavGroup[] = [
     links: [
       { href: "/admin/internal-notes", label: "Team Notes" },
       { href: "/admin/actions", label: "Admin Actions" },
+      { href: "/admin/quotes-followups", label: "Quotes & Follow-ups" },
     ],
   },
   {
