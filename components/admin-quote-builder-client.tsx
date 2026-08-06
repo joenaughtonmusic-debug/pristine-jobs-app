@@ -1036,9 +1036,10 @@ export function AdminQuoteBuilderClient({
     Number(spraysPrice || 0) +
     Number(fertiliserPrice || 0) +
     Number(stumpPastePrice || 0)
-  // Greenwaste auto-range (19 Jul): ONE average input; min/max derived by
-  // Joe's rule (avg −1 bag with a half-bag floor / avg +1.5 bags). No
-  // min/avg/max UI — that's the over-build the Backlog_Notes guardrail bans.
+  // Greenwaste auto-range (19 Jul): ONE average input; min/max derived. Max is
+  // 1.5x the average (proportional), so a small baseline no longer balloons —
+  // the old "avg + 1.5 bags" rule made a 1-bag job's max 2.5x the average.
+  // Min stays avg −1 bag with a half-bag floor. No min/avg/max UI.
   const greenwasteRange =
     hasMaintenancePricing &&
     Number(greenwasteBags) > 0 &&
@@ -1047,7 +1048,7 @@ export function AdminQuoteBuilderClient({
           average: Number(greenwasteBags) * Number(greenwasteRate),
           min:
             Math.max(Number(greenwasteBags) - 1, 0.5) * Number(greenwasteRate),
-          max: (Number(greenwasteBags) + 1.5) * Number(greenwasteRate),
+          max: 1.5 * Number(greenwasteBags) * Number(greenwasteRate),
         }
       : null
   // Kept stored on the draft for genuinely-subscription customers (their
