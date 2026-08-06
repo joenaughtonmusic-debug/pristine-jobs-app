@@ -141,6 +141,7 @@ export default async function AdminQuotesPage({ searchParams }: Props) {
       customer_email,
       quote_title,
       proposal_heading,
+      logo_variant,
       quote_type,
       status,
       total,
