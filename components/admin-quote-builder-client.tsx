@@ -223,8 +223,10 @@ All greenwaste removed. Greenwaste volumes vary visit to visit and are charged a
 // The one sentence the app owns in the maintenance line description
 // (greenwaste auto-range). Matched loosely so a re-save replaces the previous
 // version instead of stacking; everything else in the description is Joe's.
+// Matches EITHER the range sentence or the fixed sentence, so a re-save
+// replaces whichever greenwaste sentence is already there (no stacking).
 const GREENWASTE_RANGE_PATTERN =
-  /\s*Greenwaste removal is approximately [^\n]*? depending on the amount removed\./g
+  /\s*Greenwaste removal is (?:approximately [^\n]*? depending on the amount removed|a fixed [^\n]*? per visit)\./g
 
 function buildGreenwasteRangeSentence(range: {
   average: number
@@ -236,6 +238,10 @@ function buildGreenwasteRangeSentence(range: {
   )} per visit on average and may fluctuate between ${money(
     range.min
   )} and ${money(range.max)} depending on the amount removed.`
+}
+
+function buildGreenwasteFixedSentence(amount: number) {
+  return `Greenwaste removal is a fixed ${money(amount)} per visit.`
 }
 
 const maintenanceLineItemDescription = `Ongoing garden maintenance.
@@ -759,6 +765,9 @@ export function AdminQuoteBuilderClient({
   const [labourRate, setLabourRate] = useState(80)
   const [greenwasteBags, setGreenwasteBags] = useState(0)
   const [greenwasteRate, setGreenwasteRate] = useState(26.5)
+  // 081: when true, the quote states a single fixed greenwaste amount per visit
+  // instead of the auto min/avg/max range.
+  const [greenwasteFixed, setGreenwasteFixed] = useState(false)
   const [spraysSize, setSpraysSize] = useState("none")
   const [spraysPrice, setSpraysPrice] = useState(0)
   const [fertiliserSize, setFertiliserSize] = useState("none")
@@ -2311,7 +2320,9 @@ Pristine Gardens`)
 
       if (!greenwasteRange) return base
 
-      const sentence = buildGreenwasteRangeSentence(greenwasteRange)
+      const sentence = greenwasteFixed
+        ? buildGreenwasteFixedSentence(greenwasteRange.average)
+        : buildGreenwasteRangeSentence(greenwasteRange)
 
       return base ? `${base}\n\n${sentence}` : sentence
     }
@@ -2935,12 +2946,30 @@ Pristine Gardens`)
                 />
               </div>
 
+              <label className="md:col-span-3 flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={greenwasteFixed}
+                  onChange={(event) => setGreenwasteFixed(event.target.checked)}
+                />
+                Fixed greenwaste (one set amount, no range shown to the customer)
+              </label>
+
               {greenwasteRange && (
                 <div className="md:col-span-3 rounded-md bg-white px-3 py-2 text-xs text-gray-600">
-                  Greenwaste ≈ {money(greenwasteRange.average)} per visit on
-                  average. Saving adds the range line to the quote wording:
-                  may fluctuate between {money(greenwasteRange.min)} and{" "}
-                  {money(greenwasteRange.max)}.
+                  {greenwasteFixed ? (
+                    <>
+                      Greenwaste: a fixed {money(greenwasteRange.average)} per
+                      visit — no range in the quote wording.
+                    </>
+                  ) : (
+                    <>
+                      Greenwaste ≈ {money(greenwasteRange.average)} per visit on
+                      average. Saving adds the range line to the quote wording:
+                      may fluctuate between {money(greenwasteRange.min)} and{" "}
+                      {money(greenwasteRange.max)}.
+                    </>
+                  )}
                 </div>
               )}
             </div>
