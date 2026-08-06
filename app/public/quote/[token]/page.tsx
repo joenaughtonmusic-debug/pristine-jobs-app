@@ -61,6 +61,7 @@ type QuoteDraft = {
   customer_email: string | null
   quote_title: string
   proposal_heading: string | null
+  logo_variant: string | null
   quote_type: string | null
   hero_image_url: string | null
   photos: unknown
@@ -294,7 +295,7 @@ export default async function PublicQuotePage({ params, searchParams }: Props) {
   const supabase = await createAdminClient()
   let { data: quote, error } = await supabase
     .from("quote_drafts")
-    .select(`hero_image_url, photos, proposal_heading, ${QUOTE_BASE_COLUMNS}`)
+    .select(`hero_image_url, photos, proposal_heading, logo_variant, ${QUOTE_BASE_COLUMNS}`)
     .eq("public_accept_token", token)
     .maybeSingle()
 
@@ -314,6 +315,7 @@ export default async function PublicQuotePage({ params, searchParams }: Props) {
           hero_image_url: null,
           photos: [],
           proposal_heading: null,
+          logo_variant: null,
         } as typeof quote)
       : null
     error = legacy.error
@@ -352,9 +354,21 @@ export default async function PublicQuotePage({ params, searchParams }: Props) {
       <div className="mx-auto max-w-[900px] px-4 py-6 pb-12 sm:px-6 sm:py-8">
         <header className="text-center">
           <img
-            src="/images/Pristine Gardens LOGO.jpeg"
-            alt="Pristine Gardens"
-            className="mx-auto h-auto w-40 max-w-[70vw] sm:w-52"
+            src={
+              quoteDraft.logo_variant === "partnership"
+                ? "/images/wedo-partnership-logo.png"
+                : "/images/Pristine Gardens LOGO.jpeg"
+            }
+            alt={
+              quoteDraft.logo_variant === "partnership"
+                ? "Pristine Gardens & WeDo Garden Care"
+                : "Pristine Gardens"
+            }
+            className={
+              quoteDraft.logo_variant === "partnership"
+                ? "mx-auto h-auto w-64 max-w-[85vw] sm:w-80"
+                : "mx-auto h-auto w-40 max-w-[70vw] sm:w-52"
+            }
           />
         </header>
 

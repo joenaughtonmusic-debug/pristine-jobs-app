@@ -109,6 +109,7 @@ type QuoteDraftSummary = {
   customer_email: string | null
   quote_title: string
   proposal_heading?: string | null
+  logo_variant?: string | null
   quote_type: QuoteType | null
   status: string
   frequency: string | null
@@ -806,6 +807,8 @@ export function AdminQuoteBuilderClient({
   const [heroImageUrl, setHeroImageUrl] = useState("")
   // 079: chooseable customer-facing proposal heading (empty = type default).
   const [proposalHeading, setProposalHeading] = useState("")
+  // 080: per-quote logo ("pristine" default, or "partnership" = + WeDo).
+  const [logoVariant, setLogoVariant] = useState("pristine")
   const [galleryPhotos, setGalleryPhotos] = useState<QuotePhoto[]>([])
   const [uploadingQuotePhoto, setUploadingQuotePhoto] = useState(false)
   const [savingPhotos, setSavingPhotos] = useState(false)
@@ -1530,6 +1533,7 @@ export function AdminQuoteBuilderClient({
     setPhotosDraft(draft)
     setHeroImageUrl(draft.hero_image_url || "")
     setProposalHeading(draft.proposal_heading || "")
+    setLogoVariant(draft.logo_variant || "pristine")
     setGalleryPhotos(parseQuotePhotos(draft.photos))
   }
 
@@ -1636,6 +1640,7 @@ export function AdminQuoteBuilderClient({
       .update({
         hero_image_url: heroImageUrl || null,
         proposal_heading: proposalHeading.trim() || null,
+        logo_variant: logoVariant,
         photos: galleryPhotos.map((photo, index) => ({
           url: photo.url,
           caption: photo.caption.trim(),
@@ -4030,6 +4035,23 @@ Pristine Gardens`)
                   </button>
                 ))}
               </div>
+            </div>
+
+            <div className="mt-6">
+              <div className="text-sm font-medium">Logo</div>
+              <p className="text-xs text-gray-500">
+                Which logo shows at the top of the customer&apos;s proposal.
+              </p>
+              <select
+                value={logoVariant}
+                onChange={(e) => setLogoVariant(e.target.value)}
+                className="mt-2 h-10 w-full rounded-md border px-3 text-sm"
+              >
+                <option value="pristine">Pristine Gardens</option>
+                <option value="partnership">
+                  Pristine + WeDo Garden Care
+                </option>
+              </select>
             </div>
 
             <div className="mt-6">
