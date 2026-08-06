@@ -750,6 +750,7 @@ export function AdminQuoteBuilderClient({
     useState<string | null>(null)
   const [copyingQuoteId, setCopyingQuoteId] = useState<string | null>(null)
   const [convertingQuoteId, setConvertingQuoteId] = useState<string | null>(null)
+  const [deletingDraftId, setDeletingDraftId] = useState<string | null>(null)
   // Recurring maintenance calendar event (078): keyed by the converted property
   // id so each card tracks its own state in this list.
   const [calendarSavingId, setCalendarSavingId] = useState<string | null>(null)
@@ -1461,6 +1462,46 @@ export function AdminQuoteBuilderClient({
   }
 
   // --- Brief 04 Part 3a: quote photos ---------------------------------------
+
+  // Clear out a redundant quote. Guarded: an accepted or already-scheduled
+  // quote is part of live work, so it can't be deleted from here. Any pipeline
+  // lead pointing at it is unlinked first so nothing is left dangling.
+  const deleteDraft = async (draft: QuoteDraftSummary) => {
+    if (draft.status === "accepted" || draft.first_scheduled_job_id) {
+      setError(
+        "This quote is accepted or already scheduled, so it can't be deleted here."
+      )
+      return
+    }
+    if (
+      !window.confirm(
+        `Delete this quote${
+          draft.quote_title ? ` (“${draft.quote_title}”)` : ""
+        }? This can't be undone.`
+      )
+    ) {
+      return
+    }
+    setDeletingDraftId(draft.id)
+    setError(null)
+    setMessage(null)
+    // Unlink any pipeline lead first (avoids a dangling reference).
+    await supabase
+      .from("sales_leads")
+      .update({ quote_draft_id: null })
+      .eq("quote_draft_id", draft.id)
+    const { error: deleteError } = await supabase
+      .from("quote_drafts")
+      .delete()
+      .eq("id", draft.id)
+    setDeletingDraftId(null)
+    if (deleteError) {
+      setError(deleteError.message)
+      return
+    }
+    setQuoteDrafts((prev) => prev.filter((d) => d.id !== draft.id))
+    setMessage("Quote deleted.")
+  }
 
   const openPhotosModal = (draft: QuoteDraftSummary) => {
     setMessage(null)
@@ -2742,7 +2783,7 @@ Pristine Gardens`)
               />
               <p className="mt-1 text-xs text-gray-500">
                 Just for finding this quote in your list. The customer-facing
-                heading + photo are set in &ldquo;Proposal look&rdquo;.
+                heading + photo are set in &ldquo;Proposal edits&rdquo;.
               </p>
             </div>
 
@@ -3667,7 +3708,7 @@ Pristine Gardens`)
                     onClick={() => openPhotosModal(draft)}
                     className="h-10 rounded-md border px-3 text-sm font-medium hover:bg-gray-50"
                   >
-                    Photos
+                    Proposal edits
                   </button>
 
                   <button
@@ -3798,6 +3839,20 @@ Pristine Gardens`)
                       Proposal sent {formatDate(draft.quote_sent_at)}
                     </div>
                   )}
+
+                  {/* Clear out a redundant quote. Hidden once a quote is
+                      accepted or scheduled — those are live work. */}
+                  {draft.status !== "accepted" &&
+                    !draft.first_scheduled_job_id && (
+                      <button
+                        type="button"
+                        onClick={() => deleteDraft(draft)}
+                        disabled={deletingDraftId === draft.id}
+                        className="h-10 rounded-md border border-red-200 px-3 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                      >
+                        {deletingDraftId === draft.id ? "Deleting…" : "Delete quote"}
+                      </button>
+                    )}
                 </div>
               </div>
               )
@@ -3927,7 +3982,7 @@ Pristine Gardens`)
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-5 shadow-xl">
             <h2 className="text-xl font-semibold">
-              Proposal look — {photosDraft.quote_title}
+              Proposal edits — {photosDraft.quote_title}
             </h2>
 
             <div className="mt-4">
