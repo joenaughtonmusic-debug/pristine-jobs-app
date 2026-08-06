@@ -116,6 +116,7 @@ function formatDate(value: string | null | undefined) {
 }
 
 function formatFrequency(value: string | null | undefined) {
+  if (value === "2_weekly") return "2 Weekly"
   if (value === "monthly") return "Monthly"
   if (value === "6_weekly") return "6 Weekly"
   if (value === "2_monthly") return "2 Monthly"

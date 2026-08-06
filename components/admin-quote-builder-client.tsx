@@ -189,6 +189,7 @@ const quoteTypeOptions: { value: QuoteType; label: string }[] = [
 
 const frequencyOptions = [
   { value: "", label: "No subscription frequency" },
+  { value: "2_weekly", label: "2 Weekly" },
   { value: "monthly", label: "Monthly" },
   { value: "6_weekly", label: "6 Weekly" },
   { value: "2_monthly", label: "2 Monthly" },
@@ -507,7 +508,7 @@ async function createCustomerProperty(
       billing_type: "charge_up",
       service_frequency:
         getNormalisedQuoteType(quote.quote_type) === "maintenance"
-          ? quote.frequency || null
+          ? quoteFrequencyToProperty(quote.frequency)
           : null,
       // Invoicing bills actuals at the PROPERTY's rates (hours ×
       // hourly_rate, bags × greenwaste_rate) — copy the quoted rates on so
@@ -584,6 +585,25 @@ function parseLineItems(value: unknown): LineItem[] {
       }),
     }
   })
+}
+
+// Quotes and properties use different frequency vocabularies: quotes store
+// "6_weekly" / "2_monthly" (etc.), but the property fields, frequency display,
+// and recurring-calendar interval all use "six_weekly" / "two_monthly". Map the
+// quote value to the property one when creating the property, so the frequency
+// shows correctly and the recurring maintenance calendar can fire.
+const QUOTE_TO_PROPERTY_FREQUENCY: Record<string, string> = {
+  "2_weekly": "two_weekly",
+  monthly: "monthly",
+  "6_weekly": "six_weekly",
+  "2_monthly": "two_monthly",
+  "3_monthly": "three_monthly",
+  "4_monthly": "four_monthly",
+  "6_monthly": "six_monthly",
+}
+function quoteFrequencyToProperty(freq: string | null | undefined): string | null {
+  if (!freq) return null
+  return QUOTE_TO_PROPERTY_FREQUENCY[freq] ?? freq
 }
 
 function parseQuotePhotos(value: unknown): QuotePhoto[] {
@@ -663,6 +683,7 @@ function getEstimateDetailNotes(estimate: EstimateOption) {
 }
 
 function calculateMonthlyEquivalent(perVisitPrice: number, frequency: string) {
+  if (frequency === "2_weekly") return perVisitPrice * 52 / 12 / 2
   if (frequency === "monthly") return perVisitPrice
   if (frequency === "6_weekly") return perVisitPrice * 52 / 12 / 6
   if (frequency === "2_monthly") return perVisitPrice / 2
