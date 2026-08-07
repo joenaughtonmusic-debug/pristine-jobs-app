@@ -766,9 +766,13 @@ export function AdminQuoteBuilderClient({
   const [labourRate, setLabourRate] = useState(80)
   const [greenwasteBags, setGreenwasteBags] = useState(0)
   const [greenwasteRate, setGreenwasteRate] = useState(26.5)
-  // 081: when true, the quote states a single fixed greenwaste amount per visit
-  // instead of the auto min/avg/max range.
-  const [greenwasteFixed, setGreenwasteFixed] = useState(false)
+  // Greenwaste presentation (081/082): 'auto' = derived range, 'fixed' = one set
+  // amount, 'manual' = typed min/max. Manual uses greenwasteMin/Max.
+  const [greenwasteMode, setGreenwasteMode] = useState<
+    "auto" | "fixed" | "manual"
+  >("auto")
+  const [greenwasteMin, setGreenwasteMin] = useState(0)
+  const [greenwasteMax, setGreenwasteMax] = useState(0)
   const [spraysSize, setSpraysSize] = useState("none")
   const [spraysPrice, setSpraysPrice] = useState(0)
   const [fertiliserSize, setFertiliserSize] = useState("none")
@@ -1039,27 +1043,42 @@ export function AdminQuoteBuilderClient({
   // keeps a leftover frequency from silently pricing a one-off/landscaping
   // quote off the (now hidden) maintenance inputs.
   const hasMaintenancePricing = quoteType === "maintenance" && Boolean(frequency)
+  // The greenwaste amount that goes INTO the per-visit price: bags x rate for
+  // auto/fixed; the midpoint of the typed range for manual.
+  const greenwasteAverage =
+    greenwasteMode === "manual"
+      ? (Number(greenwasteMin || 0) + Number(greenwasteMax || 0)) / 2
+      : Number(greenwasteBags || 0) * Number(greenwasteRate || 0)
   const perVisitPrice =
     Number(labourHours || 0) * Number(labourRate || 0) +
-    Number(greenwasteBags || 0) * Number(greenwasteRate || 0) +
+    greenwasteAverage +
     Number(spraysPrice || 0) +
     Number(fertiliserPrice || 0) +
     Number(stumpPastePrice || 0)
-  // Greenwaste auto-range (19 Jul): ONE average input; min/max derived. Max is
-  // 1.5x the average (proportional), so a small baseline no longer balloons —
-  // the old "avg + 1.5 bags" rule made a 1-bag job's max 2.5x the average.
-  // Min stays avg −1 bag with a half-bag floor. No min/avg/max UI.
-  const greenwasteRange =
-    hasMaintenancePricing &&
-    Number(greenwasteBags) > 0 &&
-    Number(greenwasteRate) > 0
-      ? {
-          average: Number(greenwasteBags) * Number(greenwasteRate),
-          min:
-            Math.max(Number(greenwasteBags) - 1, 0.5) * Number(greenwasteRate),
-          max: 1.5 * Number(greenwasteBags) * Number(greenwasteRate),
-        }
-      : null
+  // Greenwaste display range, by mode:
+  //   auto   — avg = bags x rate; min = avg −1 bag (half-bag floor); max = 1.5x avg
+  //   fixed  — a single amount (min = avg = max)
+  //   manual — the typed min/max, avg = their midpoint
+  // (auto's 1.5x max is proportional, so a small baseline no longer balloons.)
+  const greenwasteRange = !hasMaintenancePricing
+    ? null
+    : greenwasteMode === "manual"
+      ? Number(greenwasteMin) > 0 || Number(greenwasteMax) > 0
+        ? {
+            average: greenwasteAverage,
+            min: Number(greenwasteMin || 0),
+            max: Number(greenwasteMax || 0),
+          }
+        : null
+      : Number(greenwasteBags) > 0 && Number(greenwasteRate) > 0
+        ? {
+            average: Number(greenwasteBags) * Number(greenwasteRate),
+            min:
+              Math.max(Number(greenwasteBags) - 1, 0.5) *
+              Number(greenwasteRate),
+            max: 1.5 * Number(greenwasteBags) * Number(greenwasteRate),
+          }
+        : null
   // Kept stored on the draft for genuinely-subscription customers (their
   // proposal shows it) — but it is NEVER the price. Maintenance is
   // charge_up: the quote is the cost of ONE visit, and frequency is
@@ -1384,7 +1403,7 @@ export function AdminQuoteBuilderClient({
     const { data: full, error: fetchError } = await supabase
       .from("quote_drafts")
       .select(
-        "id, customer_name, quote_title, quote_type, frequency, labour_hours, labour_rate, greenwaste_bags, greenwaste_rate, sprays_size, sprays_price, fertiliser_size, fertiliser_price, stump_paste_size, stump_paste_price, customer_scope, internal_notes, terms_conditions, line_items"
+        "id, customer_name, quote_title, quote_type, frequency, labour_hours, labour_rate, greenwaste_bags, greenwaste_rate, greenwaste_mode, greenwaste_min, greenwaste_max, sprays_size, sprays_price, fertiliser_size, fertiliser_price, stump_paste_size, stump_paste_price, customer_scope, internal_notes, terms_conditions, line_items"
       )
       .eq("id", draft.id)
       .single()
@@ -1399,6 +1418,11 @@ export function AdminQuoteBuilderClient({
     setLabourRate(Number(full.labour_rate || 80))
     setGreenwasteBags(Number(full.greenwaste_bags || 0))
     setGreenwasteRate(Number(full.greenwaste_rate || 26.5))
+    setGreenwasteMode(
+      (full.greenwaste_mode as "auto" | "fixed" | "manual") || "auto"
+    )
+    setGreenwasteMin(Number(full.greenwaste_min || 0))
+    setGreenwasteMax(Number(full.greenwaste_max || 0))
     setSpraysSize(full.sprays_size || "none")
     setSpraysPrice(Number(full.sprays_price || 0))
     setFertiliserSize(full.fertiliser_size || "none")
@@ -1432,6 +1456,9 @@ export function AdminQuoteBuilderClient({
     setLineItemsEdited(false)
     setFrequency("")
     setQuoteType("one_off")
+    setGreenwasteMode("auto")
+    setGreenwasteMin(0)
+    setGreenwasteMax(0)
     setMessage(null)
     setError(null)
   }
@@ -2402,9 +2429,10 @@ Pristine Gardens`)
 
       if (!greenwasteRange) return base
 
-      const sentence = greenwasteFixed
-        ? buildGreenwasteFixedSentence(greenwasteRange.average)
-        : buildGreenwasteRangeSentence(greenwasteRange)
+      const sentence =
+        greenwasteMode === "fixed"
+          ? buildGreenwasteFixedSentence(greenwasteRange.average)
+          : buildGreenwasteRangeSentence(greenwasteRange)
 
       return base ? `${base}\n\n${sentence}` : sentence
     }
@@ -2466,6 +2494,15 @@ Pristine Gardens`)
           labour_rate: hasMaintenancePricing ? labourRate : null,
           greenwaste_bags: hasMaintenancePricing ? greenwasteBags : null,
           greenwaste_rate: hasMaintenancePricing ? greenwasteRate : null,
+          greenwaste_mode: hasMaintenancePricing ? greenwasteMode : null,
+          greenwaste_min:
+            hasMaintenancePricing && greenwasteMode === "manual"
+              ? greenwasteMin
+              : null,
+          greenwaste_max:
+            hasMaintenancePricing && greenwasteMode === "manual"
+              ? greenwasteMax
+              : null,
           sprays_size: hasMaintenancePricing ? spraysSize : null,
           sprays_price: hasMaintenancePricing ? spraysPrice : null,
           fertiliser_size: hasMaintenancePricing ? fertiliserSize : null,
@@ -2529,6 +2566,15 @@ Pristine Gardens`)
       labour_rate: hasMaintenancePricing ? labourRate : null,
       greenwaste_bags: hasMaintenancePricing ? greenwasteBags : null,
       greenwaste_rate: hasMaintenancePricing ? greenwasteRate : null,
+      greenwaste_mode: hasMaintenancePricing ? greenwasteMode : null,
+      greenwaste_min:
+        hasMaintenancePricing && greenwasteMode === "manual"
+          ? greenwasteMin
+          : null,
+      greenwaste_max:
+        hasMaintenancePricing && greenwasteMode === "manual"
+          ? greenwasteMax
+          : null,
       sprays_size: hasMaintenancePricing ? spraysSize : null,
       sprays_price: hasMaintenancePricing ? spraysPrice : null,
       fertiliser_size: hasMaintenancePricing ? fertiliserSize : null,
@@ -3076,18 +3122,54 @@ Pristine Gardens`)
                 />
               </div>
 
-              <label className="md:col-span-3 flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={greenwasteFixed}
-                  onChange={(event) => setGreenwasteFixed(event.target.checked)}
-                />
-                Fixed greenwaste (one set amount, no range shown to the customer)
-              </label>
+              <div className="md:col-span-3 flex flex-wrap items-center gap-2 text-sm">
+                <span className="font-medium">Greenwaste:</span>
+                <select
+                  value={greenwasteMode}
+                  onChange={(event) =>
+                    setGreenwasteMode(
+                      event.target.value as "auto" | "fixed" | "manual"
+                    )
+                  }
+                  className="h-9 rounded-md border bg-white px-2"
+                >
+                  <option value="auto">Auto range</option>
+                  <option value="fixed">Fixed amount</option>
+                  <option value="manual">Manual range</option>
+                </select>
+                {greenwasteMode === "manual" && (
+                  <>
+                    <label className="flex items-center gap-1">
+                      Min $
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        className="h-9 w-24 rounded-md border bg-white px-2"
+                        value={greenwasteMin}
+                        onChange={(event) =>
+                          setGreenwasteMin(parseDecimalInput(event.target.value))
+                        }
+                      />
+                    </label>
+                    <label className="flex items-center gap-1">
+                      Max $
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        className="h-9 w-24 rounded-md border bg-white px-2"
+                        value={greenwasteMax}
+                        onChange={(event) =>
+                          setGreenwasteMax(parseDecimalInput(event.target.value))
+                        }
+                      />
+                    </label>
+                  </>
+                )}
+              </div>
 
               {greenwasteRange && (
                 <div className="md:col-span-3 rounded-md bg-white px-3 py-2 text-xs text-gray-600">
-                  {greenwasteFixed ? (
+                  {greenwasteMode === "fixed" ? (
                     <>
                       Greenwaste: a fixed {money(greenwasteRange.average)} per
                       visit — no range in the quote wording.
@@ -3095,9 +3177,11 @@ Pristine Gardens`)
                   ) : (
                     <>
                       Greenwaste ≈ {money(greenwasteRange.average)} per visit on
-                      average. Saving adds the range line to the quote wording:
-                      may fluctuate between {money(greenwasteRange.min)} and{" "}
-                      {money(greenwasteRange.max)}.
+                      average. Saving adds the range line: may fluctuate between{" "}
+                      {money(greenwasteRange.min)} and {money(greenwasteRange.max)}.
+                      {greenwasteMode === "manual"
+                        ? " (Your typed range; the price uses the midpoint.)"
+                        : ""}
                     </>
                   )}
                 </div>
