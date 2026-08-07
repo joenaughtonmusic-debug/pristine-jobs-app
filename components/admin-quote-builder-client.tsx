@@ -772,6 +772,12 @@ export function AdminQuoteBuilderClient({
   const [copyingQuoteId, setCopyingQuoteId] = useState<string | null>(null)
   const [convertingQuoteId, setConvertingQuoteId] = useState<string | null>(null)
   const [deletingDraftId, setDeletingDraftId] = useState<string | null>(null)
+  // Revise mode: the draft currently loaded into the form for in-place editing.
+  // While set, Save UPDATES this draft (same id/token/link) instead of creating
+  // a new one — so the pipeline link is never lost.
+  const [editingDraft, setEditingDraft] = useState<QuoteDraftSummary | null>(
+    null
+  )
   // Recurring maintenance calendar event (078): keyed by the converted property
   // id so each card tracks its own state in this list.
   const [calendarSavingId, setCalendarSavingId] = useState<string | null>(null)
@@ -1354,6 +1360,67 @@ export function AdminQuoteBuilderClient({
     }
 
     setQuoteDrafts((data || []) as QuoteDraftSummary[])
+  }
+
+  // Revise: load an existing draft into the form for in-place editing. Saving
+  // then UPDATES this draft (see saveDraft) rather than creating a new one, so
+  // the pipeline link is preserved (the delete-and-remake orphaning is avoided).
+  const handleReviseQuote = async (draft: QuoteDraftSummary) => {
+    setMessage(null)
+    setError(null)
+    const { data: full, error: fetchError } = await supabase
+      .from("quote_drafts")
+      .select(
+        "id, customer_name, quote_title, quote_type, frequency, labour_hours, labour_rate, greenwaste_bags, greenwaste_rate, sprays_size, sprays_price, fertiliser_size, fertiliser_price, stump_paste_size, stump_paste_price, customer_scope, internal_notes, terms_conditions, line_items"
+      )
+      .eq("id", draft.id)
+      .single()
+    if (fetchError || !full) {
+      setError(fetchError?.message || "Could not load that quote to revise.")
+      return
+    }
+    setNewCustomerMode(false)
+    setQuoteType((full.quote_type as QuoteType) || "one_off")
+    setFrequency(full.frequency || "")
+    setLabourHours(Number(full.labour_hours || 0))
+    setLabourRate(Number(full.labour_rate || 80))
+    setGreenwasteBags(Number(full.greenwaste_bags || 0))
+    setGreenwasteRate(Number(full.greenwaste_rate || 26.5))
+    setSpraysSize(full.sprays_size || "none")
+    setSpraysPrice(Number(full.sprays_price || 0))
+    setFertiliserSize(full.fertiliser_size || "none")
+    setFertiliserPrice(Number(full.fertiliser_price || 0))
+    setStumpPasteSize(full.stump_paste_size || "none")
+    setStumpPastePrice(Number(full.stump_paste_price || 0))
+    // Keep hand-edited content from being overwritten by the type-change effect.
+    setCustomerScope(full.customer_scope || "")
+    setCustomerScopeEdited(true)
+    setInternalNotes(full.internal_notes || "")
+    setTermsConditions(full.terms_conditions || "")
+    setLineItems(
+      Array.isArray(full.line_items) ? (full.line_items as LineItem[]) : []
+    )
+    setLineItemsEdited(true)
+    setQuoteTitle(full.quote_title || "")
+    setEditingDraft(draft)
+    if (typeof window !== "undefined") {
+      window.scrollTo({ top: 0, behavior: "smooth" })
+    }
+  }
+
+  const cancelRevise = () => {
+    setEditingDraft(null)
+    setQuoteTitle("")
+    setCustomerScope("")
+    setCustomerScopeEdited(false)
+    setInternalNotes("")
+    setTermsConditions("")
+    setLineItems([])
+    setLineItemsEdited(false)
+    setFrequency("")
+    setQuoteType("one_off")
+    setMessage(null)
+    setError(null)
   }
 
   const prepareXeroQuote = async (quoteDraftId: string) => {
@@ -2216,23 +2283,32 @@ Pristine Gardens`)
     setMessage(null)
     setError(null)
 
-    if (!selectedProperty && !selectedEstimate && !selectedLead && !newCustomerMode) {
+    if (
+      !editingDraft &&
+      !selectedProperty &&
+      !selectedEstimate &&
+      !selectedLead &&
+      !newCustomerMode
+    ) {
       setError(
         "Select a property or estimate, or add a new customer, before saving the quote draft."
       )
       return
     }
 
-    if (newCustomerMode && !newCustomerName.trim()) {
+    if (!editingDraft && newCustomerMode && !newCustomerName.trim()) {
       setError("Enter the new customer's name before saving.")
       return
     }
 
-    const customerName = newCustomerMode
-      ? newCustomerName.trim()
-      : selectedProperty?.client_name ||
-        selectedEstimate?.customer_name ||
-        selectedLead?.name
+    // Revise mode keeps the existing customer; otherwise derive from the source.
+    const customerName = editingDraft
+      ? editingDraft.customer_name
+      : newCustomerMode
+        ? newCustomerName.trim()
+        : selectedProperty?.client_name ||
+          selectedEstimate?.customer_name ||
+          selectedLead?.name
 
     if (!customerName) {
       setError("No customer name available for this quote draft.")
@@ -2350,6 +2426,54 @@ Pristine Gardens`)
     ]
       .filter(Boolean)
       .join("\n\n")
+    // Revise mode: UPDATE the existing draft in place. Same id, same
+    // public_accept_token, same status, and the pipeline link untouched — only
+    // the content/pricing changes. Skips the estimate/lead-linking + token
+    // steps below (already done when the draft was first created).
+    if (editingDraft) {
+      const { error: reviseError } = await supabase
+        .from("quote_drafts")
+        .update({
+          customer_name: customerName,
+          quote_title: quoteTitle.trim(),
+          quote_type: quoteType,
+          customer_scope: customerScope.trim() || null,
+          internal_notes: internalNotes.trim() || null,
+          terms_conditions: termsConditions.trim() || null,
+          line_items: lineItemsToSave,
+          subtotal,
+          gst,
+          total,
+          frequency: frequency || null,
+          labour_hours: hasMaintenancePricing ? labourHours : null,
+          labour_rate: hasMaintenancePricing ? labourRate : null,
+          greenwaste_bags: hasMaintenancePricing ? greenwasteBags : null,
+          greenwaste_rate: hasMaintenancePricing ? greenwasteRate : null,
+          sprays_size: hasMaintenancePricing ? spraysSize : null,
+          sprays_price: hasMaintenancePricing ? spraysPrice : null,
+          fertiliser_size: hasMaintenancePricing ? fertiliserSize : null,
+          fertiliser_price: hasMaintenancePricing ? fertiliserPrice : null,
+          stump_paste_size: hasMaintenancePricing ? stumpPasteSize : null,
+          stump_paste_price: hasMaintenancePricing ? stumpPastePrice : null,
+          per_visit_price: hasMaintenancePricing ? perVisitPrice : null,
+          monthly_equivalent: hasMaintenancePricing ? monthlyEquivalent : null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", editingDraft.id)
+
+      if (reviseError) {
+        setSaving(false)
+        setError(reviseError.message)
+        return
+      }
+
+      await loadQuoteDrafts()
+      setEditingDraft(null)
+      setSaving(false)
+      setMessage("Quote revised — the pipeline link is kept.")
+      return
+    }
+
     const acceptToken = generateAcceptToken()
 
     const { data: savedDraft, error: saveError } = await supabase
@@ -3184,13 +3308,33 @@ Pristine Gardens`)
             </div>
           )}
 
+          {editingDraft && (
+            <div className="mt-4 flex items-center justify-between rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              <span>
+                Revising <span className="font-medium">{editingDraft.customer_name}</span>&apos;s
+                quote — Save updates it and keeps its link.
+              </span>
+              <button
+                type="button"
+                onClick={cancelRevise}
+                className="ml-3 shrink-0 rounded-md border border-amber-300 bg-white px-2 py-1 text-xs font-medium"
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+
           <button
             type="button"
             onClick={saveDraft}
             disabled={saving}
             className="mt-5 h-11 w-full rounded-md bg-blue-600 font-medium text-white disabled:bg-gray-300"
           >
-            {saving ? "Saving..." : "Save Draft"}
+            {saving
+              ? "Saving..."
+              : editingDraft
+                ? "Save revision"
+                : "Save Draft"}
           </button>
 
           {/* Brief 03 (owner decision): the disabled "Create Xero Quote"
@@ -3860,6 +4004,19 @@ Pristine Gardens`)
                       Proposal sent {formatDate(draft.quote_sent_at)}
                     </div>
                   )}
+
+                  {/* Revise: edit this quote in place (keeps its link + token).
+                      Hidden once accepted/scheduled — those are settled. */}
+                  {draft.status !== "accepted" &&
+                    !draft.first_scheduled_job_id && (
+                      <button
+                        type="button"
+                        onClick={() => handleReviseQuote(draft)}
+                        className="h-10 rounded-md border px-3 text-sm font-medium hover:bg-gray-50"
+                      >
+                        Revise quote
+                      </button>
+                    )}
 
                   {/* Clear out a redundant quote. Hidden once a quote is
                       accepted or scheduled — those are live work. */}
