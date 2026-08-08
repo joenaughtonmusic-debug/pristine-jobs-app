@@ -62,7 +62,7 @@ export async function createAndSendInvoice(
   // populated direction); fall back to scheduled_job_id for older rows.
   const { data: quoteByFirst } = await supabase
     .from("quote_drafts")
-    .select("id, customer_name, customer_email, line_items, total")
+    .select("id, customer_name, customer_email, line_items, total, logo_variant")
     .eq("first_scheduled_job_id", jobId)
     .maybeSingle()
 
@@ -70,7 +70,7 @@ export async function createAndSendInvoice(
   if (!quote) {
     const { data: quoteByJob } = await supabase
       .from("quote_drafts")
-      .select("id, customer_name, customer_email, line_items, total")
+      .select("id, customer_name, customer_email, line_items, total, logo_variant")
       .eq("scheduled_job_id", jobId)
       .maybeSingle()
     quote = quoteByJob

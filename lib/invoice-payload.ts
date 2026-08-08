@@ -30,6 +30,8 @@ export type InvoicePayload = {
   due_date: string // YYYY-MM-DD (invoice_date + due-in days)
   line_amount_types: "Inclusive"
   currency: "NZD"
+  // Drives the Make router → which Xero branding theme to use.
+  branding: "pristine" | "partnership"
   line_items: InvoiceLineItem[]
   total_incl_gst: number
 }
@@ -70,6 +72,7 @@ export function buildInvoicePayload(args: {
     customer_email?: string | null
     line_items?: QuoteLineItem[] | null
     total?: number | string | null
+    logo_variant?: string | null
   }
   property: {
     property_code?: string | null
@@ -140,6 +143,7 @@ export function buildInvoicePayload(args: {
       due_date: dueDate,
       line_amount_types: "Inclusive",
       currency: "NZD",
+      branding: quote.logo_variant === "partnership" ? "partnership" : "pristine",
       line_items,
       total_incl_gst: total,
     },
