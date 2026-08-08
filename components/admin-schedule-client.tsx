@@ -404,6 +404,12 @@ const [savingSchedulingNote, setSavingSchedulingNote] = useState(false)
     return labourHours / crewSize
   }
 
+  // Display hours to at most 1 decimal place, dropping a trailing ".0"
+  // (e.g. 4.3333 → 4.3, 13 → 13, 7.6666 → 7.7). Avoids the long
+  // 4.333333333333333h strings from crew-size division.
+  const fmtHours = (value: number | null | undefined) =>
+    Number(Number(value || 0).toFixed(1))
+
   const INVOICE_METHOD_LABELS: Record<string, string> = {
     charge_up: "Charge Up",
     fixed_recurring: "Fixed price per visit",
@@ -1482,9 +1488,9 @@ const handleSendClientEmail = async () => {
 
           {job.planned_duration_hours && (
             <span>
-              {getSiteDurationHours(job)}h site time
+              {fmtHours(getSiteDurationHours(job))}h site time
               {getCrewSize(job) > 1
-                ? ` · ${job.planned_duration_hours} labour-hours`
+                ? ` · ${fmtHours(job.planned_duration_hours)} labour-hours`
                 : ""}
             </span>
           )}
@@ -1787,7 +1793,7 @@ const handleSendClientEmail = async () => {
 
                 <div className="text-xs text-gray-500">
                   {dayJobs.length} jobs
-                  {totalHours > 0 ? ` · ${totalHours}h planned` : ""}
+                  {totalHours > 0 ? ` · ${fmtHours(totalHours)}h planned` : ""}
                 </div>
               </div>
 

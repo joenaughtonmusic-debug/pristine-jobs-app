@@ -1,11 +1,14 @@
 import { createClient } from "@/lib/supabase/server"
 import { revalidatePath } from "next/cache"
+import { CreateInvoiceButton } from "@/components/create-invoice-button"
 
 export const dynamic = "force-dynamic"
 
 type QuoteDraftForJob = {
   scheduled_job_id: string | null
+  first_scheduled_job_id: string | null
   quote_type: string | null
+  customer_name: string | null
 }
 
 function getQuoteTypeLabel(value?: string | null) {
@@ -14,22 +17,8 @@ function getQuoteTypeLabel(value?: string | null) {
   return "One-off"
 }
 
-async function markReadyToConvert(formData: FormData) {
-  "use server"
-
-  const supabase = await createClient()
-  const jobId = formData.get("jobId") as string
-
-  await supabase
-    .from("scheduled_jobs")
-    .update({
-      quoted_invoice_status: "ready_to_convert",
-    })
-    .eq("id", jobId)
-
-  revalidatePath("/admin/quoted-jobs")
-}
-
+// Manual fallback: mark a job as invoiced when the invoice was created in Xero
+// outside the app (so it drops off this list without sending anything).
 async function markConverted(formData: FormData) {
   "use server"
 
@@ -68,19 +57,28 @@ export default async function QuotedJobsPage() {
     .order("scheduled_date", { ascending: false })
 
   const jobIds = (jobs || []).map((job) => job.id)
+  // A quote links to its job via first_scheduled_job_id (populated direction);
+  // older rows may use scheduled_job_id. Look up both so every quoted job finds
+  // its quote (for the type label and the customer name on the invoice button).
   const { data: linkedQuoteDrafts } =
     jobIds.length > 0
       ? await supabase
           .from("quote_drafts")
-          .select("scheduled_job_id, quote_type")
-          .in("scheduled_job_id", jobIds)
+          .select(
+            "scheduled_job_id, first_scheduled_job_id, quote_type, customer_name",
+          )
+          .or(
+            `first_scheduled_job_id.in.(${jobIds.join(
+              ",",
+            )}),scheduled_job_id.in.(${jobIds.join(",")})`,
+          )
       : { data: [] }
-  const quoteTypeByJobId = ((linkedQuoteDrafts || []) as QuoteDraftForJob[]).reduce<
-    Record<string, string | null>
-  >((types, draft) => {
-    if (!draft.scheduled_job_id) return types
-    types[draft.scheduled_job_id] = draft.quote_type
-    return types
+  const quoteByJobId = ((linkedQuoteDrafts || []) as QuoteDraftForJob[]).reduce<
+    Record<string, QuoteDraftForJob>
+  >((map, draft) => {
+    const key = draft.first_scheduled_job_id || draft.scheduled_job_id
+    if (key) map[key] = draft
+    return map
   }, {})
 
   if (error) {
@@ -98,7 +96,9 @@ export default async function QuotedJobsPage() {
       </h1>
 
       <p className="mb-6 text-sm text-gray-500">
-        Mark quoted jobs as ready to convert first, then mark as converted once the invoice has been created.
+        Quoted jobs waiting to be invoiced. Once the work is done, click{" "}
+        <strong>Create &amp; send invoice</strong> to build the invoice in Xero
+        from the accepted quote and email it to the customer.
       </p>
 
       <div className="space-y-4">
@@ -113,9 +113,9 @@ export default async function QuotedJobsPage() {
             ? job.properties[0]
             : job.properties
 
-          const invoiceStatus = job.quoted_invoice_status || "pending"
-          const isReadyToConvert = invoiceStatus === "ready_to_convert"
-          const quoteType = quoteTypeByJobId[job.id] || null
+          const linkedQuote = quoteByJobId[job.id] || null
+          const quoteType = linkedQuote?.quote_type || null
+          const customerName = linkedQuote?.customer_name || null
 
           return (
             <div
@@ -133,14 +133,8 @@ export default async function QuotedJobsPage() {
                   </div>
                 </div>
 
-                <div
-                  className={`rounded-full px-3 py-1 text-sm font-medium ${
-                    isReadyToConvert
-                      ? "bg-green-100 text-green-800"
-                      : "bg-purple-100 text-purple-800"
-                  }`}
-                >
-                  {isReadyToConvert ? "READY TO CONVERT" : "QUOTED"}
+                <div className="rounded-full bg-purple-100 px-3 py-1 text-sm font-medium text-purple-800">
+                  QUOTED
                 </div>
               </div>
 
@@ -183,33 +177,22 @@ export default async function QuotedJobsPage() {
                 </div>
               )}
 
-              <div className="mt-4 flex justify-end gap-3">
-                {!isReadyToConvert ? (
-  <form action={markReadyToConvert}>
-    <input type="hidden" name="jobId" value={job.id} />
+              <div className="mt-4 flex flex-col items-end gap-3">
+                <CreateInvoiceButton
+                  jobId={job.id}
+                  customerLabel={customerName}
+                />
 
-    <button
-  type="submit"
-  className="flex items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
->
-  <span className="flex h-4 w-4 items-center justify-center rounded border border-gray-400">
-  </span>
+                <form action={markConverted}>
+                  <input type="hidden" name="jobId" value={job.id} />
 
-  Ready to convert to invoice
-</button>
-  </form>
-) : (
-  <form action={markConverted}>
-    <input type="hidden" name="jobId" value={job.id} />
-
-    <button
-      type="submit"
-      className="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700"
-    >
-      Mark Converted
-    </button>
-  </form>
-)}
+                  <button
+                    type="submit"
+                    className="text-xs text-gray-500 underline hover:text-gray-700"
+                  >
+                    Already invoiced in Xero? Mark as done
+                  </button>
+                </form>
               </div>
             </div>
           )
