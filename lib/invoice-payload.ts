@@ -8,12 +8,15 @@
 // so Xero gets LineAmountTypes = "Inclusive" and back-calculates the GST. That
 // keeps the invoice identical to the accepted quote — pricing stays traceable.
 
+// Line-item keys use Xero's own API field names so the Make Xero module can
+// bind the whole array in one step (no per-line remapping). UnitAmount is
+// GST-inclusive (invoice-level LineAmountTypes = "Inclusive").
 export type InvoiceLineItem = {
-  description: string
-  quantity: number
-  unit_amount: number // GST-inclusive
-  account_code?: string | null
-  tax_type?: string | null
+  Description: string
+  Quantity: number
+  UnitAmount: number // GST-inclusive
+  AccountCode?: string | null
+  TaxType?: string | null
 }
 
 export type InvoicePayload = {
@@ -94,13 +97,13 @@ export function buildInvoicePayload(args: {
   const rawLines = Array.isArray(quote.line_items) ? quote.line_items : []
   const line_items: InvoiceLineItem[] = rawLines
     .map((li) => ({
-      description: (li.description || "").toString().trim(),
-      quantity: Number(li.quantity ?? 0),
-      unit_amount: Number(li.unit_price ?? 0),
-      account_code: li.account_code ?? null,
-      tax_type: li.tax_type ?? null,
+      Description: (li.description || "").toString().trim(),
+      Quantity: Number(li.quantity ?? 0),
+      UnitAmount: Number(li.unit_price ?? 0),
+      AccountCode: li.account_code ?? null,
+      TaxType: li.tax_type ?? null,
     }))
-    .filter((li) => li.description && li.quantity > 0)
+    .filter((li) => li.Description && li.Quantity > 0)
 
   if (line_items.length === 0) {
     return {
