@@ -374,7 +374,7 @@ export default async function PublicQuotePage({ params, searchParams }: Props) {
 
         <section className="mt-6 overflow-hidden rounded-2xl border border-stone-200 bg-stone-50 shadow-sm print:shadow-none">
           <img
-            src={quoteDraft.hero_image_url || "/images/20240207_121259.jpg"}
+            src={quoteDraft.hero_image_url || "/images/shackleton-hero.jpg"}
             alt={
               quoteDraft.hero_image_url
                 ? "Photo for this proposal"
