@@ -149,6 +149,7 @@ speed?: string | null
 service_type?: string | null
 service_frequency?: string | null
 service_interval_weeks?: number | null
+skip_client_contact?: boolean | null
 } | null
 }
 
@@ -1147,10 +1148,27 @@ admin_note: adminNote || null,
 
     let savedJobId = selectedJob?.id || ""
 
+    // Moving a confirmed job to a different date un-confirms it and reopens the
+    // "Contact Client" step, so the client can be told the new day. Only when
+    // the date actually changes and it was confirmed — otherwise leave the
+    // confirmation/contact state alone.
+    const movedFromConfirmedDate =
+      Boolean(selectedJob) &&
+      selectedJob!.scheduled_date !== jobDate &&
+      selectedJob!.schedule_confirmation_status === "confirmed"
+
+    const updatePayload = movedFromConfirmedDate
+      ? {
+          ...jobPayload,
+          schedule_confirmation_status: "draft",
+          contact_client: false,
+        }
+      : jobPayload
+
     if (selectedJob) {
       const { error } = await supabase
         .from("scheduled_jobs")
-        .update(jobPayload)
+        .update(updatePayload)
         .eq("id", selectedJob.id)
 
       if (error) {
@@ -1701,7 +1719,11 @@ const handleSendClientEmail = async () => {
             Schedule Confirmed
           </div>
 
-          {job.contact_client ? (
+          {job.properties?.skip_client_contact ? (
+  <div className="rounded-md bg-gray-100 px-3 py-2 text-xs font-medium text-gray-600">
+    No contact needed
+  </div>
+) : job.contact_client ? (
   <div className="rounded-md bg-green-100 px-3 py-2 text-xs font-medium text-green-800">
     Client Contacted
   </div>

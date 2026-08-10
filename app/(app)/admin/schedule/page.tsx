@@ -79,7 +79,8 @@ export default async function AdminSchedulePage({
   speed,
   service_type,
   service_frequency,
-  service_interval_weeks
+  service_interval_weeks,
+  skip_client_contact
 ),
     scheduled_job_staff (
       id,
