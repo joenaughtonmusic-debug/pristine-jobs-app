@@ -729,7 +729,10 @@ function getTemplateMonthlyEquivalent(template: QuoteTemplate) {
 // in Number(), and the save paths coerce explicitly via toNumber().
 function parseDecimalInput(value: string) {
   const cleaned = value.replace(/[^0-9.]/g, "")
-  const [whole, ...rest] = cleaned.split(".")
+  const [rawWhole, ...rest] = cleaned.split(".")
+  // Fields start at 0, so typing "39" onto it would read "039". Strip leading
+  // zeros but keep a single one ("0.75" and a bare "0" must survive).
+  const whole = rawWhole.replace(/^0+(?=\d)/, "")
   return rest.length > 0 ? `${whole}.${rest.join("")}` : whole
 }
 
@@ -1114,16 +1117,19 @@ export function AdminQuoteBuilderClient({
   // an ex-GST figure and the stored total has to be grossed up. Pristine quotes
   // are unchanged: their rates are inclusive and the GST is backed out of the
   // total. `total` means the same thing on both — what the customer pays.
-  const weDoPricing = isWeDoQuote(billingEntity) && hasMaintenancePricing
+  const weDoPricing = isWeDoQuote(billingEntity)
+  // The quote's value before GST is considered. On a Pristine quote this figure
+  // already INCLUDES GST; on a WeDo quote every rate and line price was typed
+  // GST-exclusive, so it EXCLUDES it. Maintenance prices off the panel, every
+  // other quote type off the line-item grid.
+  const baseAmount = hasMaintenancePricing ? perVisitPrice : lineItemsSubtotal
   const total = weDoPricing
-    ? Math.round(perVisitPrice * 1.15 * 100) / 100
-    : hasMaintenancePricing
-      ? perVisitPrice
-      : lineItemsSubtotal
+    ? Math.round(baseAmount * 1.15 * 100) / 100
+    : baseAmount
   const gst = weDoPricing
-    ? Math.round((total - perVisitPrice) * 100) / 100
+    ? Math.round((total - baseAmount) * 100) / 100
     : (total * 3) / 23
-  const subtotal = weDoPricing ? perVisitPrice : total - gst
+  const subtotal = weDoPricing ? baseAmount : total - gst
 
   useEffect(() => {
     if (!hasMaintenancePricing) return
@@ -2508,6 +2514,24 @@ Pristine Gardens`)
               ? withGreenwasteRange(item.description)
               : item.description,
         }))
+      : isWeDoQuote(billingEntity)
+      ? // A WeDo quote built from manual line items — a one-off or landscaping
+        // job. Every price typed into the grid is GST-EXCLUSIVE, same as the
+        // maintenance panel, so each line keeps the typed figure for the
+        // proposal and carries a grossed-up unit price for Xero.
+        lineItems.map((item, index) => {
+          const quantity = Number(item.quantity || 0)
+          const unitEx = Number(item.unit_price || 0)
+          const unitInc = toIncGst(unitEx)
+
+          return {
+            ...withXeroFields(item, index),
+            unit_price: unitInc,
+            line_total: Math.round(quantity * unitInc * 100) / 100,
+            unit_price_ex: Math.round(unitEx * 100) / 100,
+            line_total_ex: Math.round(quantity * unitEx * 100) / 100,
+          }
+        })
       : lineItems.map((item, index) => ({
           ...withXeroFields(item, index),
           line_total: Number(item.quantity || 0) * Number(item.unit_price || 0),
