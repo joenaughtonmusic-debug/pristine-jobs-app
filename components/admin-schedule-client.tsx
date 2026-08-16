@@ -200,6 +200,18 @@ export type QuotePrefill = {
   first_scheduled_job_id: string | null
 }
 
+// An accepted quote sitting at a property with no job against it. Surfaced in
+// the Quick Add modal so a hand-typed job can't quietly bypass it.
+type UnscheduledQuote = {
+  id: string
+  property_id: string | null
+  customer_name: string | null
+  quote_title: string | null
+  quote_type: string | null
+  total: number | string | null
+  quote_accepted_at: string | null
+}
+
 type Props = {
   thisWeekStart: string
   nextWeekStart: string
@@ -209,6 +221,28 @@ type Props = {
   serviceTemplates: ServiceTemplate[]
   schedulingQueue: SchedulingQueueItem[]
   quotePrefill?: QuotePrefill | null
+  unscheduledQuotes?: UnscheduledQuote[]
+}
+
+// "the one-off — $395.30" — reads as a sentence after "Use ".
+function formatUnscheduledQuote(quote: UnscheduledQuote) {
+  const type =
+    quote.quote_type === "maintenance"
+      ? "maintenance"
+      : quote.quote_type === "landscaping"
+        ? "landscaping"
+        : "one-off"
+
+  const total = Number(quote.total)
+  const price =
+    Number.isFinite(total) && total > 0
+      ? ` — ${new Intl.NumberFormat("en-NZ", {
+          style: "currency",
+          currency: "NZD",
+        }).format(total)}`
+      : ""
+
+  return `the ${type} quote${price}`
 }
 
 function parseLocalDate(dateString: string) {
@@ -304,6 +338,7 @@ export function AdminScheduleClient({
   serviceTemplates,
   schedulingQueue = [],
   quotePrefill = null,
+  unscheduledQuotes = [],
 }: Props) {
   const router = useRouter()
   const supabase = createClient()
@@ -325,6 +360,15 @@ export function AdminScheduleClient({
   const [selectedSuburb, setSelectedSuburb] = useState("All")
   const [selectedCategory, setSelectedCategory] = useState("All")
   const [selectedProperty, setSelectedProperty] = useState<Property | null>(null)
+
+  // Accepted-but-unscheduled quotes at the property being added to. Suppressed
+  // while already scheduling from a quote (it's the same quote) and while
+  // editing an existing job (the warning is about creating one).
+  const pendingQuotesForProperty = selectedProperty
+    ? unscheduledQuotes.filter(
+        (quote) => quote.property_id === selectedProperty.id
+      )
+    : []
   const [propertySearch, setPropertySearch] = useState("")
   const [selectedTemplate, setSelectedTemplate] =
     useState<ServiceTemplate | null>(null)
@@ -2155,6 +2199,36 @@ const handleSendClientEmail = async () => {
                 card to Job scheduled.
               </div>
             )}
+
+            {!selectedJob &&
+              !activeQuotePrefill &&
+              pendingQuotesForProperty.length > 0 && (
+                <div className="mb-4 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+                  <p className="font-semibold">
+                    {pendingQuotesForProperty.length === 1
+                      ? "This property has an accepted quote that hasn't been scheduled."
+                      : `This property has ${pendingQuotesForProperty.length} accepted quotes that haven't been scheduled.`}
+                  </p>
+
+                  <ul className="mt-2 flex flex-col gap-1">
+                    {pendingQuotesForProperty.map((quote) => (
+                      <li key={quote.id}>
+                        <a
+                          className="font-medium underline underline-offset-2"
+                          href={`/admin/schedule?quote=${quote.id}`}
+                        >
+                          Use {formatUnscheduledQuote(quote)}
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+
+                  <p className="mt-2">
+                    Adding the job here instead leaves the quote unlinked, and
+                    the job bills hours worked rather than the quoted price.
+                  </p>
+                </div>
+              )}
 
             {!selectedJob && (
               <div className="mb-4">

@@ -27,6 +27,11 @@ import {
 } from "lucide-react"
 
 import type { JobPhoto, ScheduledJob, Visit } from "@/lib/types"
+import { attachQuoteToJobAction } from "@/app/(app)/jobs/actions"
+import {
+  normaliseQuoteType,
+  type AttachableQuote,
+} from "@/lib/quote-job-linking"
 import { cn } from "@/lib/utils"
 import { resizeImageFiles } from "@/lib/resize-image"
 import {
@@ -85,6 +90,47 @@ function getJobTypeLabel(job: ScheduledJob) {
   return null
 }
 
+const QUOTE_TYPE_LABELS: Record<string, string> = {
+  maintenance: "Maintenance",
+  landscaping: "Landscaping",
+  one_off: "One-off",
+}
+
+// "One-off · $395.30 · accepted 5 Aug" — enough to tell two quotes apart
+// without opening either. Dates are formatted with an explicit locale and
+// time zone: a bare toLocaleDateString in a server-rendered tree is the
+// hydration mismatch CODING_AGENT_RULES calls out.
+function formatQuoteOption(quote: AttachableQuote) {
+  const parts: string[] = [
+    QUOTE_TYPE_LABELS[normaliseQuoteType(quote.quote_type)],
+  ]
+
+  const total = Number(quote.total)
+  if (Number.isFinite(total) && total > 0) {
+    parts.push(
+      new Intl.NumberFormat("en-NZ", {
+        style: "currency",
+        currency: "NZD",
+      }).format(total)
+    )
+  }
+
+  if (quote.quote_accepted_at) {
+    const accepted = new Date(quote.quote_accepted_at)
+    if (!Number.isNaN(accepted.getTime())) {
+      parts.push(
+        `accepted ${new Intl.DateTimeFormat("en-NZ", {
+          day: "numeric",
+          month: "short",
+          timeZone: "Pacific/Auckland",
+        }).format(accepted)}`
+      )
+    }
+  }
+
+  return parts.join(" · ")
+}
+
 interface JobDetailProps {
   job: ScheduledJob
   recentVisits: Visit[]
@@ -92,6 +138,8 @@ interface JobDetailProps {
   latestNextVisitNote: string | null
   labourEntries: LabourEntry[]
   jobPhotos: JobPhoto[]
+  attachableQuotes?: AttachableQuote[]
+  attachBlockedReason?: string | null
   isAdmin?: boolean
 }
 
@@ -102,6 +150,8 @@ export function JobDetail({
   latestNextVisitNote,
   labourEntries,
   jobPhotos,
+  attachableQuotes = [],
+  attachBlockedReason = null,
   isAdmin = false,
 }: JobDetailProps) {
   const router = useRouter()
@@ -111,6 +161,12 @@ export function JobDetail({
   const [showCompleteDialog, setShowCompleteDialog] = useState(false)
 
 const [editVisitOpen, setEditVisitOpen] = useState(false)
+
+  const [attachQuoteId, setAttachQuoteId] = useState(
+    attachableQuotes.length === 1 ? attachableQuotes[0].id : ""
+  )
+  const [attachingQuote, setAttachingQuote] = useState(false)
+  const [attachError, setAttachError] = useState<string | null>(null)
 const [visitHoursWorked, setVisitHoursWorked] = useState(
   completedVisit?.hours_worked?.toString() || ""
 )
@@ -188,6 +244,24 @@ const photoInputRef = useRef<HTMLInputElement | null>(null)
   const totalLabourHours = labourEntries.reduce((total, entry) => {
     return total + Number(entry.hours_worked || 0)
   }, 0)
+
+  const handleAttachQuote = async () => {
+    if (!attachQuoteId) return
+
+    setAttachingQuote(true)
+    setAttachError(null)
+
+    const result = await attachQuoteToJobAction(job.id, attachQuoteId)
+
+    setAttachingQuote(false)
+
+    if (!result.ok) {
+      setAttachError(result.error)
+      return
+    }
+
+    router.refresh()
+  }
 
   const handleStartJob = async () => {
     setLoading(true)
@@ -628,6 +702,55 @@ const photoInputRef = useRef<HTMLInputElement | null>(null)
 >
   {completedVisit ? "Edit Completed Visit" : "No Completed Visit Yet"}
 </Button>
+
+            {attachableQuotes.length > 0 && (
+              <div className="mt-2 rounded-md border border-amber-300 bg-amber-50 p-3">
+                <p className="text-sm font-semibold text-amber-950">
+                  {attachableQuotes.length === 1
+                    ? "This property has an accepted quote that no job is using."
+                    : `This property has ${attachableQuotes.length} accepted quotes that no job is using.`}
+                </p>
+
+                <p className="mt-1 text-sm text-amber-900">
+                  {attachBlockedReason
+                    ? attachBlockedReason
+                    : "Attach one and this job bills the quoted price instead of hours worked."}
+                </p>
+
+                {!attachBlockedReason && (
+                  <div className="mt-3 flex flex-col gap-2">
+                    <select
+                      className="h-10 w-full rounded-md border px-3 text-sm"
+                      value={attachQuoteId}
+                      onChange={(event) => setAttachQuoteId(event.target.value)}
+                      disabled={attachingQuote}
+                    >
+                      <option value="">Choose a quote…</option>
+                      {attachableQuotes.map((quote) => (
+                        <option key={quote.id} value={quote.id}>
+                          {formatQuoteOption(quote)}
+                        </option>
+                      ))}
+                    </select>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleAttachQuote}
+                      disabled={!attachQuoteId || attachingQuote}
+                    >
+                      {attachingQuote ? "Attaching…" : "Attach Quote To This Job"}
+                    </Button>
+                  </div>
+                )}
+
+                {attachError && (
+                  <p className="mt-2 text-sm font-medium text-red-700">
+                    {attachError}
+                  </p>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

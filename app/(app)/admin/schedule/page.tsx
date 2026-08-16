@@ -209,6 +209,19 @@ export default async function AdminSchedulePage({
   .eq("is_active", true)
   .order("template_name", { ascending: true })
 
+  // Accepted quotes no job has claimed. The Quick Add modal surfaces these
+  // when you pick that property, so a job typed in by hand can't silently
+  // ignore a quote the customer already agreed to (Norm, 14 Aug).
+  const { data: unscheduledQuotes } = await supabase
+    .from("quote_drafts")
+    .select(
+      "id, property_id, customer_name, quote_title, quote_type, total, quote_accepted_at"
+    )
+    .eq("status", "accepted")
+    .is("first_scheduled_job_id", null)
+    .not("property_id", "is", null)
+    .order("quote_accepted_at", { ascending: false })
+
   const { data: schedulingQueue } = await supabase
     .from("scheduling_queue")
     .select(`
@@ -241,6 +254,7 @@ export default async function AdminSchedulePage({
       serviceTemplates={serviceTemplates || []}
       schedulingQueue={schedulingQueue || []}
       quotePrefill={quotePrefill}
+      unscheduledQuotes={unscheduledQuotes || []}
     />
   )
 }

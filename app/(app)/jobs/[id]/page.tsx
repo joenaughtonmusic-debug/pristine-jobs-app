@@ -1,6 +1,10 @@
 import { notFound } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
 import { JobDetail } from "@/components/job-detail"
+import {
+  attachBlockedReason,
+  findAttachableQuotes,
+} from "@/lib/quote-job-linking"
 import type { JobPhoto, ScheduledJob, Visit } from "@/lib/types"
 
 interface JobDetailPageProps {
@@ -59,6 +63,15 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
     .eq("scheduled_job_id", job.id)
     .order("created_at", { ascending: false })
 
+  // Quote→job repair (Norm, 14 Aug): a job created by hand never picked up its
+  // accepted quote, so it billed charge_up instead of the quoted price. Offer
+  // the property's unclaimed accepted quotes, and say why when it's too late.
+  const attachableQuotes = await findAttachableQuotes(supabase, job.property_id)
+  const attachBlocked =
+    attachableQuotes.length > 0
+      ? await attachBlockedReason(supabase, job.id)
+      : null
+
   return (
   <JobDetail
     job={job as ScheduledJob}
@@ -67,6 +80,8 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
     latestNextVisitNote={latestVisitNote?.next_visit_notes || null}
     labourEntries={labourEntries || []}
     jobPhotos={(jobPhotos as JobPhoto[]) || []}
+    attachableQuotes={attachableQuotes}
+    attachBlockedReason={attachBlocked}
     isAdmin={true}
   />
 )
