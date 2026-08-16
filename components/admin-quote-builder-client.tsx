@@ -720,8 +720,21 @@ function getTemplateMonthlyEquivalent(template: QuoteTemplate) {
   )
 }
 
+// Keeps the raw text while the field is being typed. The previous version
+// coerced with Number() on every keystroke, so "66." became 66 and the decimal
+// point was deleted before the digits after it could be typed — decimals were
+// impossible to enter. Everything that consumes these values already wraps them
+// in Number(), and the save paths coerce explicitly via toNumber().
 function parseDecimalInput(value: string) {
-  return Number(value || 0)
+  const cleaned = value.replace(/[^0-9.]/g, "")
+  const [whole, ...rest] = cleaned.split(".")
+  return rest.length > 0 ? `${whole}.${rest.join("")}` : whole
+}
+
+// A part-typed value ("66." or "") must never reach a numeric column.
+function toNumber(value: number | string) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : 0
 }
 
 export function AdminQuoteBuilderClient({
@@ -771,23 +784,23 @@ export function AdminQuoteBuilderClient({
     { description: "Labour", quantity: 1, unit_price: 0, category: "labour" },
   ])
   const [frequency, setFrequency] = useState("")
-  const [labourHours, setLabourHours] = useState(0)
-  const [labourRate, setLabourRate] = useState(80)
-  const [greenwasteBags, setGreenwasteBags] = useState(0)
-  const [greenwasteRate, setGreenwasteRate] = useState(26.5)
+  const [labourHours, setLabourHours] = useState<number | string>(0)
+  const [labourRate, setLabourRate] = useState<number | string>(80)
+  const [greenwasteBags, setGreenwasteBags] = useState<number | string>(0)
+  const [greenwasteRate, setGreenwasteRate] = useState<number | string>(26.5)
   // Greenwaste presentation (081/082): 'auto' = derived range, 'fixed' = one set
   // amount, 'manual' = typed min/max. Manual uses greenwasteMin/Max.
   const [greenwasteMode, setGreenwasteMode] = useState<
     "auto" | "fixed" | "manual"
   >("auto")
-  const [greenwasteMin, setGreenwasteMin] = useState(0)
-  const [greenwasteMax, setGreenwasteMax] = useState(0)
+  const [greenwasteMin, setGreenwasteMin] = useState<number | string>(0)
+  const [greenwasteMax, setGreenwasteMax] = useState<number | string>(0)
   const [spraysSize, setSpraysSize] = useState("none")
-  const [spraysPrice, setSpraysPrice] = useState(0)
+  const [spraysPrice, setSpraysPrice] = useState<number | string>(0)
   const [fertiliserSize, setFertiliserSize] = useState("none")
-  const [fertiliserPrice, setFertiliserPrice] = useState(0)
+  const [fertiliserPrice, setFertiliserPrice] = useState<number | string>(0)
   const [stumpPasteSize, setStumpPasteSize] = useState("none")
-  const [stumpPastePrice, setStumpPastePrice] = useState(0)
+  const [stumpPastePrice, setStumpPastePrice] = useState<number | string>(0)
   const [quoteDrafts, setQuoteDrafts] = useState(initialQuoteDrafts)
   const [preparingXeroQuoteId, setPreparingXeroQuoteId] = useState<string | null>(null)
   const [manualAcceptingQuoteId, setManualAcceptingQuoteId] =
@@ -1095,9 +1108,20 @@ export function AdminQuoteBuilderClient({
   const monthlyEquivalent = hasMaintenancePricing
     ? calculateMonthlyEquivalent(perVisitPrice, frequency)
     : 0
-  const total = hasMaintenancePricing ? perVisitPrice : lineItemsSubtotal
-  const gst = total * 3 / 23
-  const subtotal = total - gst
+  // On a WeDo quote the rates typed in are GST-EXCLUSIVE, so perVisitPrice is
+  // an ex-GST figure and the stored total has to be grossed up. Pristine quotes
+  // are unchanged: their rates are inclusive and the GST is backed out of the
+  // total. `total` means the same thing on both — what the customer pays.
+  const weDoPricing = isWeDoQuote(billingEntity) && hasMaintenancePricing
+  const total = weDoPricing
+    ? Math.round(perVisitPrice * 1.15 * 100) / 100
+    : hasMaintenancePricing
+      ? perVisitPrice
+      : lineItemsSubtotal
+  const gst = weDoPricing
+    ? Math.round((total - perVisitPrice) * 100) / 100
+    : (total * 3) / 23
+  const subtotal = weDoPricing ? perVisitPrice : total - gst
 
   useEffect(() => {
     if (!hasMaintenancePricing) return
@@ -2397,9 +2421,9 @@ Pristine Gardens`)
             // this quote flow onto the property — an ad-hoc maintenance
             // quote (no frequency) priced by manual line items must not
             // stamp the decorative panel defaults as the billing rate.
-            labour_rate: hasMaintenancePricing ? labourRate : null,
-            greenwaste_rate: hasMaintenancePricing ? greenwasteRate : null,
-            labour_hours: hasMaintenancePricing ? labourHours : null,
+            labour_rate: hasMaintenancePricing ? toNumber(labourRate) : null,
+            greenwaste_rate: hasMaintenancePricing ? toNumber(greenwasteRate) : null,
+            labour_hours: hasMaintenancePricing ? toNumber(labourHours) : null,
           }
         )
 
@@ -2521,25 +2545,25 @@ Pristine Gardens`)
           gst,
           total,
           frequency: frequency || null,
-          labour_hours: hasMaintenancePricing ? labourHours : null,
-          labour_rate: hasMaintenancePricing ? labourRate : null,
-          greenwaste_bags: hasMaintenancePricing ? greenwasteBags : null,
-          greenwaste_rate: hasMaintenancePricing ? greenwasteRate : null,
+          labour_hours: hasMaintenancePricing ? toNumber(labourHours) : null,
+          labour_rate: hasMaintenancePricing ? toNumber(labourRate) : null,
+          greenwaste_bags: hasMaintenancePricing ? toNumber(greenwasteBags) : null,
+          greenwaste_rate: hasMaintenancePricing ? toNumber(greenwasteRate) : null,
           greenwaste_mode: hasMaintenancePricing ? greenwasteMode : null,
           greenwaste_min:
             hasMaintenancePricing && greenwasteMode === "manual"
-              ? greenwasteMin
+              ? toNumber(greenwasteMin)
               : null,
           greenwaste_max:
             hasMaintenancePricing && greenwasteMode === "manual"
-              ? greenwasteMax
+              ? toNumber(greenwasteMax)
               : null,
           sprays_size: hasMaintenancePricing ? spraysSize : null,
-          sprays_price: hasMaintenancePricing ? spraysPrice : null,
+          sprays_price: hasMaintenancePricing ? toNumber(spraysPrice) : null,
           fertiliser_size: hasMaintenancePricing ? fertiliserSize : null,
-          fertiliser_price: hasMaintenancePricing ? fertiliserPrice : null,
+          fertiliser_price: hasMaintenancePricing ? toNumber(fertiliserPrice) : null,
           stump_paste_size: hasMaintenancePricing ? stumpPasteSize : null,
-          stump_paste_price: hasMaintenancePricing ? stumpPastePrice : null,
+          stump_paste_price: hasMaintenancePricing ? toNumber(stumpPastePrice) : null,
           per_visit_price: hasMaintenancePricing ? perVisitPrice : null,
           monthly_equivalent: hasMaintenancePricing ? monthlyEquivalent : null,
           updated_at: new Date().toISOString(),
@@ -2594,25 +2618,25 @@ Pristine Gardens`)
       status: "draft",
       public_accept_token: acceptToken,
       frequency: frequency || null,
-      labour_hours: hasMaintenancePricing ? labourHours : null,
-      labour_rate: hasMaintenancePricing ? labourRate : null,
-      greenwaste_bags: hasMaintenancePricing ? greenwasteBags : null,
-      greenwaste_rate: hasMaintenancePricing ? greenwasteRate : null,
+      labour_hours: hasMaintenancePricing ? toNumber(labourHours) : null,
+      labour_rate: hasMaintenancePricing ? toNumber(labourRate) : null,
+      greenwaste_bags: hasMaintenancePricing ? toNumber(greenwasteBags) : null,
+      greenwaste_rate: hasMaintenancePricing ? toNumber(greenwasteRate) : null,
       greenwaste_mode: hasMaintenancePricing ? greenwasteMode : null,
       greenwaste_min:
         hasMaintenancePricing && greenwasteMode === "manual"
-          ? greenwasteMin
+          ? toNumber(greenwasteMin)
           : null,
       greenwaste_max:
         hasMaintenancePricing && greenwasteMode === "manual"
-          ? greenwasteMax
+          ? toNumber(greenwasteMax)
           : null,
       sprays_size: hasMaintenancePricing ? spraysSize : null,
-      sprays_price: hasMaintenancePricing ? spraysPrice : null,
+      sprays_price: hasMaintenancePricing ? toNumber(spraysPrice) : null,
       fertiliser_size: hasMaintenancePricing ? fertiliserSize : null,
-      fertiliser_price: hasMaintenancePricing ? fertiliserPrice : null,
+      fertiliser_price: hasMaintenancePricing ? toNumber(fertiliserPrice) : null,
       stump_paste_size: hasMaintenancePricing ? stumpPasteSize : null,
-      stump_paste_price: hasMaintenancePricing ? stumpPastePrice : null,
+      stump_paste_price: hasMaintenancePricing ? toNumber(stumpPastePrice) : null,
       per_visit_price: hasMaintenancePricing ? perVisitPrice : null,
       monthly_equivalent: hasMaintenancePricing ? monthlyEquivalent : null,
       updated_at: new Date().toISOString(),
@@ -3142,7 +3166,7 @@ Pristine Gardens`)
 
               <div>
                 <label className="mb-1 block text-sm font-medium">
-                  Labour Rate
+                  Labour Rate{isWeDoQuote(billingEntity) ? " (excl. GST)" : ""}
                 </label>
                 <input
                   type="text"
@@ -3168,7 +3192,7 @@ Pristine Gardens`)
 
               <div>
                 <label className="mb-1 block text-sm font-medium">
-                  Greenwaste Rate
+                  Greenwaste Rate{isWeDoQuote(billingEntity) ? " (excl. GST)" : ""}
                 </label>
                 <input
                   type="text"

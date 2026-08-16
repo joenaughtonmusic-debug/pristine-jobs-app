@@ -497,10 +497,14 @@ export default async function PublicQuotePage({ params, searchParams }: Props) {
               ) : (
                 <div className="rounded-lg bg-white p-4">
                   <div className="text-xs font-medium uppercase text-stone-500">
-                    Price Per Visit
+                    {isWeDo ? "Price Per Visit (excl. GST)" : "Price Per Visit"}
                   </div>
                   <div className="mt-2 text-xl font-semibold text-[#123d2a]">
-                    {money(quoteDraft.per_visit_price || quoteDraft.total)}
+                    {money(
+                      isWeDo
+                        ? exGstTotals.subtotalExGst
+                        : quoteDraft.per_visit_price || quoteDraft.total
+                    )}
                   </div>
                   <div className="mt-1 text-xs text-stone-500">
                     Invoiced after each visit

@@ -45,48 +45,72 @@ export type BuiltQuoteLine = {
   item_code: string
   description: string
   quantity: number
+  // GST-INCLUSIVE. This is the field the Xero views read.
   unit_price: number
   line_total: number
+  // The ex-GST figures exactly as they were typed. Carried so the proposal can
+  // print them without dividing the rounded inclusive price back down, which
+  // drifts by a cent or two. Ignored by the Xero views (they select named
+  // fields), so these are display-only baggage on the JSON.
+  unit_price_ex: number
+  line_total_ex: number
   account_code: string
   tax_type: string
   category: "labour" | "greenwaste" | "materials"
 }
 
+// Rates on a WeDo quote are entered GST-EXCLUSIVE (Joe's call, 16 Aug): he
+// types 66.96 and 19.50 and the customer sees those. Xero still needs
+// GST-inclusive unit prices because Make marks invoices tax-inclusive, so the
+// conversion happens here and nowhere else.
+export function toIncGst(exclusive: number) {
+  return round2(Number(exclusive || 0) * GST_MULTIPLIER)
+}
+
 // The itemised lines a WeDo quote carries, replacing the single collapsed
-// price a Pristine maintenance quote uses. Unit prices are GST-INCLUSIVE (see
-// the boundary note above). Zero-value lines are dropped rather than shown at
+// price a Pristine maintenance quote uses.
+//
+// EVERY AMOUNT IN `input` IS GST-EXCLUSIVE — that's what Joe types. Each line
+// carries the ex-GST figures verbatim for the proposal, plus a GST-inclusive
+// unit price for Xero. Zero-value lines are dropped rather than shown at
 // $0.00 — a "Treatments $0.00" row invites a question with no useful answer.
 export function buildWeDoLines(input: QuoteLineInput): BuiltQuoteLine[] {
   const lines: BuiltQuoteLine[] = []
 
+  const line = (
+    item_code: string,
+    description: string,
+    quantity: number,
+    unitEx: number,
+    account_code: string,
+    category: BuiltQuoteLine["category"]
+  ): BuiltQuoteLine => {
+    const unitInc = toIncGst(unitEx)
+    return {
+      item_code,
+      description,
+      quantity,
+      unit_price: unitInc,
+      line_total: round2(quantity * unitInc),
+      unit_price_ex: round2(unitEx),
+      line_total_ex: round2(quantity * unitEx),
+      account_code,
+      tax_type: "OUTPUT2",
+      category,
+    }
+  }
+
   const hours = Number(input.labourHours || 0)
   const rate = Number(input.labourRate || 0)
-
   if (hours > 0 && rate > 0) {
-    lines.push({
-      item_code: "Labour",
-      description: "Labour",
-      quantity: hours,
-      unit_price: rate,
-      line_total: round2(hours * rate),
-      account_code: "10010",
-      tax_type: "OUTPUT2",
-      category: "labour",
-    })
+    lines.push(line("Labour", "Labour", hours, rate, "10010", "labour"))
   }
 
   const greenwaste = Number(input.greenwasteAmount || 0)
   if (greenwaste > 0) {
-    lines.push({
-      item_code: "Greenwaste",
-      description: "Greenwaste removal",
-      quantity: 1,
-      unit_price: round2(greenwaste),
-      line_total: round2(greenwaste),
-      account_code: "10114",
-      tax_type: "OUTPUT2",
-      category: "greenwaste",
-    })
+    lines.push(
+      line("Greenwaste", "Greenwaste removal", 1, greenwaste, "10114", "greenwaste")
+    )
   }
 
   const treatments =
@@ -95,19 +119,27 @@ export function buildWeDoLines(input: QuoteLineInput): BuiltQuoteLine[] {
     Number(input.stumpPastePrice || 0)
 
   if (treatments > 0) {
-    lines.push({
-      item_code: "Materials",
-      description: "Sprays and fertiliser",
-      quantity: 1,
-      unit_price: round2(treatments),
-      line_total: round2(treatments),
-      account_code: "10011",
-      tax_type: "OUTPUT2",
-      category: "materials",
-    })
+    lines.push(
+      line("Materials", "Sprays and fertiliser", 1, treatments, "10011", "materials")
+    )
   }
 
   return lines
+}
+
+// What a WeDo quote is worth, from GST-exclusive inputs. The ex-GST subtotal is
+// the authored figure; GST and the inclusive total are derived from it, so the
+// customer's total always equals what they were quoted plus 15%.
+export function weDoTotals(lines: BuiltQuoteLine[]) {
+  const subtotalExGst = round2(
+    lines.reduce((sum, l) => sum + l.line_total_ex, 0)
+  )
+  const totalIncGst = round2(subtotalExGst * GST_MULTIPLIER)
+  return {
+    subtotalExGst,
+    gst: round2(totalIncGst - subtotalExGst),
+    totalIncGst,
+  }
 }
 
 export type DisplayLine = {
@@ -131,14 +163,34 @@ export type ExGstTotals = {
 // the inclusive total — so subtotal + GST always equals the total the customer
 // is actually charged, and the printed figures always add up.
 export function buildExGstTotals(
-  lines: { description: string; quantity: number; unit_price: number; line_total?: number; category?: string }[],
+  lines: {
+    description: string
+    quantity: number
+    unit_price: number
+    line_total?: number
+    unit_price_ex?: number
+    line_total_ex?: number
+    category?: string
+  }[],
   totalIncGst: number
 ): ExGstTotals {
   const displayLines: DisplayLine[] = lines.map((line) => {
-    const inclusive =
-      line.line_total != null
-        ? Number(line.line_total)
-        : Number(line.quantity || 0) * Number(line.unit_price || 0)
+    // Prefer the ex-GST figures stored on the line — they are what was typed.
+    // Falling back to dividing the inclusive price covers WeDo quotes saved
+    // before the ex-GST fields existed, at the cost of a cent of drift.
+    const exTotal =
+      line.line_total_ex != null
+        ? round2(Number(line.line_total_ex))
+        : toExGst(
+            line.line_total != null
+              ? Number(line.line_total)
+              : Number(line.quantity || 0) * Number(line.unit_price || 0)
+          )
+
+    const exUnit =
+      line.unit_price_ex != null
+        ? round2(Number(line.unit_price_ex))
+        : toExGst(Number(line.unit_price || 0))
 
     const isLabour = line.category === "labour"
     const hours = Number(line.quantity || 0)
@@ -147,17 +199,17 @@ export function buildExGstTotals(
       description: line.description,
       quantityLabel:
         isLabour && hours > 0
-          ? `${hours} ${hours === 1 ? "hr" : "hrs"} × ${formatNzd(
-              toExGst(Number(line.unit_price || 0))
-            )}`
+          ? `${hours} ${hours === 1 ? "hr" : "hrs"} × ${formatNzd(exUnit)}`
           : null,
-      exGstTotal: toExGst(inclusive),
+      exGstTotal: exTotal,
     }
   })
 
   const subtotalExGst = round2(
     displayLines.reduce((sum, line) => sum + line.exGstTotal, 0)
   )
+  // GST is the remainder up to the inclusive total, so subtotal + GST always
+  // reconstructs exactly what the customer is charged.
   const total = round2(Number(totalIncGst || 0))
 
   return {
