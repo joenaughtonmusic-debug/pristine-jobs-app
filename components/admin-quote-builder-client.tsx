@@ -24,6 +24,11 @@ import {
   type QuoteLineCategoryKey,
 } from "@/lib/quote-line-categories"
 import { buildQuoteExportText } from "@/lib/quote-export"
+import {
+  buildWeDoLines,
+  isWeDoQuote,
+  type BillingEntity,
+} from "@/lib/quote-billing-entity"
 
 type PropertyOption = {
   id: string
@@ -750,6 +755,10 @@ export function AdminQuoteBuilderClient({
   const [newCustomerSuburb, setNewCustomerSuburb] = useState("")
   const [templateId, setTemplateId] = useState("")
   const [quoteType, setQuoteType] = useState<QuoteType>("one_off")
+  // Which business the quote is presented for. Independent of quoteType on
+  // purpose — a WeDo maintenance quote and a WeDo one-off must both stay
+  // correctly scheduled and billed (see lib/quote-billing-entity).
+  const [billingEntity, setBillingEntity] = useState<BillingEntity>("pristine")
   const [quoteTitle, setQuoteTitle] = useState("")
   const [customerScope, setCustomerScope] = useState("")
   const [internalNotes, setInternalNotes] = useState("")
@@ -1403,7 +1412,7 @@ export function AdminQuoteBuilderClient({
     const { data: full, error: fetchError } = await supabase
       .from("quote_drafts")
       .select(
-        "id, customer_name, quote_title, quote_type, frequency, labour_hours, labour_rate, greenwaste_bags, greenwaste_rate, greenwaste_mode, greenwaste_min, greenwaste_max, sprays_size, sprays_price, fertiliser_size, fertiliser_price, stump_paste_size, stump_paste_price, customer_scope, internal_notes, terms_conditions, line_items"
+        "id, customer_name, quote_title, quote_type, billing_entity, frequency, labour_hours, labour_rate, greenwaste_bags, greenwaste_rate, greenwaste_mode, greenwaste_min, greenwaste_max, sprays_size, sprays_price, fertiliser_size, fertiliser_price, stump_paste_size, stump_paste_price, customer_scope, internal_notes, terms_conditions, line_items"
       )
       .eq("id", draft.id)
       .single()
@@ -1413,6 +1422,7 @@ export function AdminQuoteBuilderClient({
     }
     setNewCustomerMode(false)
     setQuoteType((full.quote_type as QuoteType) || "one_off")
+    setBillingEntity(full.billing_entity === "wedo" ? "wedo" : "pristine")
     setFrequency(full.frequency || "")
     setLabourHours(Number(full.labour_hours || 0))
     setLabourRate(Number(full.labour_rate || 80))
@@ -2437,7 +2447,27 @@ Pristine Gardens`)
       return base ? `${base}\n\n${sentence}` : sentence
     }
 
-    const lineItemsToSave = hasMaintenancePricing
+    // WeDo maintenance quotes are itemised rather than collapsed into one
+    // per-visit price: labour (with the hours on it), greenwaste, treatments.
+    // Unit prices stay GST-INCLUSIVE — these rows are what Xero is sent, and
+    // the proposal derives the ex-GST figures from them.
+    const lineItemsToSave = isWeDoQuote(billingEntity) && hasMaintenancePricing
+      ? buildWeDoLines({
+          labourHours: Number(labourHours || 0),
+          labourRate: Number(labourRate || 0),
+          greenwasteAmount: greenwasteAverage,
+          spraysPrice: Number(spraysPrice || 0),
+          fertiliserPrice: Number(fertiliserPrice || 0),
+          stumpPastePrice: Number(stumpPastePrice || 0),
+        }).map((line, index) => ({
+          ...line,
+          description:
+            line.category === "greenwaste"
+              ? withGreenwasteRange(line.description)
+              : line.description,
+          sort_order: index + 1,
+        }))
+      : hasMaintenancePricing
       ? lineItems.map((item, index) => ({
           ...withXeroFields(item, index),
           quantity: index === 0 ? 1 : item.quantity,
@@ -2482,6 +2512,7 @@ Pristine Gardens`)
           customer_name: customerName,
           quote_title: quoteTitle.trim(),
           quote_type: quoteType,
+          billing_entity: billingEntity,
           customer_scope: customerScope.trim() || null,
           internal_notes: internalNotes.trim() || null,
           terms_conditions: termsConditions.trim() || null,
@@ -2550,6 +2581,7 @@ Pristine Gardens`)
           null,
       quote_title: quoteTitle.trim(),
       quote_type: quoteType,
+      billing_entity: billingEntity,
       customer_scope: customerScope.trim() || null,
       internal_notes: internalNotesToSave || null,
       terms_conditions: termsConditions.trim() || null,
@@ -2977,6 +3009,31 @@ Pristine Gardens`)
                   </option>
                 ))}
               </select>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium">
+                Quote For
+              </label>
+              <select
+                className="h-11 w-full rounded-md border px-3"
+                value={billingEntity}
+                onChange={(event) => {
+                  const next = event.target.value as BillingEntity
+                  setBillingEntity(next)
+                  // The partnership logo belongs with a partnership quote —
+                  // set it here so it can't be forgotten in the photos dialog.
+                  if (next === "wedo") setLogoVariant("partnership")
+                }}
+              >
+                <option value="pristine">Pristine Gardens</option>
+                <option value="wedo">WeDo partnership</option>
+              </select>
+              <p className="mt-1 text-xs text-gray-500">
+                {isWeDoQuote(billingEntity)
+                  ? "Prices shown excluding GST, with labour hours, greenwaste and treatments itemised."
+                  : "One per-visit price shown including GST."}
+              </p>
             </div>
 
             <div className="md:col-span-2">
