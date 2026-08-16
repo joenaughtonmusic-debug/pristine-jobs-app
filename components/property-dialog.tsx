@@ -111,6 +111,7 @@ export function PropertyDialog({
   const [calendarCreated, setCalendarCreated] = useState(false)
   const [calendarMsg, setCalendarMsg] = useState<string | null>(null)
   const [isRental, setIsRental] = useState(false)
+  const [skipClientContact, setSkipClientContact] = useState(false)
   // Property manager: shared contact (one PM -> many properties). Pick an
   // existing PM or add one inline; the property stores property_manager_id.
   const [propertyManagers, setPropertyManagers] = useState<PropertyManager[]>([])
@@ -214,6 +215,7 @@ export function PropertyDialog({
       setServiceType(property.service_type || "")
       setServiceFrequency(property.service_frequency || "")
       setIsRental(property.is_rental ?? false)
+      setSkipClientContact(property.skip_client_contact ?? false)
       setPropertyManagerId(property.property_manager_id ?? "")
       setCalendarCreated(Boolean(property.gcal_recurring_event_created_at))
       setCalendarMsg(null)
@@ -418,6 +420,7 @@ export function PropertyDialog({
   default_duration_hours: defaultVisitHours ? Number(defaultVisitHours) : null,
   send_photos: sendPhotos,
   is_rental: isRental,
+  skip_client_contact: skipClientContact,
   property_manager_id: propertyManagerId || null,
   updated_at: new Date().toISOString(),
 }
@@ -632,6 +635,23 @@ export function PropertyDialog({
                 <span className="block text-xs text-muted-foreground">
                   Completed visits appear in the photo-email review pile.
                   Photos are captured on every job regardless.
+                </span>
+              </span>
+            </label>
+
+            <label className="flex items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={skipClientContact}
+                onChange={(e) => setSkipClientContact(e.target.checked)}
+              />
+              <span>
+                No client contact needed
+                <span className="block text-xs text-muted-foreground">
+                  Commercial or standing-arrangement sites (e.g. McDonalds).
+                  The schedule won&apos;t ask you to contact the client before a
+                  visit.
                 </span>
               </span>
             </label>

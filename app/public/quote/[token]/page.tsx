@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { buildExGstTotals, isWeDoQuote } from "@/lib/quote-billing-entity"
 import {
   recordOnlineQuoteAcceptance,
   recordOnlineQuoteDecline,
@@ -53,6 +54,7 @@ type LineItem = {
   quantity?: number | string
   unit_price?: number | string
   line_total?: number | string
+  category?: string
 }
 
 type QuoteDraft = {
@@ -62,6 +64,7 @@ type QuoteDraft = {
   quote_title: string
   proposal_heading: string | null
   logo_variant: string | null
+  billing_entity: string | null
   quote_type: string | null
   hero_image_url: string | null
   photos: unknown
@@ -295,7 +298,9 @@ export default async function PublicQuotePage({ params, searchParams }: Props) {
   const supabase = await createAdminClient()
   let { data: quote, error } = await supabase
     .from("quote_drafts")
-    .select(`hero_image_url, photos, proposal_heading, logo_variant, ${QUOTE_BASE_COLUMNS}`)
+    .select(
+      `hero_image_url, photos, proposal_heading, logo_variant, billing_entity, ${QUOTE_BASE_COLUMNS}`
+    )
     .eq("public_accept_token", token)
     .maybeSingle()
 
@@ -316,6 +321,7 @@ export default async function PublicQuotePage({ params, searchParams }: Props) {
           photos: [],
           proposal_heading: null,
           logo_variant: null,
+          billing_entity: null,
         } as typeof quote)
       : null
     error = legacy.error
@@ -334,6 +340,21 @@ export default async function PublicQuotePage({ params, searchParams }: Props) {
 
   const quoteDraft = quote as QuoteDraft
   const lineItems = parseLineItems(quoteDraft.line_items)
+
+  // WeDo partnership proposals present the same money GST-exclusive, with the
+  // labour hours visible. Derived here, never stored — line_items stay
+  // GST-inclusive because that's what Xero is sent (see lib/quote-billing-entity).
+  const isWeDo = isWeDoQuote(quoteDraft.billing_entity)
+  const exGstTotals = buildExGstTotals(
+    lineItems.map((item) => ({
+      description: item.description || "Quote item",
+      quantity: Number(item.quantity || 0),
+      unit_price: Number(item.unit_price || 0),
+      line_total: item.line_total != null ? Number(item.line_total) : undefined,
+      category: item.category,
+    })),
+    Number(quoteDraft.total || 0)
+  )
   const isAccepted = quoteDraft.status === "accepted" || Boolean(query?.accepted)
   const isDeclined = quoteDraft.status === "declined" || Boolean(query?.declined)
   const property = firstOrValue(quoteDraft.properties)
@@ -486,17 +507,35 @@ export default async function PublicQuotePage({ params, searchParams }: Props) {
                   </div>
                 </div>
               ))}
-            <div className="rounded-lg bg-white p-4">
-              <div className="text-xs font-medium uppercase text-stone-500">
-                Total Investment
+            {isWeDo ? (
+              // Partnership quotes read the way a trade counterparty expects:
+              // the ex-GST figure leads, GST is its own line, and the inclusive
+              // total sits underneath.
+              <div className="rounded-lg bg-white p-4">
+                <div className="text-xs font-medium uppercase text-stone-500">
+                  Total (excl. GST)
+                </div>
+                <div className="mt-2 text-xl font-semibold text-[#123d2a]">
+                  {money(exGstTotals.subtotalExGst)}
+                </div>
+                <div className="mt-1 text-xs text-stone-500">
+                  Plus GST {money(exGstTotals.gst)} — total{" "}
+                  {money(exGstTotals.totalIncGst)} incl. GST
+                </div>
               </div>
-              <div className="mt-2 text-xl font-semibold text-[#123d2a]">
-                {money(quoteDraft.total)}
+            ) : (
+              <div className="rounded-lg bg-white p-4">
+                <div className="text-xs font-medium uppercase text-stone-500">
+                  Total Investment
+                </div>
+                <div className="mt-2 text-xl font-semibold text-[#123d2a]">
+                  {money(quoteDraft.total)}
+                </div>
+                <div className="mt-1 text-xs text-stone-500">
+                  GST included: {money(quoteDraft.gst)}
+                </div>
               </div>
-              <div className="mt-1 text-xs text-stone-500">
-                GST included: {money(quoteDraft.gst)}
-              </div>
-            </div>
+            )}
           </div>
         </section>
 
@@ -537,23 +576,64 @@ export default async function PublicQuotePage({ params, searchParams }: Props) {
             Proposal Details
           </h2>
           <div className="mt-4 space-y-3">
-            {lineItems.map((item, index) => (
-              <div
-                key={`${item.description || "item"}-${index}`}
-                className="grid gap-3 border-b border-stone-100 pb-3 last:border-0 last:pb-0 sm:grid-cols-[1fr_auto]"
-              >
-                <div className="whitespace-pre-wrap leading-7 text-stone-700">
-                  {item.description || "Quote item"}
-                </div>
-                <div className="font-semibold text-[#123d2a] sm:text-right">
-                  {money(
-                    item.line_total ||
-                      Number(item.quantity || 0) * Number(item.unit_price || 0)
-                  )}
-                </div>
-              </div>
-            ))}
+            {isWeDo
+              ? exGstTotals.lines.map((line, index) => (
+                  <div
+                    key={`${line.description || "item"}-${index}`}
+                    className="grid gap-3 border-b border-stone-100 pb-3 last:border-0 last:pb-0 sm:grid-cols-[1fr_auto]"
+                  >
+                    <div className="whitespace-pre-wrap leading-7 text-stone-700">
+                      {line.description || "Quote item"}
+                      {line.quantityLabel && (
+                        <span className="mt-0.5 block text-sm text-stone-500">
+                          {line.quantityLabel}
+                        </span>
+                      )}
+                    </div>
+                    <div className="font-semibold text-[#123d2a] sm:text-right">
+                      {money(line.exGstTotal)}
+                    </div>
+                  </div>
+                ))
+              : lineItems.map((item, index) => (
+                  <div
+                    key={`${item.description || "item"}-${index}`}
+                    className="grid gap-3 border-b border-stone-100 pb-3 last:border-0 last:pb-0 sm:grid-cols-[1fr_auto]"
+                  >
+                    <div className="whitespace-pre-wrap leading-7 text-stone-700">
+                      {item.description || "Quote item"}
+                    </div>
+                    <div className="font-semibold text-[#123d2a] sm:text-right">
+                      {money(
+                        item.line_total ||
+                          Number(item.quantity || 0) *
+                            Number(item.unit_price || 0)
+                      )}
+                    </div>
+                  </div>
+                ))}
           </div>
+
+          {isWeDo && (
+            <div className="mt-4 space-y-1 border-t border-stone-200 pt-4 text-sm">
+              <div className="flex justify-between text-stone-600">
+                <span>Subtotal (excl. GST)</span>
+                <span className="font-medium text-stone-800">
+                  {money(exGstTotals.subtotalExGst)}
+                </span>
+              </div>
+              <div className="flex justify-between text-stone-600">
+                <span>GST (15%)</span>
+                <span className="font-medium text-stone-800">
+                  {money(exGstTotals.gst)}
+                </span>
+              </div>
+              <div className="flex justify-between pt-1 text-base font-semibold text-[#123d2a]">
+                <span>Total (incl. GST)</span>
+                <span>{money(exGstTotals.totalIncGst)}</span>
+              </div>
+            </div>
+          )}
         </section>
 
         <section className="mt-6 rounded-xl border border-stone-200 bg-white p-5 shadow-sm print:shadow-none">

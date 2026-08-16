@@ -15,6 +15,7 @@ export interface Property {
   xero_contact_id?: string | null
   is_active?: boolean | null
   is_rental?: boolean | null
+  skip_client_contact?: boolean | null
   property_manager_id?: string | null
   property_notes_url?: string | null
   property_category?: string | null
