@@ -27,6 +27,8 @@ import { buildQuoteExportText } from "@/lib/quote-export"
 import {
   buildWeDoLines,
   isWeDoQuote,
+  toIncGst,
+  formatNzd,
   type BillingEntity,
 } from "@/lib/quote-billing-entity"
 
@@ -3175,6 +3177,11 @@ Pristine Gardens`)
                   value={labourRate}
                   onChange={(event) => setLabourRate(parseDecimalInput(event.target.value))}
                 />
+                {isWeDoQuote(billingEntity) && toNumber(labourRate) > 0 && (
+                  <p className="mt-1 text-xs text-gray-500">
+                    = {formatNzd(toIncGst(toNumber(labourRate)))} incl. GST
+                  </p>
+                )}
               </div>
 
               <div>
@@ -3201,6 +3208,11 @@ Pristine Gardens`)
                   value={greenwasteRate}
                   onChange={(event) => setGreenwasteRate(parseDecimalInput(event.target.value))}
                 />
+                {isWeDoQuote(billingEntity) && toNumber(greenwasteRate) > 0 && (
+                  <p className="mt-1 text-xs text-gray-500">
+                    = {formatNzd(toIncGst(toNumber(greenwasteRate)))} incl. GST
+                  </p>
+                )}
               </div>
 
               <div className="md:col-span-3 flex flex-wrap items-center gap-2 text-sm">
