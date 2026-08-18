@@ -55,6 +55,10 @@ type LineItem = {
   quantity?: number | string
   unit_price?: number | string
   line_total?: number | string
+  // The GST-exclusive figures exactly as they were typed. Without these the
+  // renderer divides the inclusive price back down and drifts by a cent a line.
+  unit_price_ex?: number | string
+  line_total_ex?: number | string
   category?: string
 }
 
@@ -356,6 +360,10 @@ export default async function PublicQuotePage({ params, searchParams }: Props) {
       quantity: Number(item.quantity || 0),
       unit_price: Number(item.unit_price || 0),
       line_total: item.line_total != null ? Number(item.line_total) : undefined,
+      unit_price_ex:
+        item.unit_price_ex != null ? Number(item.unit_price_ex) : undefined,
+      line_total_ex:
+        item.line_total_ex != null ? Number(item.line_total_ex) : undefined,
       category: item.category,
     })),
     Number(quoteDraft.total || 0)
@@ -584,7 +592,7 @@ export default async function PublicQuotePage({ params, searchParams }: Props) {
 
         <section className="mt-6 rounded-xl border border-stone-200 bg-white p-5 shadow-sm print:shadow-none">
           <h2 className="text-lg font-semibold text-[#123d2a]">
-            Proposal Details
+            {wording.Noun} Details
           </h2>
           <div className="mt-4 space-y-3">
             {isWeDo
