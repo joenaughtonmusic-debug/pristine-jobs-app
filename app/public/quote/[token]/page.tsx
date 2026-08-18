@@ -1,7 +1,10 @@
 import { redirect } from "next/navigation"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { buildExGstTotals, isWeDoQuote } from "@/lib/quote-billing-entity"
-import { documentWording } from "@/lib/quote-document-label"
+import {
+  documentWording,
+  termsWithEstimateNote,
+} from "@/lib/quote-document-label"
 import {
   recordOnlineQuoteAcceptance,
   recordOnlineQuoteDecline,
@@ -660,7 +663,10 @@ export default async function PublicQuotePage({ params, searchParams }: Props) {
             Terms and Conditions
           </h2>
           <p className="mt-3 whitespace-pre-wrap leading-7 text-stone-700">
-            {quoteDraft.terms_conditions || "Terms to be confirmed."}
+            {termsWithEstimateNote(
+              quoteDraft.terms_conditions,
+              quoteDraft.document_label
+            ) || "Terms to be confirmed."}
           </p>
         </section>
 
