@@ -23,6 +23,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { FieldGroup, Field, FieldLabel } from "@/components/ui/field"
 import { Spinner } from "@/components/ui/spinner"
 import { resizeImageFile } from "@/lib/resize-image"
+import { markJobCompletedAction } from "@/app/(app)/sales-pipeline/actions"
 
 interface CompleteVisitDialogProps {
   open: boolean
@@ -715,6 +716,18 @@ if (existingVisit) {
       setError(jobError.message)
       setLoading(false)
       return
+    }
+
+    // Advance the pipeline card to Job completed. Deliberately after the job
+    // status is safely written and deliberately not fatal: the work is done
+    // either way, and a board card that needs dragging is a far smaller problem
+    // than a completion that refuses to save.
+    const pipelineResult = await markJobCompletedAction(jobId)
+    if ("error" in pipelineResult) {
+      console.error("[complete-visit] pipeline advance failed", {
+        jobId,
+        message: pipelineResult.error,
+      })
     }
 
     if (issueSaveError) {

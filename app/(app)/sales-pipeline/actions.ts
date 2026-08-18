@@ -15,6 +15,7 @@ import {
   confirmVisit,
   deleteLead,
   linkQuoteDraft,
+  markJobCompletedForJob,
   markJobScheduled,
   markJobScheduledForDraft,
   markLost,
@@ -370,4 +371,15 @@ export async function clearPaidInvoicesAction(): Promise<TransitionResult> {
 
     return error ? { error: error.message } : { ok: true }
   })
+}
+
+// Called when a job is marked complete on site, so the pipeline card follows
+// the work. Quiet no-op when the job has no quote or the quote has no lead —
+// completing a job must never fail because of a board card.
+export async function markJobCompletedAction(
+  scheduledJobId: string
+): Promise<TransitionResult> {
+  return runTransition((supabase) =>
+    markJobCompletedForJob(supabase, scheduledJobId)
+  )
 }
