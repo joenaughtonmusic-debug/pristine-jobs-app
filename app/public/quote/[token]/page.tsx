@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { buildExGstTotals, isWeDoQuote } from "@/lib/quote-billing-entity"
+import { documentWording } from "@/lib/quote-document-label"
 import {
   recordOnlineQuoteAcceptance,
   recordOnlineQuoteDecline,
@@ -65,6 +66,7 @@ type QuoteDraft = {
   proposal_heading: string | null
   logo_variant: string | null
   billing_entity: string | null
+  document_label: string | null
   quote_type: string | null
   hero_image_url: string | null
   photos: unknown
@@ -165,27 +167,29 @@ function parseQuotePhotos(value: unknown): QuotePhoto[] {
 // Brief 04 Part 3: the three quote types share one structure and one
 // renderer — the templates differ in wording only. Maintenance copy is
 // unchanged (the owner approves it as is).
-const PROPOSAL_COPY = {
-  maintenance: {
-    title: "Garden Maintenance Proposal",
-    preamble: "Designed to keep your garden looking its best throughout the year.",
-  },
-  one_off: {
-    title: "Garden Tidy Proposal",
-    preamble:
-      "A one-off visit to bring the garden back to its best — the full scope and price are set out below.",
-  },
-  landscaping: {
-    title: "Landscaping Proposal",
-    preamble:
-      "The full scope and pricing for your landscaping project are set out below.",
-  },
+const PROPOSAL_PREAMBLE = {
+  maintenance: "Designed to keep your garden looking its best throughout the year.",
+  one_off:
+    "A one-off visit to bring the garden back to its best — the full scope and price are set out below.",
+  landscaping:
+    "The full scope and pricing for your landscaping project are set out below.",
 } as const
 
-function getProposalCopy(quoteType: string | null | undefined) {
-  if (quoteType === "maintenance") return PROPOSAL_COPY.maintenance
-  if (quoteType === "landscaping") return PROPOSAL_COPY.landscaping
-  return PROPOSAL_COPY.one_off
+// Title follows the document label ("… Proposal" or "… Estimate"); the preamble
+// is the same either way, since it describes the work rather than the document.
+function getProposalCopy(
+  quoteType: string | null | undefined,
+  documentLabel: string | null | undefined
+) {
+  const wording = documentWording(documentLabel)
+  const key =
+    quoteType === "maintenance"
+      ? "maintenance"
+      : quoteType === "landscaping"
+        ? "landscaping"
+        : "one_off"
+
+  return { title: wording.titles[key], preamble: PROPOSAL_PREAMBLE[key] }
 }
 
 async function acceptQuote(formData: FormData) {
@@ -299,7 +303,7 @@ export default async function PublicQuotePage({ params, searchParams }: Props) {
   let { data: quote, error } = await supabase
     .from("quote_drafts")
     .select(
-      `hero_image_url, photos, proposal_heading, logo_variant, billing_entity, ${QUOTE_BASE_COLUMNS}`
+      `hero_image_url, photos, proposal_heading, logo_variant, billing_entity, document_label, ${QUOTE_BASE_COLUMNS}`
     )
     .eq("public_accept_token", token)
     .maybeSingle()
@@ -322,6 +326,7 @@ export default async function PublicQuotePage({ params, searchParams }: Props) {
           proposal_heading: null,
           logo_variant: null,
           billing_entity: null,
+          document_label: null,
         } as typeof quote)
       : null
     error = legacy.error
@@ -332,7 +337,7 @@ export default async function PublicQuotePage({ params, searchParams }: Props) {
       <main className="mx-auto max-w-3xl p-6">
         <h1 className="text-2xl font-bold">Quote not found</h1>
         <p className="mt-2 text-gray-600">
-          This proposal link is invalid or no longer available.
+          This link is invalid or no longer available.
         </p>
       </main>
     )
@@ -362,7 +367,8 @@ export default async function PublicQuotePage({ params, searchParams }: Props) {
     [property?.address_line_1, property?.suburb].filter(Boolean).join(", ") ||
     "To be confirmed"
   const proposalDate = quoteDraft.proposal_sent_at || quoteDraft.created_at
-  const proposalCopy = getProposalCopy(quoteDraft.quote_type)
+  const wording = documentWording(quoteDraft.document_label)
+  const proposalCopy = getProposalCopy(quoteDraft.quote_type, quoteDraft.document_label)
   const isMaintenance = quoteDraft.quote_type === "maintenance"
   // Billing presentation follows the property's billing_type. Quotes without
   // a property yet (new customers) present as charge_up — the default since
@@ -398,7 +404,7 @@ export default async function PublicQuotePage({ params, searchParams }: Props) {
             src={quoteDraft.hero_image_url || "/images/shackleton-hero.jpg"}
             alt={
               quoteDraft.hero_image_url
-                ? "Photo for this proposal"
+                ? `Photo for this ${wording.noun}`
                 : "Established garden maintained by Pristine Gardens"
             }
             className="h-56 w-full object-cover sm:h-72"
@@ -417,15 +423,16 @@ export default async function PublicQuotePage({ params, searchParams }: Props) {
           <div className="mt-6 rounded-xl border border-green-200 bg-green-50 p-5 text-green-900">
             <h2 className="font-semibold">Welcome to Pristine Gardens.</h2>
             <p className="mt-1 text-sm">
-              Your proposal has been accepted. We will follow up with the next
-              steps.
+              Your {wording.noun} has been accepted. We will follow up with
+              the next steps.
             </p>
           </div>
         )}
 
         {isDeclined && (
           <div className="mt-6 rounded-xl border border-stone-200 bg-stone-50 p-5 text-stone-700">
-            Thanks for the update. We have marked this proposal as declined.
+            Thanks for the update. We have marked this {wording.noun} as
+            declined.
           </div>
         )}
 
@@ -448,7 +455,7 @@ export default async function PublicQuotePage({ params, searchParams }: Props) {
             </div>
             <div>
               <div className="text-xs font-medium uppercase text-stone-500">
-                Proposal Date
+                {wording.Noun} Date
               </div>
               <div className="mt-1 font-medium">{formatDate(proposalDate)}</div>
             </div>
@@ -466,7 +473,7 @@ export default async function PublicQuotePage({ params, searchParams }: Props) {
           >
             <div className="rounded-lg bg-white p-4">
               <div className="text-xs font-medium uppercase text-stone-500">
-                Quote Type
+                {wording.Noun} Type
               </div>
               <div className="mt-2 text-xl font-semibold text-[#123d2a]">
                 {formatQuoteType(quoteDraft.quote_type)}
@@ -652,7 +659,7 @@ export default async function PublicQuotePage({ params, searchParams }: Props) {
         {!isAccepted && !isDeclined && (
           <section className="mt-6 rounded-xl border border-green-200 bg-green-50 p-5 shadow-sm print:hidden">
             <h2 className="text-lg font-semibold text-[#123d2a]">
-              Accept Proposal
+              Accept {wording.Noun}
             </h2>
             <form className="mt-4 space-y-4">
               <input type="hidden" name="quote_id" value={quoteDraft.id} />
@@ -698,7 +705,7 @@ export default async function PublicQuotePage({ params, searchParams }: Props) {
                   formAction={acceptQuote}
                   className="h-12 w-full rounded-md bg-[#1f6b45] px-5 text-base font-semibold text-white shadow-sm hover:bg-[#185638] sm:flex-1"
                 >
-                  Accept Proposal
+                  Accept {wording.Noun}
                 </button>
                 <button
                   formAction={declineQuote}

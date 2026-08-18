@@ -31,6 +31,7 @@ import {
   formatNzd,
   type BillingEntity,
 } from "@/lib/quote-billing-entity"
+import type { DocumentLabel } from "@/lib/quote-document-label"
 
 type PropertyOption = {
   id: string
@@ -777,6 +778,10 @@ export function AdminQuoteBuilderClient({
   // purpose — a WeDo maintenance quote and a WeDo one-off must both stay
   // correctly scheduled and billed (see lib/quote-billing-entity).
   const [billingEntity, setBillingEntity] = useState<BillingEntity>("pristine")
+  // What the customer-facing document calls itself. Independent of quote type
+  // and entity — any job for either business can read as an estimate.
+  const [documentLabel, setDocumentLabel] =
+    useState<DocumentLabel>("proposal")
   const [quoteTitle, setQuoteTitle] = useState("")
   const [customerScope, setCustomerScope] = useState("")
   const [internalNotes, setInternalNotes] = useState("")
@@ -1444,7 +1449,7 @@ export function AdminQuoteBuilderClient({
     const { data: full, error: fetchError } = await supabase
       .from("quote_drafts")
       .select(
-        "id, customer_name, quote_title, quote_type, billing_entity, frequency, labour_hours, labour_rate, greenwaste_bags, greenwaste_rate, greenwaste_mode, greenwaste_min, greenwaste_max, sprays_size, sprays_price, fertiliser_size, fertiliser_price, stump_paste_size, stump_paste_price, customer_scope, internal_notes, terms_conditions, line_items"
+        "id, customer_name, quote_title, quote_type, billing_entity, document_label, frequency, labour_hours, labour_rate, greenwaste_bags, greenwaste_rate, greenwaste_mode, greenwaste_min, greenwaste_max, sprays_size, sprays_price, fertiliser_size, fertiliser_price, stump_paste_size, stump_paste_price, customer_scope, internal_notes, terms_conditions, line_items"
       )
       .eq("id", draft.id)
       .single()
@@ -1455,6 +1460,9 @@ export function AdminQuoteBuilderClient({
     setNewCustomerMode(false)
     setQuoteType((full.quote_type as QuoteType) || "one_off")
     setBillingEntity(full.billing_entity === "wedo" ? "wedo" : "pristine")
+    setDocumentLabel(
+      full.document_label === "estimate" ? "estimate" : "proposal"
+    )
     setFrequency(full.frequency || "")
     setLabourHours(Number(full.labour_hours || 0))
     setLabourRate(Number(full.labour_rate || 80))
@@ -2563,6 +2571,7 @@ Pristine Gardens`)
           quote_title: quoteTitle.trim(),
           quote_type: quoteType,
           billing_entity: billingEntity,
+          document_label: documentLabel,
           customer_scope: customerScope.trim() || null,
           internal_notes: internalNotes.trim() || null,
           terms_conditions: termsConditions.trim() || null,
@@ -2632,6 +2641,7 @@ Pristine Gardens`)
       quote_title: quoteTitle.trim(),
       quote_type: quoteType,
       billing_entity: billingEntity,
+      document_label: documentLabel,
       customer_scope: customerScope.trim() || null,
       internal_notes: internalNotesToSave || null,
       terms_conditions: termsConditions.trim() || null,
@@ -3083,6 +3093,27 @@ Pristine Gardens`)
                 {isWeDoQuote(billingEntity)
                   ? "Prices shown excluding GST, with labour hours, greenwaste and treatments itemised."
                   : "One per-visit price shown including GST."}
+              </p>
+            </div>
+
+            <div>
+              <label className="mb-1 block text-sm font-medium">
+                Call It A
+              </label>
+              <select
+                className="h-11 w-full rounded-md border px-3"
+                value={documentLabel}
+                onChange={(event) =>
+                  setDocumentLabel(event.target.value as DocumentLabel)
+                }
+              >
+                <option value="proposal">Proposal</option>
+                <option value="estimate">Estimate</option>
+              </select>
+              <p className="mt-1 text-xs text-gray-500">
+                {documentLabel === "estimate"
+                  ? "The customer's document reads \u201cGarden Maintenance Estimate\u201d, \u201cAccept Estimate\u201d, and so on. Nothing else changes."
+                  : "The customer's document reads \u201cProposal\u201d throughout."}
               </p>
             </div>
 
