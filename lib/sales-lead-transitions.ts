@@ -565,6 +565,54 @@ export async function markJobScheduledForDraft(
   return markJobScheduled(supabase, lead.id)
 }
 
+// Scheduled→completed seam: called when a job is marked complete on site. The
+// board card follows the work itself, the same way markJobScheduledForDraft
+// advances it when the job is booked — Joe's expectation, and the reason cards
+// were sitting in "Job scheduled" with finished jobs behind them (Amanda and
+// Symone, 18 Aug).
+//
+// The link runs job → the quote that scheduled it → that quote's lead:
+//   quote_drafts.first_scheduled_job_id = jobId, then
+//   sales_leads.quote_draft_id = that draft.
+//
+// No linked quote, no lead, or already completed: quiet no-op. A lead-side miss
+// must never break completing a job — the crew finishing work matters more than
+// a board card, and the card can always be moved by hand.
+export async function markJobCompletedForJob(
+  supabase: SupabaseClient,
+  scheduledJobId: string
+): Promise<TransitionResult> {
+  if (!scheduledJobId) return { ok: true }
+
+  const { data: draft, error: draftError } = await supabase
+    .from("quote_drafts")
+    .select("id")
+    .eq("first_scheduled_job_id", scheduledJobId)
+    .limit(1)
+    .maybeSingle()
+
+  if (draftError) return { error: draftError.message }
+  if (!draft) return { ok: true }
+
+  const { data: lead, error: leadError } = await supabase
+    .from("sales_leads")
+    .select("id, status")
+    .eq("quote_draft_id", draft.id)
+    .maybeSingle()
+
+  if (leadError) return { error: leadError.message }
+  if (!lead || lead.status === "completed" || lead.status === "lost") {
+    return { ok: true }
+  }
+
+  return updateLead(
+    supabase,
+    lead as Parameters<typeof updateLead>[1],
+    { status: "completed" },
+    createActivity("status_change", "Job scheduled → Job completed (work completed on site).")
+  )
+}
+
 // The canonical status a lead lands on when advanced from each board stage
 // without firing that stage's action (skip). Index = current board stage.
 const SKIP_TARGET_STATUS: Array<SalesLeadStatus | null> = [
