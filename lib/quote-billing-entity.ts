@@ -226,3 +226,34 @@ export function formatNzd(value: number) {
     currency: "NZD",
   }).format(Number(value || 0))
 }
+
+// Stored line items carry GST-INCLUSIVE unit prices, because that is what Xero
+// is sent. The builder's grid holds GST-EXCLUSIVE prices on a WeDo quote — what
+// Joe types. So reopening a saved WeDo quote (Revise) has to convert back, or
+// the grid shows $77 where $66.96 was typed and grosses it up again on save,
+// inflating the quote by 15% every time it is revised.
+//
+// Prefers the exact typed figures stored alongside; divides only for quotes
+// saved before those fields existed. A Pristine quote is returned untouched.
+export function toEditableLines<
+  T extends {
+    unit_price?: number | string | null
+    line_total?: number | string | null
+    unit_price_ex?: number | string | null
+    line_total_ex?: number | string | null
+  }
+>(lines: T[], billingEntity?: string | null): T[] {
+  if (!isWeDoQuote(billingEntity)) return lines
+
+  return lines.map((line) => ({
+    ...line,
+    unit_price:
+      line.unit_price_ex != null
+        ? round2(Number(line.unit_price_ex))
+        : toExGst(Number(line.unit_price || 0)),
+    line_total:
+      line.line_total_ex != null
+        ? round2(Number(line.line_total_ex))
+        : toExGst(Number(line.line_total || 0)),
+  }))
+}
