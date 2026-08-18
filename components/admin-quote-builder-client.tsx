@@ -1455,7 +1455,7 @@ export function AdminQuoteBuilderClient({
     const { data: full, error: fetchError } = await supabase
       .from("quote_drafts")
       .select(
-        "id, customer_name, quote_title, quote_type, billing_entity, document_label, frequency, labour_hours, labour_rate, greenwaste_bags, greenwaste_rate, greenwaste_mode, greenwaste_min, greenwaste_max, sprays_size, sprays_price, fertiliser_size, fertiliser_price, stump_paste_size, stump_paste_price, customer_scope, internal_notes, terms_conditions, line_items"
+        "id, customer_name, property_id, quote_title, quote_type, billing_entity, document_label, frequency, labour_hours, labour_rate, greenwaste_bags, greenwaste_rate, greenwaste_mode, greenwaste_min, greenwaste_max, sprays_size, sprays_price, fertiliser_size, fertiliser_price, stump_paste_size, stump_paste_price, customer_scope, internal_notes, terms_conditions, line_items"
       )
       .eq("id", draft.id)
       .single()
@@ -1464,6 +1464,11 @@ export function AdminQuoteBuilderClient({
       return
     }
     setNewCustomerMode(false)
+    // Restore the property so the form still shows who the quote is for.
+    // The save never wrote property_id and kept customer_name from the saved
+    // row, so nothing was ever lost — but a blank customer and address while
+    // revising reads exactly like data loss, which is its own problem.
+    setPropertyId(full.property_id || "")
     setQuoteType((full.quote_type as QuoteType) || "one_off")
     setBillingEntity(full.billing_entity === "wedo" ? "wedo" : "pristine")
     setDocumentLabel(
