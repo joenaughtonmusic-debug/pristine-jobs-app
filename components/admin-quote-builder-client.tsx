@@ -28,6 +28,7 @@ import {
   buildWeDoLines,
   isWeDoQuote,
   toIncGst,
+  toEditableLines,
   formatNzd,
   type BillingEntity,
 } from "@/lib/quote-billing-entity"
@@ -170,6 +171,11 @@ type LineItem = {
   // Brief 04: one of the owner's seven categories — supplies the Xero
   // item_code/account_code at save time (lib/quote-line-categories).
   category: QuoteLineCategoryKey
+  // Present on saved WeDo lines: the GST-exclusive figures as typed. The grid
+  // edits in those terms, so Revise reads them back through toEditableLines.
+  unit_price_ex?: number
+  line_total_ex?: number
+  line_total?: number
 }
 
 // Brief 04 Part 3a: { url, caption, sort_order } entries in
@@ -1484,8 +1490,14 @@ export function AdminQuoteBuilderClient({
     setCustomerScopeEdited(true)
     setInternalNotes(full.internal_notes || "")
     setTermsConditions(full.terms_conditions || "")
+    // Stored prices are GST-inclusive; the grid edits ex-GST on a WeDo quote.
+    // Without this the grid would show $77 where $66.96 was typed and gross it
+    // up again on save, inflating the quote 15% on every revise.
     setLineItems(
-      Array.isArray(full.line_items) ? (full.line_items as LineItem[]) : []
+      toEditableLines(
+        Array.isArray(full.line_items) ? (full.line_items as LineItem[]) : [],
+        full.billing_entity
+      )
     )
     setLineItemsEdited(true)
     setQuoteTitle(full.quote_title || "")
