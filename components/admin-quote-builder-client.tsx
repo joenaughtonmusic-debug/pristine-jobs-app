@@ -789,6 +789,9 @@ export function AdminQuoteBuilderClient({
   const [documentLabel, setDocumentLabel] =
     useState<DocumentLabel>("proposal")
   const [quoteTitle, setQuoteTitle] = useState("")
+  // 086: hours off by default. Ticked only when the reader is a trade
+  // counterparty who expects them — an end customer never should see them.
+  const [showLabourHours, setShowLabourHours] = useState(false)
   const [customerScope, setCustomerScope] = useState("")
   const [internalNotes, setInternalNotes] = useState("")
   const [termsConditions, setTermsConditions] = useState("")
@@ -1455,7 +1458,7 @@ export function AdminQuoteBuilderClient({
     const { data: full, error: fetchError } = await supabase
       .from("quote_drafts")
       .select(
-        "id, customer_name, property_id, quote_title, quote_type, billing_entity, document_label, frequency, labour_hours, labour_rate, greenwaste_bags, greenwaste_rate, greenwaste_mode, greenwaste_min, greenwaste_max, sprays_size, sprays_price, fertiliser_size, fertiliser_price, stump_paste_size, stump_paste_price, customer_scope, internal_notes, terms_conditions, line_items"
+        "id, customer_name, property_id, quote_title, quote_type, billing_entity, document_label, show_labour_hours, frequency, labour_hours, labour_rate, greenwaste_bags, greenwaste_rate, greenwaste_mode, greenwaste_min, greenwaste_max, sprays_size, sprays_price, fertiliser_size, fertiliser_price, stump_paste_size, stump_paste_price, customer_scope, internal_notes, terms_conditions, line_items"
       )
       .eq("id", draft.id)
       .single()
@@ -1474,6 +1477,7 @@ export function AdminQuoteBuilderClient({
     setDocumentLabel(
       full.document_label === "estimate" ? "estimate" : "proposal"
     )
+    setShowLabourHours(full.show_labour_hours === true)
     setFrequency(full.frequency || "")
     setLabourHours(Number(full.labour_hours || 0))
     setLabourRate(Number(full.labour_rate || 80))
@@ -1523,6 +1527,7 @@ export function AdminQuoteBuilderClient({
     setLineItemsEdited(false)
     setFrequency("")
     setQuoteType("one_off")
+    setShowLabourHours(false)
     setGreenwasteMode("auto")
     setGreenwasteMin(0)
     setGreenwasteMax(0)
@@ -2589,6 +2594,7 @@ Pristine Gardens`)
           quote_type: quoteType,
           billing_entity: billingEntity,
           document_label: documentLabel,
+          show_labour_hours: showLabourHours,
           customer_scope: customerScope.trim() || null,
           internal_notes: internalNotes.trim() || null,
           terms_conditions: termsConditions.trim() || null,
@@ -2659,6 +2665,7 @@ Pristine Gardens`)
       quote_type: quoteType,
       billing_entity: billingEntity,
       document_label: documentLabel,
+      show_labour_hours: showLabourHours,
       customer_scope: customerScope.trim() || null,
       internal_notes: internalNotesToSave || null,
       terms_conditions: termsConditions.trim() || null,
@@ -3108,9 +3115,35 @@ Pristine Gardens`)
               </select>
               <p className="mt-1 text-xs text-gray-500">
                 {isWeDoQuote(billingEntity)
-                  ? "Prices shown excluding GST, with labour hours, greenwaste and treatments itemised."
+                  ? "Prices shown excluding GST, with greenwaste and treatments itemised."
                   : "One per-visit price shown including GST."}
               </p>
+
+              {/* Shown on every quote type, not just WeDo: the proposal only
+                  ever prints hours on a WeDo quote, but the Xero invoice is
+                  built from the same line items either way, so a Pristine
+                  one-off priced at 8 hrs x $80 would bill "8 x $80.00"
+                  without this. */}
+              <label className="mt-3 flex items-start gap-2">
+                <input
+                  type="checkbox"
+                  className="mt-0.5 h-4 w-4 rounded border-gray-300"
+                  checked={showLabourHours}
+                  onChange={(event) =>
+                    setShowLabourHours(event.target.checked)
+                  }
+                />
+                <span className="text-sm">
+                  <span className="font-medium">
+                    Show labour hours to the customer
+                  </span>
+                  <span className="mt-0.5 block text-xs text-gray-500">
+                    {showLabourHours
+                      ? "The labour line shows the hours and the hourly rate, on the proposal and on the Xero invoice."
+                      : "Hours stay off the proposal and the invoice — labour shows as one price. Tick only for a trade counterparty who expects to see hours."}
+                  </span>
+                </span>
+              </label>
             </div>
 
             <div>

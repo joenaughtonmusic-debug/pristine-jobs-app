@@ -147,6 +147,10 @@ export type DisplayLine = {
   // Quantity is shown for labour only — Joe's call, 15 Aug. Bags vary visit to
   // visit, so printing a bag count on a charge-up quote invites "you said two
   // bags" on every invoice that differs. Hours are the honest, stable number.
+  //
+  // And only when the quote opts in (086). Hours are the right basis for a
+  // trade counterparty and the wrong one for an end customer being quoted
+  // under the WeDo brand, so it is a per-quote decision, defaulting to hidden.
   quantityLabel: string | null
   exGstTotal: number
 }
@@ -162,6 +166,9 @@ export type ExGstTotals = {
 // ex-GST and rounds, the subtotal is their sum, and GST is the remainder up to
 // the inclusive total — so subtotal + GST always equals the total the customer
 // is actually charged, and the printed figures always add up.
+// `showLabourHours` defaults to FALSE — the safe direction. A caller that
+// forgets to pass it hides the hours, which is recoverable; the other default
+// would print them on an end customer's proposal with nobody noticing.
 export function buildExGstTotals(
   lines: {
     description: string
@@ -172,7 +179,8 @@ export function buildExGstTotals(
     line_total_ex?: number
     category?: string
   }[],
-  totalIncGst: number
+  totalIncGst: number,
+  showLabourHours = false
 ): ExGstTotals {
   const displayLines: DisplayLine[] = lines.map((line) => {
     // Prefer the ex-GST figures stored on the line — they are what was typed.
@@ -198,7 +206,7 @@ export function buildExGstTotals(
     return {
       description: line.description,
       quantityLabel:
-        isLabour && hours > 0
+        showLabourHours && isLabour && hours > 0
           ? `${hours} ${hours === 1 ? "hr" : "hrs"} × ${formatNzd(exUnit)}`
           : null,
       exGstTotal: exTotal,
