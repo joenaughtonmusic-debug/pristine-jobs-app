@@ -74,6 +74,7 @@ type QuoteDraft = {
   logo_variant: string | null
   billing_entity: string | null
   document_label: string | null
+  show_labour_hours: boolean | null
   quote_type: string | null
   hero_image_url: string | null
   photos: unknown
@@ -310,7 +311,7 @@ export default async function PublicQuotePage({ params, searchParams }: Props) {
   let { data: quote, error } = await supabase
     .from("quote_drafts")
     .select(
-      `hero_image_url, photos, proposal_heading, logo_variant, billing_entity, document_label, ${QUOTE_BASE_COLUMNS}`
+      `hero_image_url, photos, proposal_heading, logo_variant, billing_entity, document_label, show_labour_hours, ${QUOTE_BASE_COLUMNS}`
     )
     .eq("public_accept_token", token)
     .maybeSingle()
@@ -334,6 +335,9 @@ export default async function PublicQuotePage({ params, searchParams }: Props) {
           logo_variant: null,
           billing_entity: null,
           document_label: null,
+          // Hours stay hidden when the column isn't there yet — the safe
+          // direction, and what every quote gets once 086 is applied.
+          show_labour_hours: false,
         } as typeof quote)
       : null
     error = legacy.error
@@ -369,7 +373,8 @@ export default async function PublicQuotePage({ params, searchParams }: Props) {
         item.line_total_ex != null ? Number(item.line_total_ex) : undefined,
       category: item.category,
     })),
-    Number(quoteDraft.total || 0)
+    Number(quoteDraft.total || 0),
+    quoteDraft.show_labour_hours === true
   )
   const isAccepted = quoteDraft.status === "accepted" || Boolean(query?.accepted)
   const isDeclined = quoteDraft.status === "declined" || Boolean(query?.declined)

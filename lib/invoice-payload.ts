@@ -48,6 +48,19 @@ type QuoteLineItem = {
   unit_price?: number | string | null
   account_code?: string | null
   tax_type?: string | null
+  // Used only to spot the labour row when hours are hidden. `category` is what
+  // the builder writes today; item_code and account_code cover rows saved
+  // before it existed, so an older quote still collapses correctly.
+  category?: string | null
+  item_code?: string | null
+}
+
+const round2 = (value: number) => Math.round(value * 100) / 100
+
+function isLabourLine(li: QuoteLineItem): boolean {
+  if (li.category) return li.category === "labour"
+  if (li.item_code) return li.item_code === "Labour"
+  return li.account_code === "10010"
 }
 
 function ymd(date: Date): string {
@@ -73,6 +86,7 @@ export function buildInvoicePayload(args: {
     line_items?: QuoteLineItem[] | null
     total?: number | string | null
     logo_variant?: string | null
+    show_labour_hours?: boolean | null
   }
   property: {
     property_code?: string | null
@@ -97,15 +111,31 @@ export function buildInvoicePayload(args: {
   const customerName =
     (quote.customer_name || property.client_name || "").trim() || "Customer"
 
+  // 086: a quote that hides its hours must hide them on the invoice too, or
+  // the proposal says "Labour $2,464.00" and the Xero invoice that follows
+  // says "32 x $77.00" and reopens the conversation the quote closed.
+  const showLabourHours = quote.show_labour_hours === true
+
   const rawLines = Array.isArray(quote.line_items) ? quote.line_items : []
   const line_items: InvoiceLineItem[] = rawLines
-    .map((li) => ({
-      Description: (li.description || "").toString().trim(),
-      Quantity: Number(li.quantity ?? 0),
-      UnitAmount: Number(li.unit_price ?? 0),
-      AccountCode: li.account_code ?? null,
-      TaxType: li.tax_type ?? null,
-    }))
+    .map((li) => {
+      const quantity = Number(li.quantity ?? 0)
+      const unitAmount = Number(li.unit_price ?? 0)
+      // One row at the full line value instead of hours x rate. Same money
+      // against the same account code — only the breakdown goes away. Lines
+      // already at quantity 1 are left exactly as they are, and a zero-hour
+      // line is left alone so the filter below can still drop it.
+      const collapse =
+        !showLabourHours && isLabourLine(li) && quantity > 0 && quantity !== 1
+
+      return {
+        Description: (li.description || "").toString().trim(),
+        Quantity: collapse ? 1 : quantity,
+        UnitAmount: collapse ? round2(quantity * unitAmount) : unitAmount,
+        AccountCode: li.account_code ?? null,
+        TaxType: li.tax_type ?? null,
+      }
+    })
     .filter((li) => li.Description && li.Quantity > 0)
 
   if (line_items.length === 0) {
