@@ -241,6 +241,10 @@ const photoInputRef = useRef<HTMLInputElement | null>(null)
         }).format(quotedAmount)
       : null
 
+  // Crew see that a job is fixed-price and must not add charge-up time; they
+  // do not see what it was quoted at. Admin only.
+  const visibleQuotedAmount = isAdmin ? formattedQuotedAmount : null
+
   const totalLabourHours = labourEntries.reduce((total, entry) => {
     return total + Number(entry.hours_worked || 0)
   }, 0)
@@ -580,7 +584,7 @@ const photoInputRef = useRef<HTMLInputElement | null>(null)
             {isQuotedJob && (
               <Badge className="border border-purple-300 bg-purple-100 text-purple-900">
                 Fixed Quote Job
-                {formattedQuotedAmount ? ` · ${formattedQuotedAmount}` : ""}
+                {visibleQuotedAmount ? ` · ${visibleQuotedAmount}` : ""}
               </Badge>
             )}
 
@@ -632,9 +636,9 @@ const photoInputRef = useRef<HTMLInputElement | null>(null)
                 </p>
               </div>
 
-              {formattedQuotedAmount && (
+              {visibleQuotedAmount && (
                 <div className="rounded-lg border border-purple-200 bg-white px-3 py-2 text-sm font-semibold text-purple-950">
-                  Quote amount: {formattedQuotedAmount}
+                  Quote amount: {visibleQuotedAmount}
                 </div>
               )}
             </div>

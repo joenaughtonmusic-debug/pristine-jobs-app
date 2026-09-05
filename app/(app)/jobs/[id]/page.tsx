@@ -15,6 +15,13 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
   const { id } = await params
   const supabase = await createClient()
 
+  // This page is in the (app) group — authed, NOT admin-gated. Crew open it
+  // from the job board, so admin has to be asked for, not assumed. It was
+  // hardcoded true, which showed crew the quote amount on a quoted job (and
+  // the attach-quote picker's quote totals) — see the isAdmin gates below and
+  // in JobDetail.
+  const { data: isAdmin } = await supabase.rpc("is_admin")
+
   const { data: job } = await supabase
     .from("scheduled_jobs")
     .select(`
@@ -82,7 +89,7 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
     jobPhotos={(jobPhotos as JobPhoto[]) || []}
     attachableQuotes={attachableQuotes}
     attachBlockedReason={attachBlocked}
-    isAdmin={true}
+    isAdmin={Boolean(isAdmin)}
   />
 )
 }
