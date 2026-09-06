@@ -4,22 +4,15 @@ import { JobsList } from "@/components/jobs-list"
 import { StaffTimesheetForm } from "@/components/staff-timesheet-form"
 import type { ScheduledJob } from "@/lib/types"
 import { toZonedTime } from "date-fns-tz"
-
-function toDateString(date: Date) {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, "0")
-  const day = String(date.getDate()).padStart(2, "0")
-
-  return `${year}-${month}-${day}`
-}
-
-function getMonday(date: Date) {
-  const d = new Date(date)
-  const day = d.getDay()
-  const mondayOffset = (day + 6) % 7
-  d.setDate(d.getDate() - mondayOffset)
-  return d
-}
+import {
+  NZ_TIME_ZONE,
+  getCrewWeekMonday,
+  getMonday,
+  getWeekDays,
+  isCrewWeekRolledOver,
+  nowInNZ,
+  toDateString,
+} from "@/lib/crew-week"
 
 function formatDayLabel(dateString: string) {
   const [year, month, day] = dateString.split("-").map(Number)
@@ -38,7 +31,7 @@ function isPastDay(day: string) {
   const d = new Date(year, month - 1, date)
   d.setHours(0, 0, 0, 0)
 
-  const today = toZonedTime(new Date(), "Pacific/Auckland")
+  const today = toZonedTime(new Date(), NZ_TIME_ZONE)
   today.setHours(0, 0, 0, 0)
 
   return d < today
@@ -59,15 +52,26 @@ function isExpectedWorkDay(staffName: string, day: string) {
 export default async function JobsPage() {
   const supabase = await createClient()
 
-  const today = toZonedTime(new Date(), "Pacific/Auckland")
+  const today = nowInNZ()
   const todayStr = toDateString(today)
+  const showingNextWeek = isCrewWeekRolledOver(today)
 
-  const monday = getMonday(today)
+  // Jobs: the week the crew should be preparing for.
+  const monday = getCrewWeekMonday(today)
   const friday = new Date(monday)
   friday.setDate(monday.getDate() + 4)
 
   const weekStart = toDateString(monday)
   const weekEnd = toDateString(friday)
+
+  // Hours: always the week just worked, so Sunday's rollover can't hide
+  // outstanding timesheets. Same week as the jobs list Monday to Saturday.
+  const timesheetMonday = getMonday(today)
+  const timesheetFriday = new Date(timesheetMonday)
+  timesheetFriday.setDate(timesheetMonday.getDate() + 4)
+
+  const timesheetWeekStart = toDateString(timesheetMonday)
+  const timesheetWeekEnd = toDateString(timesheetFriday)
 
   const {
     data: { user },
@@ -132,21 +136,18 @@ export default async function JobsPage() {
     .from("staff_daily_timesheets")
     .select("*")
     .eq("staff_member_id", staffMember.id)
-    .gte("work_date", weekStart)
-    .lte("work_date", weekEnd)
+    .gte("work_date", timesheetWeekStart)
+    .lte("work_date", timesheetWeekEnd)
 
-  const weekDays = [0, 1, 2, 3, 4].map((offset) => {
-    const d = new Date(monday)
-    d.setDate(monday.getDate() + offset)
-    return toDateString(d)
-  })
+  const weekDays = getWeekDays(monday)
+  const timesheetWeekDays = getWeekDays(timesheetMonday)
 
   const weeklyTotalHours =
     timesheets?.reduce((total, timesheet) => {
       return total + Number(timesheet.total_hours || 0)
     }, 0) || 0
 
-  const missingTimesheetCount = weekDays.filter((day) => {
+  const missingTimesheetCount = timesheetWeekDays.filter((day) => {
     const expectedWorkDay = isExpectedWorkDay(staffMember.name, day)
 
     return (
@@ -159,20 +160,30 @@ export default async function JobsPage() {
   return (
     <div className="p-4 pb-10">
       <header className="mb-6">
-        <h1 className="text-2xl font-bold text-foreground">My Jobs This Week</h1>
+        <h1 className="text-2xl font-bold text-foreground">
+          {showingNextWeek ? "My Jobs Next Week" : "My Jobs This Week"}
+        </h1>
         <p className="text-muted-foreground">
           {staffMember.name} · Monday to Friday
         </p>
+        {showingNextWeek && (
+          <p className="text-sm text-muted-foreground">
+            Week beginning {formatDayLabel(weekStart)}
+          </p>
+        )}
       </header>
 
       <div className="mb-6 rounded-xl border bg-card p-4">
-        <p className="text-sm text-muted-foreground">Week total</p>
+        <p className="text-sm text-muted-foreground">
+          {showingNextWeek ? "Last week's total" : "Week total"}
+        </p>
         <p className="text-3xl font-bold">{weeklyTotalHours}h</p>
 
         {missingTimesheetCount > 0 ? (
           <p className="mt-1 text-sm font-medium text-red-600">
             {missingTimesheetCount} missing timesheet
             {missingTimesheetCount === 1 ? "" : "s"}
+            {showingNextWeek ? " from last week" : ""}
           </p>
         ) : (
           <p className="mt-1 text-sm font-medium text-green-700">
@@ -251,6 +262,42 @@ export default async function JobsPage() {
           )
         })}
       </div>
+
+      {/* From 9am Sunday the list above jumps to the coming week, so last week's
+          daily hours stay reachable here until Monday. */}
+      {showingNextWeek && (
+        <div className="mt-8">
+          <h2 className="text-lg font-semibold">Last week&apos;s hours</h2>
+          <p className="mb-3 text-sm text-muted-foreground">
+            Finish these off before Monday.
+          </p>
+
+          <div className="flex flex-col gap-4">
+            {timesheetWeekDays.map((day) => {
+              const timesheet = timesheets?.find((t) => t.work_date === day)
+
+              if (!timesheet && !isExpectedWorkDay(staffMember.name, day)) {
+                return null
+              }
+
+              return (
+                <section key={day} className="rounded-xl border bg-card p-3">
+                  <h3 className="mb-3 text-base font-semibold">
+                    {formatDayLabel(day)}
+                  </h3>
+
+                  <StaffTimesheetForm
+                    staffMemberId={staffMember.id}
+                    staffName={staffMember.name}
+                    workDate={day}
+                    existingTimesheet={timesheet || null}
+                  />
+                </section>
+              )
+            })}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
