@@ -1,21 +1,7 @@
 import { redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
 import { LabourEntryClient } from "@/components/labour-entry-client"
-
-function toDateString(date: Date) {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, "0")
-  const day = String(date.getDate()).padStart(2, "0")
-  return `${year}-${month}-${day}`
-}
-
-function getMonday(date: Date) {
-  const d = new Date(date)
-  const day = d.getDay()
-  const mondayOffset = (day + 6) % 7
-  d.setDate(d.getDate() - mondayOffset)
-  return d
-}
+import { getMonday, nowInNZ, toDateString } from "@/lib/crew-week"
 
 export default async function LabourPage() {
   const supabase = await createClient()
@@ -45,7 +31,7 @@ export default async function LabourPage() {
     )
   }
 
-  const today = new Date()
+  const today = nowInNZ()
   const monday = getMonday(today)
   const friday = new Date(monday)
   friday.setDate(monday.getDate() + 4)
